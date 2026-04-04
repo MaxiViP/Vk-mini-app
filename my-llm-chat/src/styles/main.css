@@ -33,7 +33,7 @@ select {
 .chat {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* height: 100%; */
 }
 
 /* ===== MESSAGES ===== */
@@ -91,11 +91,11 @@ select {
 
 /* контент внутри */
 .message.user {
-  max-width: 75%;
+  max-width: 95%;
 }
 
 .message.assistant {
-  max-width: 75%;
+  max-width: 95%;
 }
 
 /* стили пузырей */

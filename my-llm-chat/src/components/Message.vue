@@ -5,10 +5,9 @@
 </template>
 
 <script setup lang="ts">
+import type { Message } from '../types'
+
 defineProps<{
-  message: {
-    role: string
-    content: string
-  }
+  message: Message
 }>()
 </script>

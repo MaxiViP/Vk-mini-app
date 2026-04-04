@@ -1,56 +1,59 @@
 <template>
-	<div v-if="userStore.user" class="profile">
-		<img :src="userStore.user.avatar" alt="avatar" class="avatar" />
-		<h2>{{ userStore.user.firstName }} {{ userStore.user.lastName }}</h2>
-		<p>Баланс: {{ userStore.user.balance }} ₽</p>
-		<p>Оставшиеся запросы: {{ userStore.user.requestsLeft }}</p>
-		<button @click="recharge">Пополнить</button>
-		<button @click="userStore.logout">Выйти</button>
-	</div>
+  <div v-if="userStore.user" class="profile">
+    <img :src="userStore.user.photo_200" alt="avatar" class="avatar" />
+    <h2>{{ userStore.user.firstName }} {{ userStore.user.lastName }}</h2>
+    <p>💰 Баланс: {{ userStore.user.balance }} ₽</p>
+    <p>🎫 Осталось запросов: {{ userStore.user.requestsLeft }}</p>
+    <button @click="recharge" class="recharge-btn">Пополнить</button>
+    <button @click="userStore.logout" class="logout-btn">Выйти</button>
+  </div>
+  <!-- <div v-else class="profile loading">
+    <p>Загрузка...</p>
+  </div> -->
 </template>
 
 <script setup lang="ts">
-import { useUserStore } from '../store/user'
-import axios from 'axios'
+import { useUserStore } from '../stores/user'
 
 const userStore = useUserStore()
 
 const recharge = async () => {
-	const amount = parseInt(prompt('Введите сумму для пополнения') || '0')
-	if (amount <= 0) return
-
-	// простой пример пополнения
-	await axios.post(
-		'https://your-backend.com/user/recharge',
-		{ amount },
-		{
-			headers: { Authorization: `Bearer ${userStore.token}` },
-		},
-	)
-
-	alert('Баланс пополнен')
+  const amount = parseInt(prompt('Сумма пополнения (₽)', '100') || '0')
+  if (amount < 50) return alert('Минимум 50 ₽')
+  await userStore.rechargeBalance(amount)
+  alert(`Баланс пополнен на ${amount} ₽`)
 }
 </script>
 
-<style>
+<style scoped>
 .profile {
-	padding: 20px;
-	text-align: center;
+  background: #2f2f2f;
+  border-radius: 24px;
+  padding: 24px;
+  margin: 16px;
+  text-align: center;
 }
 .avatar {
-	width: 100px;
-	border-radius: 50%;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #10a37f;
 }
 button {
-	margin: 10px;
-	padding: 8px 16px;
-	border-radius: 8px;
-	background: #10a37f;
-	color: white;
-	border: none;
-	cursor: pointer;
+  margin: 8px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 40px;
+  font-weight: bold;
+  cursor: pointer;
 }
-button:hover {
-	background: #0d8a6c;
+.recharge-btn {
+  background: #10a37f;
+  color: white;
+}
+.logout-btn {
+  background: #444;
+  color: #ececec;
 }
 </style>
