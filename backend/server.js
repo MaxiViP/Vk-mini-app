@@ -63,53 +63,44 @@ async function fetchAllModels() {
 
 	const allModels = []
 
-	// 1. OpenAI
+	// 1. OpenAI - все модели без фильтра
 	try {
 		const openaiModels = await openaiClient.models.list()
-		const filtered = openaiModels.data
-			.filter(m => m.id.startsWith('gpt-') || m.id.startsWith('o1-') || m.id === 'gpt-4o')
-			.map(m => ({
-				id: `openai-${m.id}`,
-				name: `OpenAI: ${m.id}`,
-				provider: 'openai',
-				model: m.id,
-			}))
-		allModels.push(...filtered)
+		const allOpenaiModels = openaiModels.data.map(m => ({
+			id: `openai-${m.id}`,
+			name: `OpenAI: ${m.id}`,
+			provider: 'openai',
+			model: m.id,
+		}))
+		allModels.push(...allOpenaiModels)
 	} catch (err) {
 		console.error('Ошибка загрузки моделей OpenAI:', err.message)
 	}
 
-	// 2. Groq
+	// 2. Groq - все модели без фильтра
 	try {
 		const groqModels = await groqClient.models.list()
-		const filtered = groqModels.data
-			.filter(m => m.id.includes('llama') || m.id.includes('mixtral') || m.id.includes('gemma'))
-			.map(m => ({
-				id: `groq-${m.id}`,
-				name: `Groq: ${m.id}`,
-				provider: 'groq',
-				model: m.id,
-			}))
-		allModels.push(...filtered)
+		const allGroqModels = groqModels.data.map(m => ({
+			id: `groq-${m.id}`,
+			name: `Groq: ${m.id}`,
+			provider: 'groq',
+			model: m.id,
+		}))
+		allModels.push(...allGroqModels)
 	} catch (err) {
 		console.error('Ошибка загрузки моделей Groq:', err.message)
 	}
 
-	// 3. OpenRouter (там очень много моделей, возьмём популярные или все)
+	// 3. OpenRouter - все модели без фильтра
 	try {
 		const orModels = await openrouterClient.models.list()
-		// OpenRouter возвращает все модели (сотни). Можно ограничить, например, только те, у которых в id есть gpt, claude, llama
-		const filtered = orModels.data
-			.filter(
-				m => m.id.includes('gpt') || m.id.includes('claude') || m.id.includes('llama') || m.id.includes('mistral'),
-			)
-			.map(m => ({
-				id: `openrouter-${m.id}`,
-				name: `OpenRouter: ${m.id}`,
-				provider: 'openrouter',
-				model: m.id,
-			}))
-		allModels.push(...filtered)
+		const allOrModels = orModels.data.map(m => ({
+			id: `openrouter-${m.id}`,
+			name: `OpenRouter: ${m.id}`,
+			provider: 'openrouter',
+			model: m.id,
+		}))
+		allModels.push(...allOrModels)
 	} catch (err) {
 		console.error('Ошибка загрузки моделей OpenRouter:', err.message)
 	}
@@ -122,6 +113,9 @@ async function fetchAllModels() {
 
 	modelsCache = allModels
 	cacheTimestamp = now
+	console.log(
+		`✅ Загружено моделей: ${allModels.length} (OpenAI: ${openaiModels?.data?.length || 0}, Groq: ${groqModels?.data?.length || 0}, OpenRouter: ${orModels?.data?.length || 0}, статические: ${CLOUDFLARE_MODELS.length + LOCAL_MODELS.length})`,
+	)
 	return allModels
 }
 
@@ -155,7 +149,7 @@ app.post('/api/chat', async (req, res) => {
 			client = openrouterClient
 			break
 		case 'cloudflare':
-			// Cloudflare использует свой клиент с baseURL (можно переиспользовать openaiClient с другим baseURL)
+			// Cloudflare использует свой клиент с baseURL
 			client = new OpenAI({
 				apiKey: process.env.CF_AIG_TOKEN,
 				baseURL: 'https://gateway.ai.cloudflare.com/v1', // тут нужен полный путь до шлюза
@@ -200,5 +194,5 @@ app.post('/api/chat', async (req, res) => {
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
 	console.log(`🚀 Бэкенд запущен на http://localhost:${PORT}`)
-	console.log('✅ Динамическая загрузка моделей от OpenAI, Groq, OpenRouter, Cloudflare, Local')
+	console.log('✅ Динамическая загрузка ВСЕХ моделей от OpenAI, Groq, OpenRouter, Cloudflare, Local')
 })
