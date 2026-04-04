@@ -20,8 +20,7 @@ const openrouterClient = new OpenAI({
 	baseURL: 'https://openrouter.ai/api/v1',
 })
 
-// Cloudflare AI Gateway – не предоставляет список моделей, только прокси
-// Поэтому список захардкодим (позже можно расширить)
+// Cloudflare AI Gateway – статический список моделей
 const CLOUDFLARE_MODELS = [
 	{ id: 'cf-gpt4o', name: 'GPT-4o (Cloudflare)', provider: 'cloudflare', model: 'gpt-4o' },
 	{
@@ -32,7 +31,7 @@ const CLOUDFLARE_MODELS = [
 	},
 ]
 
-// Локальные модели – настраиваешь сам
+// Локальные модели
 const LOCAL_MODELS = [
 	{
 		id: 'my-marketing',
@@ -62,8 +61,11 @@ async function fetchAllModels() {
 	}
 
 	const allModels = []
+	let openaiCount = 0
+	let groqCount = 0
+	let openrouterCount = 0
 
-	// 1. OpenAI - все модели без фильтра
+	// 1. OpenAI
 	try {
 		const openaiModels = await openaiClient.models.list()
 		const allOpenaiModels = openaiModels.data.map(m => ({
@@ -73,11 +75,14 @@ async function fetchAllModels() {
 			model: m.id,
 		}))
 		allModels.push(...allOpenaiModels)
+		openaiCount = allOpenaiModels.length
+		console.log(`✅ OpenAI: загружено ${openaiCount} моделей`)
 	} catch (err) {
-		console.error('Ошибка загрузки моделей OpenAI:', err.message)
+		console.error('❌ Ошибка загрузки моделей OpenAI:', err.message)
+		if (err.status === 403) console.error('   Возможно, API ключ OpenAI невалидный или регион заблокирован')
 	}
 
-	// 2. Groq - все модели без фильтра
+	// 2. Groq
 	try {
 		const groqModels = await groqClient.models.list()
 		const allGroqModels = groqModels.data.map(m => ({
@@ -87,11 +92,14 @@ async function fetchAllModels() {
 			model: m.id,
 		}))
 		allModels.push(...allGroqModels)
+		groqCount = allGroqModels.length
+		console.log(`✅ Groq: загружено ${groqCount} моделей`)
 	} catch (err) {
-		console.error('Ошибка загрузки моделей Groq:', err.message)
+		console.error('❌ Ошибка загрузки моделей Groq:', err.message)
+		if (err.status === 403) console.error('   Возможно, API ключ Groq невалидный или истёк')
 	}
 
-	// 3. OpenRouter - все модели без фильтра
+	// 3. OpenRouter
 	try {
 		const orModels = await openrouterClient.models.list()
 		const allOrModels = orModels.data.map(m => ({
@@ -101,21 +109,24 @@ async function fetchAllModels() {
 			model: m.id,
 		}))
 		allModels.push(...allOrModels)
+		openrouterCount = allOrModels.length
+		console.log(`✅ OpenRouter: загружено ${openrouterCount} моделей`)
 	} catch (err) {
-		console.error('Ошибка загрузки моделей OpenRouter:', err.message)
+		console.error('❌ Ошибка загрузки моделей OpenRouter:', err.message)
 	}
 
-	// 4. Cloudflare (статический список)
+	// 4. Cloudflare
 	allModels.push(...CLOUDFLARE_MODELS)
+	console.log(`✅ Cloudflare: ${CLOUDFLARE_MODELS.length} статических моделей`)
 
-	// 5. Локальные модели
+	// 5. Локальные
 	allModels.push(...LOCAL_MODELS)
+	console.log(`✅ Локальные: ${LOCAL_MODELS.length} моделей`)
+
+	console.log(`📊 ИТОГО загружено моделей: ${allModels.length}`)
 
 	modelsCache = allModels
 	cacheTimestamp = now
-	console.log(
-		`✅ Загружено моделей: ${allModels.length} (OpenAI: ${openaiModels?.data?.length || 0}, Groq: ${groqModels?.data?.length || 0}, OpenRouter: ${orModels?.data?.length || 0}, статические: ${CLOUDFLARE_MODELS.length + LOCAL_MODELS.length})`,
-	)
 	return allModels
 }
 
@@ -133,7 +144,6 @@ app.get('/api/models', async (req, res) => {
 app.post('/api/chat', async (req, res) => {
 	const { message, modelId, history = [] } = req.body
 
-	// Получаем актуальный список моделей (из кэша или свежий)
 	const allModels = await fetchAllModels()
 	const selectedModel = allModels.find(m => m.id === modelId)
 	if (!selectedModel) {
@@ -149,10 +159,9 @@ app.post('/api/chat', async (req, res) => {
 			client = openrouterClient
 			break
 		case 'cloudflare':
-			// Cloudflare использует свой клиент с baseURL
 			client = new OpenAI({
 				apiKey: process.env.CF_AIG_TOKEN,
-				baseURL: 'https://gateway.ai.cloudflare.com/v1', // тут нужен полный путь до шлюза
+				baseURL: 'https://gateway.ai.cloudflare.com/v1',
 			})
 			break
 		case 'local':
@@ -194,5 +203,5 @@ app.post('/api/chat', async (req, res) => {
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
 	console.log(`🚀 Бэкенд запущен на http://localhost:${PORT}`)
-	console.log('✅ Динамическая загрузка ВСЕХ моделей от OpenAI, Groq, OpenRouter, Cloudflare, Local')
+	console.log('✅ Динамическая загрузка моделей от OpenAI, Groq, OpenRouter, Cloudflare, Local')
 })
