@@ -1,10 +1,11 @@
 <template>
 	<div class="profile">
 		<template v-if="userStore.user">
-			<img :src="userStore.user.photo_200" alt="avatar" class="avatar" />
+			<img :src="userStore.user.photo_200" alt="avatar" class="profile-avatar" />
 			<h2>{{ userStore.user.firstName }} {{ userStore.user.lastName }}</h2>
 			<p>💰 Баланс: {{ userStore.user.balance }} ₽</p>
 			<p>🎫 Осталось запросов: {{ userStore.user.requestsLeft }}</p>
+			<p v-if="statusMessage" class="profile-status">{{ statusMessage }}</p>
 
 			<div class="profile-actions">
 				<button @click="showRechargeModal = true" class="recharge-btn">Пополнить</button>
@@ -27,13 +28,12 @@ import RechargeModal from './RechargeModal.vue'
 
 const userStore = useUserStore()
 const showRechargeModal = ref(false)
+const statusMessage = ref('')
 
-const handleRecharge = async (amount: number) => {
-	try {
-		await userStore.rechargeBalance(amount)
-		alert(`Баланс успешно пополнен на ${amount} ₽`)
-	} catch {
-		alert('Ошибка пополнения')
-	}
+const handleRecharge = (amount: number) => {
+	statusMessage.value = `Оплата подтверждена. Баланс пополнен на ${amount} ₽`
+	setTimeout(() => {
+		statusMessage.value = ''
+	}, 4000)
 }
 </script>

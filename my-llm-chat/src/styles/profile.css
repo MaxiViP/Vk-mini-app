@@ -20,6 +20,12 @@
 	line-height: 1.5;
 }
 
+.profile-status {
+	color: #8ee59b !important;
+	font-weight: 600;
+	margin-top: 10px;
+}
+
 .profile-avatar {
 	width: 96px;
 	height: 96px;

@@ -27,3 +27,14 @@ export interface ChatHistoryItem {
 	role: 'user' | 'assistant'
 	content: string
 }
+
+export interface YooKassaPaymentSession {
+	paymentId: string
+	amount: number
+	status: 'pending' | 'succeeded'
+	confirmationUrl: string
+	qrCodeDataUrl: string
+	qrPayload: string
+	isStub: boolean
+	provider?: 'yookassa-stub' | 'yookassa'
+}

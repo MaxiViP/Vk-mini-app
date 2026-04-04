@@ -26,7 +26,7 @@ const modelsStore = useModelsStore()
 
 async function sendWithFallback(messageText: string) {
 	// Получаем текущую выбранную модель
-	let currentModel = modelsStore.getCurrentModel()
+	const currentModel = modelsStore.getCurrentModel()
 	if (!currentModel) return
 
 	// Список моделей для перебора: начинаем с текущей, затем все остальные
@@ -34,12 +34,16 @@ async function sendWithFallback(messageText: string) {
 	const startIndex = allModels.findIndex(m => m.id === currentModel?.id)
 	const orderedModels = [...allModels.slice(startIndex), ...allModels.slice(0, startIndex)]
 
+	const baseHistory = chat.messages.map(m => ({ role: m.role, content: m.content }))
+
+	chat.addUserMessage(messageText)
+
 	let lastError: Error | null = null
 
 	for (const model of orderedModels) {
 		try {
 			// Пробуем отправить сообщение через текущую модель
-			await chat.sendMessage(messageText, model)
+			await chat.sendMessage(messageText, model, baseHistory)
 			// Если успешно – выходим, сохраняем эту модель как выбранную (опционально)
 			if (model.id !== currentModel?.id) {
 				modelsStore.selectModel(model.id)

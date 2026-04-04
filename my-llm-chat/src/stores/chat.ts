@@ -37,22 +37,23 @@ export const useChatStore = defineStore('chat', () => {
 		})
 	}
 
+	function addUserMessage(content: string) {
+		messages.value.push({
+			role: 'user',
+			content,
+			timestamp: Date.now(),
+		})
+	}
+
 	// Очистка всей истории
 	function clearHistory() {
 		messages.value = []
 		localStorage.removeItem(STORAGE_KEY)
 	}
 
-	// Отправка сообщения с выбранной моделью. Возвращает Promise, который reject при ошибке.
-	async function sendMessage(text: string, model: Model): Promise<void> {
-		// Добавляем сообщение пользователя
-		messages.value.push({
-			role: 'user',
-			content: text,
-			timestamp: Date.now(),
-		})
-
+	async function sendMessage(text: string, model: Model, history?: ChatHistoryItem[]): Promise<void> {
 		isLoading.value = true
+		let assistantIndex = -1
 
 		try {
 			const response = await fetch('http://localhost:3000/api/chat', {
@@ -61,7 +62,11 @@ export const useChatStore = defineStore('chat', () => {
 				body: JSON.stringify({
 					message: text,
 					modelId: model.id,
-					history: messages.value.slice(0, -1).map((m): ChatHistoryItem => ({ role: m.role, content: m.content })),
+					history:
+						history ??
+						messages.value
+							.filter(m => m.role === 'user' || m.role === 'assistant')
+							.map((m): ChatHistoryItem => ({ role: m.role, content: m.content })),
 				}),
 			})
 
@@ -79,6 +84,8 @@ export const useChatStore = defineStore('chat', () => {
 				content: '',
 				timestamp: Date.now(),
 			})
+
+			assistantIndex = messages.value.length - 1
 
 			if (!reader) throw new Error('Response body is not readable')
 
@@ -101,6 +108,9 @@ export const useChatStore = defineStore('chat', () => {
 			}
 			// Успешное завершение – Promise разрешается
 		} catch (err) {
+			if (assistantIndex >= 0) {
+				messages.value.splice(assistantIndex, 1)
+			}
 			console.error('LLM error:', err)
 			// Пробрасываем ошибку дальше, чтобы вызывающий код мог переключить модель
 			throw err
@@ -109,5 +119,5 @@ export const useChatStore = defineStore('chat', () => {
 		}
 	}
 
-	return { messages, isLoading, sendMessage, addSystemMessage, clearHistory }
+	return { messages, isLoading, sendMessage, addSystemMessage, addUserMessage, clearHistory }
 })
