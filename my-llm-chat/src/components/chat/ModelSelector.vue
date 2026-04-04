@@ -31,9 +31,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useModelsStore } from '../stores/models'
-import type { Model } from '../types'
-import CustomSelect from './CustomSelect.vue'
+import { useModelsStore } from '../../stores/models'
+import type { Model } from '../../types'
+import CustomSelect from '../common/CustomSelect.vue'
 
 const modelsStore = useModelsStore()
 

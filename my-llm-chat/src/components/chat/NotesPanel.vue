@@ -42,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted } from 'vue' // убрали onUnmounted
 
 interface Note {
 	text: string
@@ -55,7 +55,7 @@ const emit = defineEmits<{ (e: 'update:visible', value: boolean): void }>()
 const notes = ref<Note[]>([])
 const newNoteText = ref('')
 
-// Метод для предзаполнения текста извне
+// Метод для предзаполнения текста извне (cSpell:ignore предзаполнения)
 const setNewNoteText = (text: string) => {
 	newNoteText.value = text
 }

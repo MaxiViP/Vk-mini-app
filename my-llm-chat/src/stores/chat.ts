@@ -1,18 +1,46 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import type { Message, Model, ChatHistoryItem } from '../types'
+
+const STORAGE_KEY = 'chat_history'
 
 export const useChatStore = defineStore('chat', () => {
 	const messages = ref<Message[]>([])
 	const isLoading = ref(false)
 
+	// === ЗАГРУЗКА ИСТОРИИ ИЗ LOCALSTORAGE ===
+	const saved = localStorage.getItem(STORAGE_KEY)
+	if (saved) {
+		try {
+			const parsed = JSON.parse(saved)
+			if (Array.isArray(parsed)) messages.value = parsed
+		} catch (e) {
+			console.error('Ошибка загрузки истории чата', e)
+		}
+	}
+
+	// === АВТОСОХРАНЕНИЕ ПРИ ИЗМЕНЕНИИ ===
+	watch(
+		messages,
+		newVal => {
+			localStorage.setItem(STORAGE_KEY, JSON.stringify(newVal))
+		},
+		{ deep: true },
+	)
+
 	// Добавление системного сообщения (для уведомлений о переключении моделей)
 	function addSystemMessage(content: string) {
 		messages.value.push({
-			role: 'assistant', // можно использовать role: 'system', но для единой стилизации оставим assistant
+			role: 'assistant',
 			content,
 			timestamp: Date.now(),
 		})
+	}
+
+	// Очистка всей истории
+	function clearHistory() {
+		messages.value = []
+		localStorage.removeItem(STORAGE_KEY)
 	}
 
 	// Отправка сообщения с выбранной моделью. Возвращает Promise, который reject при ошибке.
@@ -81,5 +109,5 @@ export const useChatStore = defineStore('chat', () => {
 		}
 	}
 
-	return { messages, isLoading, sendMessage, addSystemMessage }
+	return { messages, isLoading, sendMessage, addSystemMessage, clearHistory }
 })

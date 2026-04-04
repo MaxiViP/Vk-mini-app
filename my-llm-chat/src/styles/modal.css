@@ -1,0 +1,153 @@
+.modal-overlay {
+	position: fixed;
+	inset: 0;
+	background-color: var(--overlay-dark);
+	backdrop-filter: blur(4px);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 1000;
+}
+
+.modal-container {
+	position: relative;
+	width: 90%;
+	max-width: 400px;
+	border-radius: var(--radius-2xl);
+}
+
+.modal-close {
+	position: absolute;
+	top: 12px;
+	right: 16px;
+	width: 32px;
+	height: 32px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--overlay-light-2);
+	border: none;
+	border-radius: 50%;
+	font-size: 20px;
+	font-weight: bold;
+	color: white;
+	cursor: pointer;
+	z-index: 10;
+}
+
+.modal-close:hover {
+	background: var(--overlay-light-4);
+}
+
+.modal-enter-active,
+.modal-leave-active {
+	transition: opacity var(--transition-base);
+}
+
+.modal-enter-from,
+.modal-leave-to {
+	opacity: 0;
+}
+
+.modal-enter-active .modal-container,
+.modal-leave-active .modal-container {
+	transition: transform var(--transition-base);
+}
+
+.modal-enter-from .modal-container,
+.modal-leave-to .modal-container {
+	transform: scale(0.95);
+}
+
+.modal-container--recharge {
+	background: var(--color-surface);
+	padding: 24px;
+}
+
+.modal-content {
+	text-align: center;
+}
+
+.modal-content h3 {
+	margin-top: 0;
+	margin-bottom: 12px;
+	color: var(--color-text);
+	font-size: 22px;
+}
+
+.modal-content p {
+	color: var(--color-text-dim);
+	margin-bottom: 16px;
+}
+
+.amount-input {
+	width: 100%;
+	padding: 12px;
+	background: var(--color-surface-3);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius-md);
+	color: white;
+	font-size: 16px;
+	margin-bottom: 20px;
+	outline: none;
+}
+
+.amount-input:focus {
+	border-color: var(--color-primary);
+}
+
+.modal-buttons {
+	display: flex;
+	gap: 12px;
+	justify-content: center;
+	flex-wrap: wrap;
+}
+
+.submit-btn,
+.cancel-btn {
+	padding: 10px 20px;
+	border: none;
+	border-radius: var(--radius-round);
+	font-weight: bold;
+	cursor: pointer;
+	transition:
+		background var(--transition-base),
+		opacity var(--transition-base),
+		transform var(--transition-fast);
+}
+
+.submit-btn:hover,
+.cancel-btn:hover {
+	transform: translateY(-1px);
+}
+
+.submit-btn {
+	background: var(--color-primary);
+	color: white;
+}
+
+.submit-btn:hover {
+	background: var(--color-primary-hover);
+}
+
+.submit-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+	transform: none;
+}
+
+.cancel-btn {
+	background: var(--color-border);
+	color: var(--color-text);
+}
+
+.cancel-btn:hover {
+	background: #555;
+}
+
+.error-message {
+	color: var(--color-danger) !important;
+	margin-top: 16px;
+	font-size: 14px;
+	margin-bottom: 0;
+}

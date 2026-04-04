@@ -16,8 +16,8 @@
 </template>
 
 <script setup lang="ts">
-import { useChatStore } from '../stores/chat'
-import { useModelsStore } from '../stores/models'
+import { useChatStore } from '../../stores/chat'
+import { useModelsStore } from '../../stores/models'
 import Message from './Message.vue'
 import ChatInput from './ChatInput.vue'
 
