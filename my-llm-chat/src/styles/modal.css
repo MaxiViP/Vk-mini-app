@@ -12,13 +12,12 @@
 .modal-container {
 	position: relative;
 	width: 90%;
-	max-width: 400px;
 	border-radius: var(--radius-2xl);
 }
 
 .modal-close {
 	position: absolute;
-	top: 12px;
+	top: 24px;
 	right: 16px;
 	width: 32px;
 	height: 32px;
@@ -151,7 +150,7 @@
 	font-size: 14px;
 	margin-bottom: 0;
 }
-
+ 
 .stub-note {
 	font-size: 13px;
 	color: var(--color-text-muted);

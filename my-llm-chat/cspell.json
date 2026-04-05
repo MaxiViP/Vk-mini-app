@@ -1,7 +1,7 @@
 {
 	"version": "0.2",
 	"language": "en,ru",
-	"words": ["groq", "openrouter", "захардкодим", "ЭНДПОИНТЫ", "Бэкенд", "GROQ", "OPENROUTER"],
+	"words": ["groq", "openrouter", "захардкодим", "ЭНДПОИНТЫ", "Бэкенд", "GROQ", "OPENROUTER", "yookassa", ""],
 	"flagWords": [],
 	"ignorePaths": ["node_modules", "dist", "build"]
 }

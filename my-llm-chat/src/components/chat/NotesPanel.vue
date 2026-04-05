@@ -9,25 +9,68 @@
 					</div>
 
 					<div class="notes-content">
-						<!-- Форма добавления новой заметки -->
-						<div class="add-note">
-							<textarea v-model="newNoteText" placeholder="Вставьте текст заметки..." rows="3"></textarea>
-							<button @click="addNote" :disabled="!newNoteText.trim()">➕ Добавить</button>
+						<div class="folder-controls">
+							<div class="add-folder">
+								<input v-model="newFolderName" type="text" placeholder="Новая папка..." @keyup.enter="addFolder" />
+								<button @click="addFolder" :disabled="!newFolderName.trim()">📁 Создать</button>
+							</div>
+							<div class="folder-list">
+								<button
+									class="folder-chip"
+									:class="{ active: activeFolderId === ALL_FOLDER_ID }"
+									@click="activeFolderId = ALL_FOLDER_ID"
+								>
+									Все ({{ notes.length }})
+								</button>
+								<button
+									v-for="folder in folders"
+									:key="folder.id"
+									class="folder-chip"
+									:class="{ active: activeFolderId === folder.id }"
+									@click="activeFolderId = folder.id"
+								>
+									<span>{{ folder.name }} ({{ notesCountByFolder(folder.id) }})</span>
+									<span
+										v-if="folder.id !== INBOX_FOLDER_ID"
+										class="delete-folder"
+										@click.stop="deleteFolder(folder.id)"
+										title="Удалить папку"
+									>
+										✕
+									</span>
+								</button>
+							</div>
 						</div>
 
-						<!-- Список заметок -->
-						<div class="notes-list" v-if="notes.length > 0">
-							<div v-for="(note, idx) in notes" :key="idx" class="note-item">
+						<div class="add-note">
+							<textarea v-model="newNoteText" placeholder="Вставьте текст заметки..." rows="3"></textarea>
+							<div class="add-note-actions">
+								<select v-model="selectedFolderId" class="folder-select">
+									<option v-for="folder in folders" :key="folder.id" :value="folder.id">
+										{{ folder.name }}
+									</option>
+								</select>
+								<button @click="addNote" :disabled="!newNoteText.trim()">➕ Добавить</button>
+							</div>
+						</div>
+
+						<div class="notes-list" v-if="displayedNotes.length > 0">
+							<div v-for="note in displayedNotes" :key="`${note.date}-${note.index}`" class="note-item">
 								<p>{{ note.text }}</p>
 								<div class="note-actions">
 									<span class="date">{{ formatDate(note.date) }}</span>
+									<select :value="note.folderId" @change="moveNoteToFolder(note.index, ($event.target as HTMLSelectElement).value)">
+										<option v-for="folder in folders" :key="folder.id" :value="folder.id">
+											{{ folder.name }}
+										</option>
+									</select>
 									<button @click="copyNote(note.text)" title="Копировать">📋</button>
-									<button @click="deleteNote(idx)" title="Удалить">🗑️</button>
+									<button @click="deleteNote(note.index)" title="Удалить">🗑️</button>
 								</div>
 							</div>
 						</div>
 						<div v-else class="empty-notes">
-							<p>📭 Нет заметок. Добавьте первую!</p>
+							<p>📭 В этой папке пока нет заметок.</p>
 						</div>
 					</div>
 
@@ -42,52 +85,141 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue' // убрали onUnmounted
+import { computed, onMounted, ref, watch } from 'vue'
+
+const INBOX_FOLDER_ID = 'inbox'
+const ALL_FOLDER_ID = 'all'
+
+interface Folder {
+	id: string
+	name: string
+}
 
 interface Note {
 	text: string
 	date: number
+	folderId: string
 }
 
-const props = defineProps<{ visible: boolean }>()
+interface NotesPayload {
+	notes: Note[]
+	folders: Folder[]
+}
+
+defineProps<{ visible: boolean }>()
 const emit = defineEmits<{ (e: 'update:visible', value: boolean): void }>()
 
+const defaultFolders: Folder[] = [{ id: INBOX_FOLDER_ID, name: 'Входящие' }]
 const notes = ref<Note[]>([])
+const folders = ref<Folder[]>([...defaultFolders])
 const newNoteText = ref('')
+const newFolderName = ref('')
+const selectedFolderId = ref(INBOX_FOLDER_ID)
+const activeFolderId = ref<string>(ALL_FOLDER_ID)
 
-// Метод для предзаполнения текста извне (cSpell:ignore предзаполнения)
 const setNewNoteText = (text: string) => {
 	newNoteText.value = text
 }
 
-// Загрузка заметок
 onMounted(() => {
-	const saved = localStorage.getItem('user_notes')
-	if (saved) {
+	const savedPayload = localStorage.getItem('user_notes_v2')
+	if (savedPayload) {
 		try {
-			notes.value = JSON.parse(saved)
-		} catch (e) {}
+			const parsed = JSON.parse(savedPayload) as NotesPayload
+			notes.value = Array.isArray(parsed.notes)
+				? parsed.notes.map(note => ({ ...note, folderId: note.folderId || INBOX_FOLDER_ID }))
+				: []
+			folders.value = mergeFoldersWithDefault(parsed.folders)
+			return
+		} catch (e) {
+			console.error('Ошибка чтения заметок v2', e)
+		}
+	}
+
+	const oldNotes = localStorage.getItem('user_notes')
+	if (oldNotes) {
+		try {
+			const parsed = JSON.parse(oldNotes) as Array<Omit<Note, 'folderId'>>
+			notes.value = Array.isArray(parsed)
+				? parsed.map(note => ({
+					...note,
+					folderId: INBOX_FOLDER_ID,
+				}))
+				: []
+		} catch (e) {
+			console.error('Ошибка чтения заметок', e)
+		}
 	}
 })
 
-// Сохранение при изменении
 watch(
-	notes,
-	newVal => {
-		localStorage.setItem('user_notes', JSON.stringify(newVal))
+	[notes, folders],
+	([newNotes, newFolders]) => {
+		localStorage.setItem(
+			'user_notes_v2',
+			JSON.stringify({
+				notes: newNotes,
+				folders: newFolders,
+			}),
+		)
 	},
 	{ deep: true },
 )
 
+const displayedNotes = computed(() => {
+	if (activeFolderId.value === ALL_FOLDER_ID) {
+		return notes.value.map((note, index) => ({ ...note, index }))
+	}
+
+	return notes.value
+		.map((note, index) => ({ ...note, index }))
+		.filter(note => note.folderId === activeFolderId.value)
+})
+
 const close = () => emit('update:visible', false)
+
+const addFolder = () => {
+	const name = newFolderName.value.trim()
+	if (!name) return
+
+	if (folders.value.some(folder => folder.name.toLowerCase() === name.toLowerCase())) {
+		alert('Папка с таким именем уже существует')
+		return
+	}
+
+	const id = `folder_${Date.now()}`
+	folders.value.push({ id, name })
+	newFolderName.value = ''
+	selectedFolderId.value = id
+	activeFolderId.value = id
+}
+
+const deleteFolder = (folderId: string) => {
+	if (folderId === INBOX_FOLDER_ID) return
+	const folder = folders.value.find(item => item.id === folderId)
+	if (!folder) return
+	if (!confirm(`Удалить папку "${folder.name}"? Все заметки из неё будут перенесены во "Входящие".`)) return
+
+	notes.value = notes.value.map(note => (note.folderId === folderId ? { ...note, folderId: INBOX_FOLDER_ID } : note))
+	folders.value = folders.value.filter(item => item.id !== folderId)
+	if (selectedFolderId.value === folderId) selectedFolderId.value = INBOX_FOLDER_ID
+	if (activeFolderId.value === folderId) activeFolderId.value = INBOX_FOLDER_ID
+}
 
 const addNote = () => {
 	if (!newNoteText.value.trim()) return
 	notes.value.unshift({
 		text: newNoteText.value.trim(),
 		date: Date.now(),
+		folderId: selectedFolderId.value,
 	})
 	newNoteText.value = ''
+}
+
+const moveNoteToFolder = (index: number, folderId: string) => {
+	if (!notes.value[index]) return
+	if (!folders.value.some(folder => folder.id === folderId)) return
+	notes.value[index].folderId = folderId
 }
 
 const deleteNote = (index: number) => notes.value.splice(index, 1)
@@ -103,7 +235,19 @@ const copyNote = async (text: string) => {
 
 const exportToTxt = () => {
 	if (notes.value.length === 0) return alert('Нет заметок для экспорта')
-	const content = notes.value.map(note => `[${formatDate(note.date)}]\n${note.text}\n${'-'.repeat(40)}\n`).join('\n')
+
+	const content = folders.value
+		.map(folder => {
+			const folderNotes = notes.value.filter(note => note.folderId === folder.id)
+			if (!folderNotes.length) return ''
+			const notesContent = folderNotes
+				.map(note => `[${formatDate(note.date)}]\n${note.text}\n${'-'.repeat(40)}\n`)
+				.join('\n')
+			return `### ${folder.name} ###\n\n${notesContent}`
+		})
+		.filter(Boolean)
+		.join('\n\n')
+
 	const blob = new Blob([content], { type: 'text/plain' })
 	const url = URL.createObjectURL(blob)
 	const a = document.createElement('a')
@@ -119,10 +263,18 @@ const clearAllNotes = () => {
 
 const formatDate = (timestamp: number) => new Date(timestamp).toLocaleString()
 
+const notesCountByFolder = (folderId: string) => notes.value.filter(note => note.folderId === folderId).length
+
+const mergeFoldersWithDefault = (savedFolders?: Folder[]) => {
+	if (!Array.isArray(savedFolders) || savedFolders.length === 0) return [...defaultFolders]
+	if (savedFolders.some(folder => folder.id === INBOX_FOLDER_ID)) return savedFolders
+	return [...defaultFolders, ...savedFolders]
+}
+
 defineExpose({ setNewNoteText })
 </script>
+
 <style scoped>
-/* Затемнение фона */
 .notes-overlay {
 	position: fixed;
 	top: 0;
@@ -135,7 +287,6 @@ defineExpose({ setNewNoteText })
 	justify-content: flex-end;
 }
 
-/* Панель, выезжающая справа */
 .notes-panel {
 	width: 380px;
 	max-width: 90vw;
@@ -157,13 +308,14 @@ defineExpose({ setNewNoteText })
 	}
 }
 
-/* Анимация для Transition */
 .slide-enter-active .notes-panel {
 	animation: slideIn 0.2s ease-out;
 }
+
 .slide-leave-active .notes-panel {
 	animation: slideOut 0.2s ease-in;
 }
+
 @keyframes slideOut {
 	from {
 		transform: translateX(0);
@@ -202,6 +354,70 @@ defineExpose({ setNewNoteText })
 	gap: 20px;
 }
 
+.folder-controls {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.add-folder {
+	display: flex;
+	gap: 10px;
+}
+
+.add-folder input,
+.folder-select,
+.note-actions select {
+	background: #1e1e1e;
+	border: 1px solid #444;
+	border-radius: 12px;
+	padding: 8px;
+	color: white;
+	font-family: inherit;
+}
+
+.add-folder input,
+.folder-select {
+	flex: 1;
+}
+
+.add-folder button {
+	background: #2563eb;
+	border: none;
+	padding: 8px 12px;
+	border-radius: 20px;
+	color: white;
+	cursor: pointer;
+}
+
+.folder-list {
+	display: flex;
+	gap: 8px;
+	flex-wrap: wrap;
+}
+
+.folder-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	border: 1px solid #444;
+	background: #1e1e1e;
+	color: #ececec;
+	border-radius: 20px;
+	padding: 6px 10px;
+	cursor: pointer;
+}
+
+.folder-chip.active {
+	background: #10a37f;
+	border-color: #10a37f;
+}
+
+.delete-folder {
+	font-size: 12px;
+	opacity: 0.8;
+}
+
 .add-note {
 	display: flex;
 	flex-direction: column;
@@ -218,6 +434,11 @@ defineExpose({ setNewNoteText })
 	resize: vertical;
 }
 
+.add-note-actions {
+	display: flex;
+	gap: 10px;
+}
+
 .add-note button {
 	background: #10a37f;
 	border: none;
@@ -225,9 +446,11 @@ defineExpose({ setNewNoteText })
 	border-radius: 20px;
 	color: white;
 	cursor: pointer;
+	flex: 1;
 }
 
-.add-note button:disabled {
+.add-note button:disabled,
+.add-folder button:disabled {
 	opacity: 0.5;
 	cursor: not-allowed;
 }
@@ -257,6 +480,8 @@ defineExpose({ setNewNoteText })
 	align-items: center;
 	font-size: 12px;
 	color: #aaa;
+	gap: 8px;
+	flex-wrap: wrap;
 }
 
 .note-actions button {
@@ -264,7 +489,7 @@ defineExpose({ setNewNoteText })
 	border: none;
 	cursor: pointer;
 	font-size: 14px;
-	margin-left: 8px;
+	margin-left: 4px;
 }
 
 .empty-notes {
