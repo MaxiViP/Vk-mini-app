@@ -1,14 +1,8 @@
 <template>
 	<div class="input">
-		<button class="scroll-top-btn" @click="scrollToTop" type="button" aria-label="Наверх">↑</button>
-
+		<ScrollBtn type="top" />
 		<div class="input-inner">
-			<input
-				v-model="text"
-				@keydown.enter.prevent="submit"
-				placeholder="Напишите сообщение..."
-				:disabled="disabled"
-			/>
+			<input v-model="text" @keydown.enter.prevent="submit" placeholder="Напишите сообщение..." :disabled="disabled" />
 			<button class="send-btn" @click="submit" :disabled="disabled || !text.trim()" type="button">➤</button>
 		</div>
 	</div>
@@ -16,6 +10,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import ScrollBtn from '../common/ScrollBtn.vue'
 
 const props = defineProps<{
 	disabled?: boolean
@@ -32,50 +27,12 @@ const submit = () => {
 	emit('send', text.value)
 	text.value = ''
 }
-
-const scrollToTop = () => {
-	window.scrollTo({
-		top: 0,
-		behavior: 'smooth',
-	})
-}
 </script>
 
 <style scoped>
 .input {
 	position: relative;
 	padding-top: 22px;
-}
-
-.scroll-top-btn {
-	position: absolute;
-	top: 0;
-	left: 50%;
-	transform: translate(-50%, -50%);
-	width: 40px;
-	height: 40px;
-	border: 1px solid var(--color-border-soft);
-	border-radius: 50%;
-	background: var(--color-surface);
-	color: var(--color-text);
-	font-size: 18px;
-	font-weight: 700;
-	cursor: pointer;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
-	transition:
-		transform var(--transition-fast),
-		background var(--transition-base),
-		border-color var(--transition-base);
-	z-index: 2;
-}
-
-.scroll-top-btn:hover {
-	transform: translate(-50%, -50%) translateY(-2px);
-	background: var(--overlay-light);
-	border-color: var(--color-primary);
 }
 
 .input-inner {

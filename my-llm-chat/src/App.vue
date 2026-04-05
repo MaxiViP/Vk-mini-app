@@ -23,11 +23,13 @@
 		</Transition>
 	</Teleport>
 
+	<AuthModal :visible="showAuthModal" @authenticated="showAuthModal = false" />
 	<NotesPanel v-model:visible="showNotes" ref="notesPanelRef" />
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
+
 import { initVK } from './vk/bridge'
 import { useModelsStore } from './stores/models'
 import { useUserStore } from './stores/user'
@@ -37,6 +39,7 @@ import Chat from './components/chat/Chat.vue'
 import Profile from './components/profile/Profile.vue'
 import NotesPanel from './components/chat/NotesPanel.vue'
 import AILogo from './components/common/AILogo.vue'
+import AuthModal from './components/auth/AuthModal.vue'
 
 type NotesPanelExposed = {
 	setNewNoteText: (text: string) => void
@@ -44,6 +47,7 @@ type NotesPanelExposed = {
 
 const showProfile = ref(false)
 const showNotes = ref(false)
+const showAuthModal = ref(false)
 const notesPanelRef = ref<NotesPanelExposed | null>(null)
 
 const modelsStore = useModelsStore()
@@ -58,6 +62,10 @@ const handleSaveToNotes = (event: Event) => {
 const handleEscape = (e: KeyboardEvent) => {
 	if (e.key !== 'Escape') return
 
+	if (showAuthModal.value) {
+		return
+	}
+
 	if (showProfile.value) {
 		showProfile.value = false
 		return
@@ -68,12 +76,27 @@ const handleEscape = (e: KeyboardEvent) => {
 	}
 }
 
+watch(
+	() => userStore.isAuthenticated,
+	isAuthenticated => {
+		showAuthModal.value = !isAuthenticated
+	},
+	{ immediate: true },
+)
+
 onMounted(async () => {
 	document.addEventListener('keydown', handleEscape)
 	window.addEventListener('save-to-notes', handleSaveToNotes as EventListener)
 
+	userStore.hydrateAuth()
 	await modelsStore.fetchModels()
-	await userStore.initVKUser()
+
+	if (!userStore.isAuthenticated) {
+		showAuthModal.value = true
+	} else {
+		await userStore.initVKUser()
+	}
+
 	initVK()
 })
 

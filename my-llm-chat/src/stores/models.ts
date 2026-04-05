@@ -3,8 +3,10 @@ import { ref } from 'vue'
 import axios from 'axios'
 import type { Model } from '../types'
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
+
 export const useModelsStore = defineStore('models', () => {
-	const models = ref<Model[]>([]) // 👈 явный тип
+	const models = ref<Model[]>([])
 	const selectedModel = ref<string | null>(null)
 	const isLoading = ref(false)
 	const error = ref<string | null>(null)
@@ -12,8 +14,9 @@ export const useModelsStore = defineStore('models', () => {
 	async function fetchModels() {
 		isLoading.value = true
 		error.value = null
+
 		try {
-			const response = await axios.get<Model[]>('http://localhost:3000/api/models')
+			const response = await axios.get<Model[]>(`${API_BASE_URL}/api/llm/models`)
 			models.value = response.data
 
 			const savedModelId = localStorage.getItem('selectedModelId')
@@ -29,7 +32,6 @@ export const useModelsStore = defineStore('models', () => {
 		} catch (err) {
 			console.error(err)
 			error.value = 'Не удалось загрузить модели'
-			// fallback с правильным типом
 			models.value = [
 				{ id: 'openrouter-gpt4o', name: 'GPT-4o (OpenRouter)', provider: 'openrouter', model: 'openai/gpt-4o' },
 				{ id: 'groq-llama', name: 'Llama 3.3 70B (Groq)', provider: 'groq', model: 'llama-3.3-70b-versatile' },

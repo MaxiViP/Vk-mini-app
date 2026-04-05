@@ -10,6 +10,7 @@
 	},
 	"dependencies": {
 		"@vkontakte/vk-bridge": "^2.14.0",
+		"@vkontakte/vk-mini-apps-router": "^1.8.4",
 		"axios": "^1.14.0",
 		"highlight.js": "^11.11.1",
 		"marked": "^17.0.5",

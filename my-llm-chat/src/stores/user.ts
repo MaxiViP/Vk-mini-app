@@ -1,67 +1,205 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import bridge from '@vkontakte/vk-bridge'
+
 import type { User, YooKassaPaymentSession } from '../types'
-import axios from 'axios'
 import { confirmYooKassaPaymentRequest, createYooKassaPaymentRequest } from '../api/payments'
+import { authApi, type OAuthProvider } from '../services/auth'
+
+const TOKEN_STORAGE_KEY = 'token'
+const REFRESH_TOKEN_STORAGE_KEY = 'refresh_token'
+const USER_STORAGE_KEY = 'user_profile'
+
+const mapApiUserToUiUser = (apiUser: {
+	id: string
+	firstName: string | null
+	lastName: string | null
+	avatarUrl: string | null
+	phoneE164: string | null
+}) => ({
+	vkId: apiUser.id,
+	firstName: apiUser.firstName || 'User',
+	lastName: apiUser.lastName || '',
+	photo_200: apiUser.avatarUrl || undefined,
+	balance: 0,
+	requestsLeft: 0,
+	phoneE164: apiUser.phoneE164 || undefined,
+})
+
+const safeParseUser = (raw: string | null): User | null => {
+	if (!raw) return null
+	try {
+		return JSON.parse(raw) as User
+	} catch {
+		return null
+	}
+}
 
 export const useUserStore = defineStore('user', () => {
-	const user = ref<User | null>(null)
-	const token = ref<string | null>(null)
-	const isTestMode = ref(true) // переключи в false, когда нужен реальный VK
+	const user = ref<User | null>(safeParseUser(localStorage.getItem(USER_STORAGE_KEY)))
+	const token = ref<string | null>(localStorage.getItem(TOKEN_STORAGE_KEY))
+	const refreshToken = ref<string | null>(localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY))
+	const isTestMode = ref(true)
+	const pendingPhone = ref<string | null>(null)
+	const authPending = ref(false)
+	const phoneChallenge = ref<{ challengeId: string; expiresInSec: number; testCode: string | null } | null>(null)
+
+	const isAuthenticated = computed(() => Boolean(token.value && user.value))
+
+	const persistAuthState = () => {
+		if (token.value) localStorage.setItem(TOKEN_STORAGE_KEY, token.value)
+		if (refreshToken.value) localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken.value)
+		if (user.value) localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user.value))
+	}
+
+	const clearAuthState = () => {
+		localStorage.removeItem(TOKEN_STORAGE_KEY)
+		localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY)
+		localStorage.removeItem(USER_STORAGE_KEY)
+	}
+
+	const applyAuthResult = (result: {
+		accessToken: string
+		refreshToken: string
+		user: {
+			id: string
+			firstName: string | null
+			lastName: string | null
+			avatarUrl: string | null
+			phoneE164: string | null
+		}
+	}) => {
+		token.value = result.accessToken
+		refreshToken.value = result.refreshToken
+		user.value = mapApiUserToUiUser(result.user)
+		persistAuthState()
+	}
+
+	function hydrateAuth() {
+		token.value = localStorage.getItem(TOKEN_STORAGE_KEY)
+		refreshToken.value = localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)
+		user.value = safeParseUser(localStorage.getItem(USER_STORAGE_KEY))
+	}
+
+	async function loginByProvider(provider: OAuthProvider, options?: { redirectUri?: string }) {
+		authPending.value = true
+		try {
+			const redirectUri = options?.redirectUri || `${window.location.origin}/oauth/${provider}/callback`
+			const start = await authApi.startOAuth(provider, redirectUri)
+
+			if (provider === 'vk' && isTestMode.value) {
+				const finalize = await authApi.finalizeOAuth({
+					provider,
+					code: 'dev-oauth-code',
+					state: start.state,
+				})
+				applyAuthResult(finalize)
+				return finalize
+			}
+
+			window.location.href = start.authUrl
+			return start
+		} finally {
+			authPending.value = false
+		}
+	}
 
 	async function initVKUser() {
+		if (token.value && user.value) return
+
 		if (isTestMode.value) {
-			// Тестовый пользователь
-			user.value = {
-				vkId: 'test123',
-				firstName: 'Тестовый',
-				lastName: 'Пользователь',
-				photo_200: 'https://via.placeholder.com/200?text=Avatar',
-				balance: 500,
-				requestsLeft: 100,
-			}
-			token.value = 'fake-jwt-token'
-			console.log('✅ Тестовый пользователь загружен')
+			await loginByProvider('vk')
 			return
 		}
 
 		try {
+			authPending.value = true
 			const vkUser = await bridge.send('VKWebAppGetUserInfo')
-			const response = await axios.post('http://localhost:3000/auth/vk', {
-				vkId: vkUser.id,
-				firstName: vkUser.first_name,
-				lastName: vkUser.last_name,
-				avatar: vkUser.photo_200,
+			const finalize = await authApi.finalizeOAuth({
+				provider: 'vk',
+				code: String(vkUser.id),
+				state: 'vk-bridge',
 			})
-			token.value = response.data.token
-			user.value = response.data.user
+			applyAuthResult(finalize)
 		} catch (err) {
 			console.error('VK init error', err)
+		} finally {
+			authPending.value = false
 		}
+	}
+
+	async function sendPhoneCode(phone: string) {
+		authPending.value = true
+		try {
+			pendingPhone.value = phone
+			const response = await authApi.requestPhoneCode(phone)
+			phoneChallenge.value = {
+				challengeId: response.challengeId,
+				expiresInSec: response.expiresInSec,
+				testCode: response.debugCode || null,
+			}
+			return response
+		} finally {
+			authPending.value = false
+		}
+	}
+
+	async function loginByPhone(code: string) {
+		if (!phoneChallenge.value?.challengeId) {
+			throw new Error('Сначала отправьте код на телефон')
+		}
+
+		authPending.value = true
+		try {
+			const result = await authApi.verifyPhoneCode({
+				challengeId: phoneChallenge.value.challengeId,
+				code,
+			})
+			applyAuthResult(result)
+			phoneChallenge.value = null
+			return result
+		} finally {
+			authPending.value = false
+		}
+	}
+
+	async function loginAsDevAdmin() {
+		authPending.value = true
+		try {
+			token.value = 'dev-admin-token'
+			refreshToken.value = 'dev-admin-refresh-token'
+			user.value = {
+				vkId: 'dev-admin',
+				firstName: 'Dev',
+				lastName: 'Admin',
+				photo_200: 'https://via.placeholder.com/200?text=Admin',
+				balance: 999999,
+				requestsLeft: 999999,
+				phoneE164: '+70000000000',
+			}
+			persistAuthState()
+		} finally {
+			authPending.value = false
+		}
+	}
+
+	async function refreshAuth() {
+		if (!refreshToken.value) throw new Error('Нет refresh token')
+		const result = await authApi.refresh(refreshToken.value)
+		applyAuthResult(result)
+		return result
 	}
 
 	async function rechargeBalance(amount: number) {
 		if (!token.value) return
 
 		if (isTestMode.value) {
-			// Тестовое пополнение
 			if (user.value) {
 				user.value.balance += amount
 				user.value.requestsLeft += amount * 10
-				console.log(`💰 Тестовый баланс пополнен на ${amount} ₽`)
+				persistAuthState()
 			}
 			return
-		}
-
-		const response = await axios.post(
-			'http://localhost:3000/user/recharge',
-			{ amount },
-			{ headers: { Authorization: `Bearer ${token.value}` } },
-		)
-		if (user.value) {
-			user.value.balance = response.data.balance
-			user.value.requestsLeft = response.data.requestsLeft
 		}
 	}
 
@@ -100,20 +238,42 @@ export const useUserStore = defineStore('user', () => {
 		}
 	}
 
-	function logout() {
-		user.value = null
-		token.value = null
-		localStorage.removeItem('token')
+	async function logout() {
+		try {
+			if (refreshToken.value) {
+				await authApi.logout(refreshToken.value)
+			}
+		} catch (error) {
+			console.warn('logout api failed:', error)
+		} finally {
+			user.value = null
+			token.value = null
+			refreshToken.value = null
+			pendingPhone.value = null
+			phoneChallenge.value = null
+			clearAuthState()
+		}
 	}
 
 	return {
 		user,
 		token,
+		refreshToken,
+		isTestMode,
+		pendingPhone,
+		authPending,
+		phoneChallenge,
+		isAuthenticated,
+		hydrateAuth,
 		initVKUser,
+		loginByProvider,
+		sendPhoneCode,
+		loginByPhone,
+		loginAsDevAdmin,
+		refreshAuth,
 		rechargeBalance,
 		createYooKassaPayment,
 		confirmYooKassaPayment,
 		logout,
-		isTestMode,
 	}
 })

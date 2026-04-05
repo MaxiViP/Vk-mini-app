@@ -1,52 +1,17 @@
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
 
-export const sendMessageStream = async (
+export async function sendChatMessage(
 	message: string,
 	modelId: string,
-	history: any[],
-	onChunk: (text: string) => void,
-	onDone: () => void,
-) => {
-	const res = await fetch('http://localhost:3000/api/chat', {
+	history: { role: 'user' | 'assistant'; content: string }[] = [],
+) {
+	const res = await fetch(`${API_BASE_URL}/api/llm/chat`, {
 		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-		},
+		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({ message, modelId, history }),
 	})
 
-	const reader = res.body!.getReader()
-	const decoder = new TextDecoder()
+	if (!res.ok || !res.body) throw new Error('LLM request failed')
 
-	let buffer = ''
-
-	while (true) {
-		const { done, value } = await reader.read()
-		if (done) break
-
-		buffer += decoder.decode(value)
-
-		const parts = buffer.split('\n\n')
-		buffer = parts.pop() || ''
-
-		for (const part of parts) {
-			if (part.startsWith('data: ')) {
-				const json = part.replace('data: ', '')
-
-				if (json === '[DONE]') {
-					onDone()
-					return
-				}
-
-				const data = JSON.parse(json)
-
-				if (data.content) {
-					onChunk(data.content)
-				}
-
-				if (data.done) {
-					onDone()
-				}
-			}
-		}
-	}
+	return res.body
 }

@@ -3,12 +3,12 @@ import { ref, watch } from 'vue'
 import type { Message, Model, ChatHistoryItem } from '../types'
 
 const STORAGE_KEY = 'chat_history'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
 
 export const useChatStore = defineStore('chat', () => {
 	const messages = ref<Message[]>([])
 	const isLoading = ref(false)
 
-	// === ЗАГРУЗКА ИСТОРИИ ИЗ LOCALSTORAGE ===
 	const saved = localStorage.getItem(STORAGE_KEY)
 	if (saved) {
 		try {
@@ -19,7 +19,6 @@ export const useChatStore = defineStore('chat', () => {
 		}
 	}
 
-	// === АВТОСОХРАНЕНИЕ ПРИ ИЗМЕНЕНИИ ===
 	watch(
 		messages,
 		newVal => {
@@ -28,7 +27,6 @@ export const useChatStore = defineStore('chat', () => {
 		{ deep: true },
 	)
 
-	// Добавление системного сообщения (для уведомлений о переключении моделей)
 	function addSystemMessage(content: string) {
 		messages.value.push({
 			role: 'assistant',
@@ -45,7 +43,6 @@ export const useChatStore = defineStore('chat', () => {
 		})
 	}
 
-	// Очистка всей истории
 	function clearHistory() {
 		messages.value = []
 		localStorage.removeItem(STORAGE_KEY)
@@ -56,7 +53,7 @@ export const useChatStore = defineStore('chat', () => {
 		let assistantIndex = -1
 
 		try {
-			const response = await fetch('http://localhost:3000/api/chat', {
+			const response = await fetch(`${API_BASE_URL}/api/llm/chat`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -78,7 +75,6 @@ export const useChatStore = defineStore('chat', () => {
 			const decoder = new TextDecoder()
 			let assistantMessage = ''
 
-			// Добавляем пустое сообщение ассистента
 			messages.value.push({
 				role: 'assistant',
 				content: '',
@@ -92,27 +88,26 @@ export const useChatStore = defineStore('chat', () => {
 			while (true) {
 				const { done, value } = await reader.read()
 				if (done) break
+
 				const chunk = decoder.decode(value)
 				const lines = chunk.split('\n')
+
 				for (const line of lines) {
-					if (line.startsWith('data: ')) {
-						const data = line.slice(6)
-						if (data === '[DONE]') continue
-						assistantMessage += data
-						const lastMsg = messages.value[messages.value.length - 1]
-						if (lastMsg.role === 'assistant') {
-							lastMsg.content = assistantMessage
-						}
+					if (!line.startsWith('data: ')) continue
+					const data = line.slice(6)
+					if (data === '[DONE]') continue
+					assistantMessage += data
+					const lastMsg = messages.value[messages.value.length - 1]
+					if (lastMsg.role === 'assistant') {
+						lastMsg.content = assistantMessage
 					}
 				}
 			}
-			// Успешное завершение – Promise разрешается
 		} catch (err) {
 			if (assistantIndex >= 0) {
 				messages.value.splice(assistantIndex, 1)
 			}
 			console.error('LLM error:', err)
-			// Пробрасываем ошибку дальше, чтобы вызывающий код мог переключить модель
 			throw err
 		} finally {
 			isLoading.value = false

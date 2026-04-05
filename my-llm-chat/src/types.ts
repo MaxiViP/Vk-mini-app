@@ -21,6 +21,7 @@ export interface User {
 	photo_200?: string
 	balance: number
 	requestsLeft: number
+	phoneE164?: string
 }
 
 export interface ChatHistoryItem {
