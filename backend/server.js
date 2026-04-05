@@ -2,12 +2,14 @@ import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import { OpenAI } from 'openai'
+import { registerPaymentRoutes } from './api/payments.js'
 
 dotenv.config()
 
 const app = express()
 app.use(cors())
 app.use(express.json())
+registerPaymentRoutes(app)
 
 // ====================== ИНИЦИАЛИЗАЦИЯ КЛИЕНТОВ ======================
 const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
