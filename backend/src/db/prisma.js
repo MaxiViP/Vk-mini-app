@@ -2,6 +2,8 @@ import { PrismaClient } from '@prisma/client'
 
 let prisma
 
+
+
 try {
 	prisma = new PrismaClient()
 } catch (error) {
@@ -13,6 +15,7 @@ try {
 				throw new Error(`Prisma client is not initialized. Run \"prisma generate\" first. ${reason}`)
 			},
 		},
+    
 	)
 }
 

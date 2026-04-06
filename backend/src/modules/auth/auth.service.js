@@ -133,6 +133,40 @@ export const authService = {
 			})
 		}
 
+		if (email) {
+			const existingUserByEmail = await prisma.user.findUnique({ where: { email } })
+			if (existingUserByEmail) {
+				await prisma.authIdentity.upsert({
+					where: {
+						provider_providerUserId: {
+							provider,
+							providerUserId,
+						},
+					},
+					update: {
+						userId: existingUserByEmail.id,
+						providerPayload: profile,
+					},
+					create: {
+						userId: existingUserByEmail.id,
+						provider,
+						providerUserId,
+						providerPayload: profile,
+					},
+				})
+
+				return prisma.user.update({
+					where: { id: existingUserByEmail.id },
+					data: {
+						firstName: firstName ?? existingUserByEmail.firstName,
+						lastName: lastName ?? existingUserByEmail.lastName,
+						avatarUrl: avatarUrl ?? existingUserByEmail.avatarUrl,
+						email,
+					},
+				})
+			}
+		}
+
 		return prisma.user.create({
 			data: {
 				email,
@@ -150,7 +184,6 @@ export const authService = {
 			},
 		})
 	},
-
 	async upsertPhoneUser({ phoneE164 }) {
 		const normalizedPhone = normalizePhone(phoneE164)
 		if (!normalizedPhone) throw new AppError('phone is required', 400)

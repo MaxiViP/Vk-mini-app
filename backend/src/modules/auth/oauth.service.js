@@ -24,6 +24,7 @@ const providerConfigs = {
 		profileUrl: 'https://www.googleapis.com/oauth2/v2/userinfo',
 		clientId: process.env.GOOGLE_CLIENT_ID || '',
 		clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+		scope: process.env.GOOGLE_OAUTH_SCOPE || 'openid email profile',
 	},
 	yandex: {
 		authBase: 'https://oauth.yandex.ru/authorize',
@@ -31,6 +32,7 @@ const providerConfigs = {
 		profileUrl: 'https://login.yandex.ru/info',
 		clientId: process.env.YANDEX_CLIENT_ID || '',
 		clientSecret: process.env.YANDEX_CLIENT_SECRET || '',
+		scope: process.env.YANDEX_OAUTH_SCOPE || 'login:email login:info',
 	},
 }
 
