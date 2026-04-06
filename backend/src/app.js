@@ -9,6 +9,7 @@ import billingRoutes from './modules/billing/billing.routes.js'
 import usageRoutes from './modules/usage/usage.routes.js'
 import llmRoutes from './modules/llm/llm.routes.js'
 import adminRoutes from './modules/admin/admin.routes.js'
+import workspaceRoutes from './modules/workspace/workspace.routes.js'
 import { idempotencyMiddleware } from './shared/idempotency.js'
 import { apiRateLimit } from './shared/rate-limit.js'
 import { errorHandler, notFoundHandler } from './shared/errors.js'
@@ -31,6 +32,7 @@ app.use('/api/payments', billingRoutes)
 app.use('/api/usage', usageRoutes)
 app.use('/api/llm', llmRoutes)
 app.use('/api/admin', adminRoutes)
+app.use('/api/workspace', workspaceRoutes)
 
 // Backward compatibility for existing frontend endpoints.
 app.use('/api', llmRoutes)

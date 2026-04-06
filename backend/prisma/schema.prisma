@@ -72,8 +72,21 @@ model User {
   payments       Payment[]
   usageEvents    UsageEvent[]
   auditActions   AuditLog[]      @relation("ActorUserAuditLog")
+  workspace      UserWorkspace?
 
   @@map("users")
+}
+
+model UserWorkspace {
+  userId        String   @id @map("user_id") @db.Uuid
+  chatHistory   Json     @default("[]") @map("chat_history_json")
+  notesPayload  Json     @default("{\"notes\":[],\"folders\":[{\"id\":\"inbox\",\"name\":\"Входящие\"}]}") @map("notes_payload_json")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_workspaces")
 }
 
 model AuthIdentity {

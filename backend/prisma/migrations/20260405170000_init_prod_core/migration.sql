@@ -34,6 +34,17 @@ CREATE TABLE "users" (
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
 
+CREATE TABLE "user_workspaces" (
+    "user_id" UUID NOT NULL,
+    "chat_history_json" JSONB NOT NULL DEFAULT '[]'::jsonb,
+    "notes_payload_json" JSONB NOT NULL DEFAULT '{"notes":[],"folders":[{"id":"inbox","name":"Входящие"}]}'::jsonb,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "user_workspaces_pkey" PRIMARY KEY ("user_id"),
+    CONSTRAINT "user_workspaces_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE
+);
+
 -- CreateTable
 CREATE TABLE "auth_identities" (
     "id" UUID NOT NULL,
