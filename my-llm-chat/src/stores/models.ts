@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import axios from 'axios'
 import type { Model } from '../types'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 export const useModelsStore = defineStore('models', () => {
 	const models = ref<Model[]>([])

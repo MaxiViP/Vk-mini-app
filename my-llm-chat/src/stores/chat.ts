@@ -6,7 +6,7 @@ import { fetchWorkspace, saveChatHistory, type WorkspaceMessage } from '../api/w
 import { useUserStore } from './user'
 
 const STORAGE_KEY_PREFIX = 'chat_history'
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 const toHistoryItem = (message: Message): ChatHistoryItem => ({ role: message.role, content: message.content })
 const toWorkspaceMessage = (message: Message): WorkspaceMessage => ({
