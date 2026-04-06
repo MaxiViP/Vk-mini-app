@@ -1,30 +1,104 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
-import type { Message, Model, ChatHistoryItem } from '../types'
 
-const STORAGE_KEY = 'chat_history'
+import type { Message, Model, ChatHistoryItem } from '../types'
+import { fetchWorkspace, saveChatHistory } from '../api/workspace'
+import { useUserStore } from './user'
+
+const STORAGE_KEY_PREFIX = 'chat_history'
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
 
+const toHistoryItem = (message: Message): ChatHistoryItem => ({ role: message.role, content: message.content })
+
+const getStorageKey = (userId?: string) => `${STORAGE_KEY_PREFIX}:${userId || 'guest'}`
+
 export const useChatStore = defineStore('chat', () => {
+	const userStore = useUserStore()
 	const messages = ref<Message[]>([])
 	const isLoading = ref(false)
+	const isHydrating = ref(false)
+	let saveTimer: number | null = null
 
-	const saved = localStorage.getItem(STORAGE_KEY)
-	if (saved) {
+	const hydrateFromLocalStorage = (userId?: string) => {
+		const saved = localStorage.getItem(getStorageKey(userId))
+		if (!saved) {
+			messages.value = []
+			return
+		}
+
 		try {
 			const parsed = JSON.parse(saved)
-			if (Array.isArray(parsed)) messages.value = parsed
+			if (Array.isArray(parsed)) {
+				messages.value = parsed
+					.filter(
+						item => item && (item.role === 'user' || item.role === 'assistant') && typeof item.content === 'string',
+					)
+					.map(item => ({
+						role: item.role,
+						content: item.content,
+						timestamp: Number(item.timestamp) || Date.now(),
+					}))
+			}
 		} catch (e) {
-			console.error('Ошибка загрузки истории чата', e)
+			console.error('Ошибка загрузки истории чата из localStorage', e)
+			messages.value = []
 		}
 	}
 
+	const syncWithServer = async () => {
+		if (!userStore.token || !userStore.user?.vkId) return
+
+		isHydrating.value = true
+		try {
+			const workspace = await fetchWorkspace(userStore.token)
+			messages.value = workspace.chatHistory
+			localStorage.setItem(getStorageKey(userStore.user.vkId), JSON.stringify(workspace.chatHistory))
+		} catch (error) {
+			console.warn('Не удалось загрузить историю чата из БД, используем localStorage', error)
+			hydrateFromLocalStorage(userStore.user.vkId)
+		} finally {
+			isHydrating.value = false
+		}
+	}
+
+	const schedulePersist = () => {
+		const userId = userStore.user?.vkId
+		localStorage.setItem(getStorageKey(userId), JSON.stringify(messages.value))
+
+		if (!userStore.token || !userId || isHydrating.value) return
+
+		if (saveTimer) window.clearTimeout(saveTimer)
+		saveTimer = window.setTimeout(async () => {
+			try {
+				await saveChatHistory(userStore.token!, messages.value)
+			} catch (error) {
+				console.error('Ошибка сохранения истории чата в БД', error)
+			}
+		}, 500)
+	}
+
+	watch(messages, schedulePersist, { deep: true })
+
 	watch(
-		messages,
-		newVal => {
-			localStorage.setItem(STORAGE_KEY, JSON.stringify(newVal))
+		() => userStore.user?.vkId,
+		async userId => {
+			if (!userId) {
+				hydrateFromLocalStorage(undefined)
+				return
+			}
+			hydrateFromLocalStorage(userId)
+			await syncWithServer()
 		},
-		{ deep: true },
+		{ immediate: true },
+	)
+
+	watch(
+		() => userStore.token,
+		async token => {
+			if (token && userStore.user?.vkId) {
+				await syncWithServer()
+			}
+		},
 	)
 
 	function addSystemMessage(content: string) {
@@ -45,7 +119,7 @@ export const useChatStore = defineStore('chat', () => {
 
 	function clearHistory() {
 		messages.value = []
-		localStorage.removeItem(STORAGE_KEY)
+		localStorage.removeItem(getStorageKey(userStore.user?.vkId))
 	}
 
 	async function sendMessage(text: string, model: Model, history?: ChatHistoryItem[]): Promise<void> {
@@ -59,11 +133,7 @@ export const useChatStore = defineStore('chat', () => {
 				body: JSON.stringify({
 					message: text,
 					modelId: model.id,
-					history:
-						history ??
-						messages.value
-							.filter(m => m.role === 'user' || m.role === 'assistant')
-							.map((m): ChatHistoryItem => ({ role: m.role, content: m.content })),
+					history: history ?? messages.value.map(toHistoryItem),
 				}),
 			})
 
@@ -114,5 +184,5 @@ export const useChatStore = defineStore('chat', () => {
 		}
 	}
 
-	return { messages, isLoading, sendMessage, addSystemMessage, addUserMessage, clearHistory }
+	return { messages, isLoading, sendMessage, addSystemMessage, addUserMessage, clearHistory, syncWithServer }
 })

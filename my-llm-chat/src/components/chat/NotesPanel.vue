@@ -87,8 +87,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 
+import { fetchWorkspace, saveNotesPayload, type NotesPayload } from '../../api/workspace'
+import { useUserStore } from '../../stores/user'
+
 const INBOX_FOLDER_ID = 'inbox'
 const ALL_FOLDER_ID = 'all'
+const STORAGE_KEY_PREFIX = 'user_notes_v2'
 
 interface Folder {
 	id: string
@@ -101,14 +105,10 @@ interface Note {
 	folderId: string
 }
 
-interface NotesPayload {
-	notes: Note[]
-	folders: Folder[]
-}
-
 defineProps<{ visible: boolean }>()
 const emit = defineEmits<{ (e: 'update:visible', value: boolean): void }>()
 
+const userStore = useUserStore()
 const defaultFolders: Folder[] = [{ id: INBOX_FOLDER_ID, name: 'Входящие' }]
 const notes = ref<Note[]>([])
 const folders = ref<Folder[]>([...defaultFolders])
@@ -116,54 +116,98 @@ const newNoteText = ref('')
 const newFolderName = ref('')
 const selectedFolderId = ref(INBOX_FOLDER_ID)
 const activeFolderId = ref<string>(ALL_FOLDER_ID)
+let saveTimer: number | null = null
+let isHydrating = false
+
+const getStorageKey = () => `${STORAGE_KEY_PREFIX}:${userStore.user?.vkId || 'guest'}`
+
+const mergeFoldersWithDefault = (savedFolders?: Folder[]) => {
+	if (!Array.isArray(savedFolders) || savedFolders.length === 0) return [...defaultFolders]
+	if (savedFolders.some(folder => folder.id === INBOX_FOLDER_ID)) return savedFolders
+	return [...defaultFolders, ...savedFolders]
+}
+
+const applyNotesPayload = (payload?: Partial<NotesPayload>) => {
+	notes.value = Array.isArray(payload?.notes)
+		? payload!.notes.map(note => ({
+			text: note.text,
+			date: Number(note.date) || Date.now(),
+			folderId: note.folderId || INBOX_FOLDER_ID,
+		}))
+		: []
+	folders.value = mergeFoldersWithDefault(payload?.folders as Folder[] | undefined)
+}
+
+const loadLocalPayload = () => {
+	const savedPayload = localStorage.getItem(getStorageKey())
+	if (!savedPayload) {
+		applyNotesPayload({ notes: [], folders: defaultFolders })
+		return
+	}
+
+	try {
+		applyNotesPayload(JSON.parse(savedPayload) as NotesPayload)
+	} catch (e) {
+		console.error('Ошибка чтения заметок из localStorage', e)
+		applyNotesPayload({ notes: [], folders: defaultFolders })
+	}
+}
+
+const persistNotes = () => {
+	const payload: NotesPayload = { notes: notes.value, folders: folders.value }
+	localStorage.setItem(getStorageKey(), JSON.stringify(payload))
+
+	if (!userStore.token || !userStore.user?.vkId || isHydrating) return
+	if (saveTimer) window.clearTimeout(saveTimer)
+	saveTimer = window.setTimeout(async () => {
+		try {
+			await saveNotesPayload(userStore.token!, payload)
+		} catch (error) {
+			console.error('Ошибка сохранения заметок в БД', error)
+		}
+	}, 500)
+}
+
+const syncNotesWithServer = async () => {
+	if (!userStore.token || !userStore.user?.vkId) return
+
+	isHydrating = true
+	try {
+		const workspace = await fetchWorkspace(userStore.token)
+		applyNotesPayload(workspace.notesPayload)
+		localStorage.setItem(getStorageKey(), JSON.stringify(workspace.notesPayload))
+	} catch (error) {
+		console.warn('Не удалось загрузить заметки из БД, используем localStorage', error)
+		loadLocalPayload()
+	} finally {
+		isHydrating = false
+	}
+}
 
 const setNewNoteText = (text: string) => {
 	newNoteText.value = text
 }
 
-onMounted(() => {
-	const savedPayload = localStorage.getItem('user_notes_v2')
-	if (savedPayload) {
-		try {
-			const parsed = JSON.parse(savedPayload) as NotesPayload
-			notes.value = Array.isArray(parsed.notes)
-				? parsed.notes.map(note => ({ ...note, folderId: note.folderId || INBOX_FOLDER_ID }))
-				: []
-			folders.value = mergeFoldersWithDefault(parsed.folders)
-			return
-		} catch (e) {
-			console.error('Ошибка чтения заметок v2', e)
-		}
-	}
-
-	const oldNotes = localStorage.getItem('user_notes')
-	if (oldNotes) {
-		try {
-			const parsed = JSON.parse(oldNotes) as Array<Omit<Note, 'folderId'>>
-			notes.value = Array.isArray(parsed)
-				? parsed.map(note => ({
-					...note,
-					folderId: INBOX_FOLDER_ID,
-				}))
-				: []
-		} catch (e) {
-			console.error('Ошибка чтения заметок', e)
-		}
-	}
+onMounted(async () => {
+	loadLocalPayload()
+	await syncNotesWithServer()
 })
 
+watch([notes, folders], persistNotes, { deep: true })
+
 watch(
-	[notes, folders],
-	([newNotes, newFolders]) => {
-		localStorage.setItem(
-			'user_notes_v2',
-			JSON.stringify({
-				notes: newNotes,
-				folders: newFolders,
-			}),
-		)
+	() => userStore.user?.vkId,
+	async () => {
+		loadLocalPayload()
+		await syncNotesWithServer()
 	},
-	{ deep: true },
+)
+
+watch(
+	() => userStore.token,
+	async token => {
+		if (token) await syncNotesWithServer()
+	},
 )
 
 const displayedNotes = computed(() => {
@@ -264,12 +308,6 @@ const clearAllNotes = () => {
 const formatDate = (timestamp: number) => new Date(timestamp).toLocaleString()
 
 const notesCountByFolder = (folderId: string) => notes.value.filter(note => note.folderId === folderId).length
-
-const mergeFoldersWithDefault = (savedFolders?: Folder[]) => {
-	if (!Array.isArray(savedFolders) || savedFolders.length === 0) return [...defaultFolders]
-	if (savedFolders.some(folder => folder.id === INBOX_FOLDER_ID)) return savedFolders
-	return [...defaultFolders, ...savedFolders]
-}
 
 defineExpose({ setNewNoteText })
 </script>

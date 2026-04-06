@@ -109,6 +109,12 @@ onMounted(async () => {
 	document.addEventListener('keydown', handleEscape)
 	window.addEventListener('save-to-notes', handleSaveToNotes as EventListener)
 
+	try {
+		await modelsStore.fetchModels()
+	} catch (error) {
+		console.error('Models fetch error', error)
+	}
+
 	userStore.hydrateAuth()
 	try {
 		await userStore.finalizeOAuthCallbackFromLocation()
