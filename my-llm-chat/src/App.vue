@@ -69,6 +69,43 @@ const notesPanelRef = ref<NotesPanelExposed | null>(null)
 const modelsStore = useModelsStore()
 const userStore = useUserStore()
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
+const ACTIVITY_INTERVAL_SEC = 30
+const sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+let activityTimer: number | null = null
+const isLikelyJwt = (token?: string | null) => Boolean(token && token.split('.').length === 3)
+
+const sendActivityHeartbeat = async () => {
+	if (!userStore.token || !isLikelyJwt(userStore.token) || document.hidden) return
+
+	try {
+		await fetch(`${API_BASE_URL}/api/users/me/activity`, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${userStore.token}`,
+			},
+			body: JSON.stringify({
+				sessionId,
+				activeSeconds: ACTIVITY_INTERVAL_SEC,
+				page: window.location.pathname,
+				requestsCount: 0,
+				notesMutations: 0,
+				chatMessagesSent: 0,
+			}),
+		})
+	} catch (error) {
+		console.warn('Activity heartbeat failed', error)
+	}
+}
+
+const startActivityTracking = () => {
+	if (activityTimer) window.clearInterval(activityTimer)
+	activityTimer = window.setInterval(() => {
+		void sendActivityHeartbeat()
+	}, ACTIVITY_INTERVAL_SEC * 1000)
+}
+
 const handleSaveToNotes = (event: Event) => {
 	const customEvent = event as CustomEvent<{ text: string }>
 	showNotes.value = true
@@ -129,11 +166,14 @@ onMounted(async () => {
 	}
 
 	initVK()
+	startActivityTracking()
+	void sendActivityHeartbeat()
 })
 
 onUnmounted(() => {
 	document.removeEventListener('keydown', handleEscape)
 	window.removeEventListener('save-to-notes', handleSaveToNotes as EventListener)
+	if (activityTimer) window.clearInterval(activityTimer)
 })
 </script>
 <style>
@@ -141,3 +181,4 @@ onUnmounted(() => {
 	display: flex;
 }
 </style>
+ 

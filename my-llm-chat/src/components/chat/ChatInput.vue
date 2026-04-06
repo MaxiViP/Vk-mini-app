@@ -31,7 +31,7 @@ const submit = () => {
 
 <style scoped>
 .input {
-	position: relative;
+ 
 	padding-top: 22px;
 }
 

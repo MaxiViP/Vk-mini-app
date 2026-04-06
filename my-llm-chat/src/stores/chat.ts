@@ -2,15 +2,22 @@ import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 
 import type { Message, Model, ChatHistoryItem } from '../types'
-import { fetchWorkspace, saveChatHistory } from '../api/workspace'
+import { fetchWorkspace, saveChatHistory, type WorkspaceMessage } from '../api/workspace'
 import { useUserStore } from './user'
 
 const STORAGE_KEY_PREFIX = 'chat_history'
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000'
 
 const toHistoryItem = (message: Message): ChatHistoryItem => ({ role: message.role, content: message.content })
+const toWorkspaceMessage = (message: Message): WorkspaceMessage => ({
+	role: message.role,
+	content: message.content,
+	timestamp: Number(message.timestamp) || Date.now(),
+})
 
 const getStorageKey = (userId?: string) => `${STORAGE_KEY_PREFIX}:${userId || 'guest'}`
+
+const isLikelyJwt = (token?: string | null) => Boolean(token && token.split('.').length === 3)
 
 export const useChatStore = defineStore('chat', () => {
 	const userStore = useUserStore()
@@ -20,9 +27,13 @@ export const useChatStore = defineStore('chat', () => {
 	let saveTimer: number | null = null
 
 	const hydrateFromLocalStorage = (userId?: string) => {
-		const saved = localStorage.getItem(getStorageKey(userId))
+		const key = getStorageKey(userId)
+		const saved = localStorage.getItem(key)
+		console.log('[chat] hydrateFromLocalStorage:start', { key, hasSaved: Boolean(saved) })
+
 		if (!saved) {
 			messages.value = []
+			console.log('[chat] hydrateFromLocalStorage:empty')
 			return
 		}
 
@@ -38,23 +49,49 @@ export const useChatStore = defineStore('chat', () => {
 						content: item.content,
 						timestamp: Number(item.timestamp) || Date.now(),
 					}))
+				console.log('[chat] hydrateFromLocalStorage:success', { count: messages.value.length })
 			}
 		} catch (e) {
-			console.error('Ошибка загрузки истории чата из localStorage', e)
+			console.error('[chat] hydrateFromLocalStorage:error', e)
 			messages.value = []
 		}
 	}
 
 	const syncWithServer = async () => {
-		if (!userStore.token || !userStore.user?.vkId) return
+		if (!userStore.token || !isLikelyJwt(userStore.token) || !userStore.user?.vkId) {
+			console.log('[chat] syncWithServer:skipped', {
+				hasToken: Boolean(userStore.token),
+				isLikelyJwt: isLikelyJwt(userStore.token),
+				userId: userStore.user?.vkId || null,
+			})
+			return
+		}
 
+		console.log('[chat] syncWithServer:start', { userId: userStore.user.vkId })
 		isHydrating.value = true
 		try {
+			const localSnapshot = [...messages.value]
 			const workspace = await fetchWorkspace(userStore.token)
-			messages.value = workspace.chatHistory
-			localStorage.setItem(getStorageKey(userStore.user.vkId), JSON.stringify(workspace.chatHistory))
+			const serverMessages = Array.isArray(workspace.chatHistory)
+				? workspace.chatHistory.map(item => ({
+						role: item.role,
+						content: item.content,
+						timestamp: Number(item.timestamp) || Date.now(),
+					}))
+				: []
+
+			if (serverMessages.length === 0 && localSnapshot.length > 0) {
+				console.log('[chat] syncWithServer:server_empty_use_local', { localCount: localSnapshot.length })
+				messages.value = localSnapshot
+				await saveChatHistory(userStore.token, localSnapshot.map(toWorkspaceMessage))
+			} else {
+				messages.value = serverMessages
+			}
+
+			localStorage.setItem(getStorageKey(userStore.user.vkId), JSON.stringify(messages.value))
+			console.log('[chat] syncWithServer:success', { count: messages.value.length })
 		} catch (error) {
-			console.warn('Не удалось загрузить историю чата из БД, используем localStorage', error)
+			console.warn('[chat] syncWithServer:fallback_to_localStorage', error)
 			hydrateFromLocalStorage(userStore.user.vkId)
 		} finally {
 			isHydrating.value = false
@@ -63,16 +100,32 @@ export const useChatStore = defineStore('chat', () => {
 
 	const schedulePersist = () => {
 		const userId = userStore.user?.vkId
-		localStorage.setItem(getStorageKey(userId), JSON.stringify(messages.value))
+		if (isHydrating.value) {
+			console.log('[chat] schedulePersist:skipped_hydrating')
+			return
+		}
+		const key = getStorageKey(userId)
+		localStorage.setItem(key, JSON.stringify(messages.value))
+		console.log('[chat] schedulePersist:local_saved', { key, count: messages.value.length })
 
-		if (!userStore.token || !userId || isHydrating.value) return
+		if (!userStore.token || !isLikelyJwt(userStore.token) || !userId) {
+			console.log('[chat] schedulePersist:server_skipped', {
+				hasToken: Boolean(userStore.token),
+				isLikelyJwt: isLikelyJwt(userStore.token),
+				userId,
+			})
+			return
+		}
 
 		if (saveTimer) window.clearTimeout(saveTimer)
 		saveTimer = window.setTimeout(async () => {
 			try {
-				await saveChatHistory(userStore.token!, messages.value)
+				const payload = messages.value.map(toWorkspaceMessage)
+				console.log('[chat] schedulePersist:server_save:start', { count: payload.length })
+				await saveChatHistory(userStore.token!, payload)
+				console.log('[chat] schedulePersist:server_save:success')
 			} catch (error) {
-				console.error('Ошибка сохранения истории чата в БД', error)
+				console.error('[chat] schedulePersist:server_save:error', error)
 			}
 		}, 500)
 	}
@@ -82,6 +135,7 @@ export const useChatStore = defineStore('chat', () => {
 	watch(
 		() => userStore.user?.vkId,
 		async userId => {
+			console.log('[chat] watch:userId', { userId })
 			if (!userId) {
 				hydrateFromLocalStorage(undefined)
 				return
@@ -95,7 +149,8 @@ export const useChatStore = defineStore('chat', () => {
 	watch(
 		() => userStore.token,
 		async token => {
-			if (token && userStore.user?.vkId) {
+			console.log('[chat] watch:token', { hasToken: Boolean(token) })
+			if (token && isLikelyJwt(token) && userStore.user?.vkId) {
 				await syncWithServer()
 			}
 		},
@@ -120,6 +175,7 @@ export const useChatStore = defineStore('chat', () => {
 	function clearHistory() {
 		messages.value = []
 		localStorage.removeItem(getStorageKey(userStore.user?.vkId))
+		console.log('[chat] clearHistory:done', { userId: userStore.user?.vkId || null })
 	}
 
 	async function sendMessage(text: string, model: Model, history?: ChatHistoryItem[]): Promise<void> {

@@ -59,7 +59,10 @@
 								<p>{{ note.text }}</p>
 								<div class="note-actions">
 									<span class="date">{{ formatDate(note.date) }}</span>
-									<select :value="note.folderId" @change="moveNoteToFolder(note.index, ($event.target as HTMLSelectElement).value)">
+									<select
+										:value="note.folderId"
+										@change="moveNoteToFolder(note.index, ($event.target as HTMLSelectElement).value)"
+									>
 										<option v-for="folder in folders" :key="folder.id" :value="folder.id">
 											{{ folder.name }}
 										</option>
@@ -70,7 +73,7 @@
 							</div>
 						</div>
 						<div v-else class="empty-notes">
-							<p>📭 В этой папке пока нет заметок.</p>
+							<p>📭 В этой папке пока нет замеок.</p>
 						</div>
 					</div>
 
@@ -120,6 +123,7 @@ let saveTimer: number | null = null
 let isHydrating = false
 
 const getStorageKey = () => `${STORAGE_KEY_PREFIX}:${userStore.user?.vkId || 'guest'}`
+const isLikelyJwt = (token?: string | null) => Boolean(token && token.split('.').length === 3)
 
 const mergeFoldersWithDefault = (savedFolders?: Folder[]) => {
 	if (!Array.isArray(savedFolders) || savedFolders.length === 0) return [...defaultFolders]
@@ -130,16 +134,18 @@ const mergeFoldersWithDefault = (savedFolders?: Folder[]) => {
 const applyNotesPayload = (payload?: Partial<NotesPayload>) => {
 	notes.value = Array.isArray(payload?.notes)
 		? payload!.notes.map(note => ({
-			text: note.text,
-			date: Number(note.date) || Date.now(),
-			folderId: note.folderId || INBOX_FOLDER_ID,
-		}))
+				text: note.text,
+				date: Number(note.date) || Date.now(),
+				folderId: note.folderId || INBOX_FOLDER_ID,
+			}))
 		: []
 	folders.value = mergeFoldersWithDefault(payload?.folders as Folder[] | undefined)
 }
 
 const loadLocalPayload = () => {
-	const savedPayload = localStorage.getItem(getStorageKey())
+	const key = getStorageKey()
+	const savedPayload = localStorage.getItem(key)
+	console.log('[notes] loadLocalPayload:start', { key, hasSaved: Boolean(savedPayload) })
 	if (!savedPayload) {
 		applyNotesPayload({ notes: [], folders: defaultFolders })
 		return
@@ -147,37 +153,73 @@ const loadLocalPayload = () => {
 
 	try {
 		applyNotesPayload(JSON.parse(savedPayload) as NotesPayload)
+		console.log('[notes] loadLocalPayload:success', { notes: notes.value.length, folders: folders.value.length })
 	} catch (e) {
-		console.error('Ошибка чтения заметок из localStorage', e)
+		console.error('[notes] loadLocalPayload:error', e)
 		applyNotesPayload({ notes: [], folders: defaultFolders })
 	}
 }
 
 const persistNotes = () => {
-	const payload: NotesPayload = { notes: notes.value, folders: folders.value }
-	localStorage.setItem(getStorageKey(), JSON.stringify(payload))
+	if (isHydrating) {
+		console.log('[notes] persistNotes:skipped_hydrating')
+		return
+	}
 
-	if (!userStore.token || !userStore.user?.vkId || isHydrating) return
+	const payload: NotesPayload = { notes: notes.value, folders: folders.value }
+	const key = getStorageKey()
+	localStorage.setItem(key, JSON.stringify(payload))
+	console.log('[notes] persistNotes:local_saved', { key, notes: payload.notes.length, folders: payload.folders.length })
+
+	if (!userStore.token || !isLikelyJwt(userStore.token) || !userStore.user?.vkId) {
+		console.log('[notes] persistNotes:server_skipped', {
+			hasToken: Boolean(userStore.token),
+			isLikelyJwt: isLikelyJwt(userStore.token),
+			userId: userStore.user?.vkId || null,
+		})
+		return
+	}
 	if (saveTimer) window.clearTimeout(saveTimer)
 	saveTimer = window.setTimeout(async () => {
 		try {
+			console.log('[notes] persistNotes:server_save:start', { notes: payload.notes.length })
 			await saveNotesPayload(userStore.token!, payload)
+			console.log('[notes] persistNotes:server_save:success')
 		} catch (error) {
-			console.error('Ошибка сохранения заметок в БД', error)
+			console.error('[notes] persistNotes:server_save:error', error)
 		}
 	}, 500)
 }
 
 const syncNotesWithServer = async () => {
-	if (!userStore.token || !userStore.user?.vkId) return
+	if (!userStore.token || !isLikelyJwt(userStore.token) || !userStore.user?.vkId) {
+		console.log('[notes] syncNotesWithServer:skipped', {
+			hasToken: Boolean(userStore.token),
+			isLikelyJwt: isLikelyJwt(userStore.token),
+			userId: userStore.user?.vkId || null,
+		})
+		return
+	}
 
+	console.log('[notes] syncNotesWithServer:start', { userId: userStore.user?.vkId })
 	isHydrating = true
 	try {
+		const localSnapshot: NotesPayload = { notes: [...notes.value], folders: [...folders.value] }
 		const workspace = await fetchWorkspace(userStore.token)
-		applyNotesPayload(workspace.notesPayload)
-		localStorage.setItem(getStorageKey(), JSON.stringify(workspace.notesPayload))
+		const serverPayload = workspace.notesPayload
+
+		if ((serverPayload?.notes?.length || 0) === 0 && localSnapshot.notes.length > 0) {
+			console.log('[notes] syncNotesWithServer:server_empty_use_local', { localNotes: localSnapshot.notes.length })
+			applyNotesPayload(localSnapshot)
+			await saveNotesPayload(userStore.token, localSnapshot)
+		} else {
+			applyNotesPayload(serverPayload)
+		}
+
+		localStorage.setItem(getStorageKey(), JSON.stringify({ notes: notes.value, folders: folders.value }))
+		console.log('[notes] syncNotesWithServer:success', { notes: notes.value.length, folders: folders.value.length })
 	} catch (error) {
-		console.warn('Не удалось загрузить заметки из БД, используем localStorage', error)
+		console.warn('[notes] syncNotesWithServer:fallback_to_localStorage', error)
 		loadLocalPayload()
 	} finally {
 		isHydrating = false
@@ -215,13 +257,10 @@ const displayedNotes = computed(() => {
 		return notes.value.map((note, index) => ({ ...note, index }))
 	}
 
-	return notes.value
-		.map((note, index) => ({ ...note, index }))
-		.filter(note => note.folderId === activeFolderId.value)
+	return notes.value.map((note, index) => ({ ...note, index })).filter(note => note.folderId === activeFolderId.value)
 })
 
 const close = () => emit('update:visible', false)
-
 const addFolder = () => {
 	const name = newFolderName.value.trim()
 	if (!name) return
@@ -313,6 +352,7 @@ defineExpose({ setNewNoteText })
 </script>
 
 <style scoped>
+/* оставил как было */
 .notes-overlay {
 	position: fixed;
 	top: 0;
