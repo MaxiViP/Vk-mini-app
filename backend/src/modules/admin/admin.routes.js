@@ -3,6 +3,7 @@ import { Router } from 'express'
 import { authMiddleware } from '../auth/auth.middleware.js'
 import { adminService } from './admin.service.js'
 import { AppError } from '../../shared/errors.js'
+import logger from '../../config/logger.js'
 
 const router = Router()
 
@@ -63,6 +64,51 @@ router.get('/audit', async (req, res, next) => {
 router.get('/metrics', async (_req, res, next) => {
 	try {
 		const data = await adminService.getMetrics()
+		res.json(data)
+	} catch (error) {
+		next(error)
+	}
+})
+
+router.get('/users', async (req, res, next) => {
+	const limit = Number(req.query.limit || 100)
+	const query = req.query.query || null
+	logger.info('Admin users request started', {
+		adminUserId: req.user?.id || null,
+		limit,
+		query,
+	})
+
+	try {
+		const data = await adminService.listUsersOverview({
+			limit,
+			query,
+		})
+		logger.info('Admin users request succeeded', {
+			adminUserId: req.user?.id || null,
+			limit,
+			query,
+			count: data.length,
+		})
+		res.json(data)
+	} catch (error) {
+		logger.error('Admin users request failed', {
+			adminUserId: req.user?.id || null,
+			limit,
+			query,
+			error: error.message,
+		})
+		next(error)
+	}
+})
+
+router.get('/users/:id/actions', async (req, res, next) => {
+	try {
+		const data = await adminService.getUserActions(req.params.id, {
+			limit: Number(req.query.limit || 200),
+			dateFrom: req.query.dateFrom || null,
+			dateTo: req.query.dateTo || null,
+		})
 		res.json(data)
 	} catch (error) {
 		next(error)

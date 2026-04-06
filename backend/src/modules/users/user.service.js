@@ -19,6 +19,32 @@ export const userService = {
 		return user
 	},
 
+	async trackActivity(userId, payload = {}, actor = {}) {
+		const normalized = {
+			sessionId: typeof payload.sessionId === 'string' ? payload.sessionId : 'unknown',
+			activeSeconds: Number.isFinite(Number(payload.activeSeconds)) ? Math.max(0, Number(payload.activeSeconds)) : 0,
+			page: typeof payload.page === 'string' ? payload.page : 'unknown',
+			requestsCount: Number.isFinite(Number(payload.requestsCount)) ? Math.max(0, Number(payload.requestsCount)) : 0,
+			notesMutations: Number.isFinite(Number(payload.notesMutations)) ? Math.max(0, Number(payload.notesMutations)) : 0,
+			chatMessagesSent: Number.isFinite(Number(payload.chatMessagesSent))
+				? Math.max(0, Number(payload.chatMessagesSent))
+				: 0,
+			timestamp: new Date().toISOString(),
+		}
+
+		await logBusinessEvent({
+			eventType: 'user.activity.heartbeat',
+			actorUserId: userId,
+			entityType: 'user_activity',
+			entityId: userId,
+			payload: normalized,
+			ip: actor.ip || null,
+			userAgent: actor.userAgent || null,
+		})
+
+		return { ok: true }
+	},
+
 	async listUsers({ limit = 20, cursor = null } = {}) {
 		return prisma.user.findMany({
 			take: Math.min(limit, 100),

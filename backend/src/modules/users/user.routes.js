@@ -14,6 +14,18 @@ router.get('/me', authMiddleware, async (req, res, next) => {
 	}
 })
 
+router.post('/me/activity', authMiddleware, async (req, res, next) => {
+	try {
+		const data = await userService.trackActivity(req.user.id, req.body || {}, {
+			ip: req.ip,
+			userAgent: req.headers['user-agent'] || null,
+		})
+		res.json(data)
+	} catch (error) {
+		next(error)
+	}
+})
+
 router.get('/', authMiddleware, async (req, res, next) => {
 	try {
 		const users = await userService.listUsers({
