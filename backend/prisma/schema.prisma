@@ -1,0 +1,249 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  active
+  blocked
+  deleted
+}
+
+enum AuthProvider {
+  vk
+  google
+  yandex
+  phone
+}
+
+enum LedgerType {
+  credit
+  debit
+  hold
+  release
+  refund
+}
+
+enum LedgerReason {
+  payment_topup
+  usage_charge
+  admin_adjust
+}
+
+enum SubscriptionStatus {
+  active
+  trialing
+  past_due
+  canceled
+  expired
+}
+
+enum PaymentProvider {
+  yookassa
+}
+
+enum PaymentStatus {
+  pending
+  succeeded
+  failed
+  canceled
+}
+
+model User {
+  id         String     @id @default(uuid()) @db.Uuid
+  email      String?    @unique
+  phoneE164  String?    @unique @map("phone_e164")
+  firstName  String?    @map("first_name")
+  lastName   String?    @map("last_name")
+  avatarUrl  String?    @map("avatar_url")
+  status     UserStatus @default(active)
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  authIdentities AuthIdentity[]
+  sessions       Session[]
+  wallets        Wallet?
+  walletLedger   WalletLedger[]
+  subscriptions  Subscription[]
+  payments       Payment[]
+  usageEvents    UsageEvent[]
+  auditActions   AuditLog[]      @relation("ActorUserAuditLog")
+
+  @@map("users")
+}
+
+model AuthIdentity {
+  id               String       @id @default(uuid()) @db.Uuid
+  userId           String       @map("user_id") @db.Uuid
+  provider         AuthProvider
+  providerUserId   String       @map("provider_user_id")
+  providerPayload  Json?        @map("provider_payload_json")
+  createdAt        DateTime     @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+  @@map("auth_identities")
+}
+
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  refreshTokenHash String    @map("refresh_token_hash")
+  userAgent        String?   @map("user_agent")
+  ip               String?
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model OtpCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  phoneE164 String    @map("phone_e164")
+  codeHash  String    @map("code_hash")
+  attempts  Int       @default(0)
+  expiresAt DateTime  @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([phoneE164, expiresAt(sort: Desc)])
+  @@map("otp_codes")
+}
+
+model Wallet {
+  userId      String   @id @map("user_id") @db.Uuid
+  balanceMinor Int     @default(0) @map("balance_minor")
+  currency    String   @default("RUB")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("wallets")
+}
+
+model WalletLedger {
+  id             String       @id @default(uuid()) @db.Uuid
+  userId         String       @map("user_id") @db.Uuid
+  type           LedgerType
+  amountMinor    Int          @map("amount_minor")
+  reason         LedgerReason
+  referenceType  String?      @map("reference_type")
+  referenceId    String?      @map("reference_id")
+  idempotencyKey String       @unique @map("idempotency_key")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("wallet_ledger")
+}
+
+model Plan {
+  id                String   @id @default(uuid()) @db.Uuid
+  code              String   @unique
+  name              String
+  monthlyPriceMinor Int      @map("monthly_price_minor")
+  includedRequests  Int      @map("included_requests")
+  isActive          Boolean  @default(true) @map("is_active")
+
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id                  String             @id @default(uuid()) @db.Uuid
+  userId              String             @map("user_id") @db.Uuid
+  planId              String             @map("plan_id") @db.Uuid
+  status              SubscriptionStatus @default(active)
+  periodStart         DateTime           @map("period_start")
+  periodEnd           DateTime           @map("period_end")
+  cancelAtPeriodEnd   Boolean            @default(false) @map("cancel_at_period_end")
+  createdAt           DateTime           @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+  @@index([planId])
+  @@map("subscriptions")
+}
+
+model Payment {
+  id                String          @id @default(uuid()) @db.Uuid
+  userId            String          @map("user_id") @db.Uuid
+  provider          PaymentProvider
+  providerPaymentId String          @unique @map("provider_payment_id")
+  amountMinor       Int             @map("amount_minor")
+  status            PaymentStatus   @default(pending)
+  idempotencyKey    String          @unique @map("idempotency_key")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events PaymentEvent[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("payments")
+}
+
+model PaymentEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  paymentId     String   @map("payment_id") @db.Uuid
+  eventType     String   @map("event_type")
+  rawPayload    Json     @map("raw_payload_json")
+  receivedAt    DateTime @default(now()) @map("received_at")
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId, receivedAt(sort: Desc)])
+  @@map("payment_events")
+}
+
+model UsageEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  modelProvider String   @map("model_provider")
+  modelName     String   @map("model_name")
+  inputTokens   Int      @default(0) @map("input_tokens")
+  outputTokens  Int      @default(0) @map("output_tokens")
+  costMinor     Int      @default(0) @map("cost_minor")
+  requestId     String   @map("request_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([requestId])
+  @@map("usage_events")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  action      String
+  beforeJson  Json?    @map("before_json")
+  afterJson   Json?    @map("after_json")
+  ip          String?
+  userAgent   String?  @map("user_agent")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  actorUser User? @relation("ActorUserAuditLog", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@index([actorUserId, createdAt(sort: Desc)])
+  @@map("audit_log")
+}
