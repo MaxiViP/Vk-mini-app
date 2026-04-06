@@ -1,7 +1,10 @@
 <template>
 	<div class="app-container">
 		<div class="top-bar">
-			<button class="pill-btn" @click="showProfile = true">👤 Профиль</button>
+			<div class="top-bar-left">
+				<button class="pill-btn" @click="showProfile = true">👤 Профиль</button>
+				<button class="pill-btn" @click="showAdmin = true">🛠️</button>
+			</div>
 
 			<AILogo />
 
@@ -18,6 +21,17 @@
 				<div class="modal-container">
 					<button class="modal-close" @click="showProfile = false">✕</button>
 					<Profile />
+				</div>
+			</div>
+		</Transition>
+	</Teleport>
+
+	<Teleport to="body">
+		<Transition name="modal">
+			<div v-if="showAdmin" class="modal-overlay" @click.self="showAdmin = false">
+				<div class="modal-container">
+					<button class="modal-close" @click="showAdmin = false">✕</button>
+					<AdminPanel />
 				</div>
 			</div>
 		</Transition>
@@ -40,6 +54,7 @@ import Profile from './components/profile/Profile.vue'
 import NotesPanel from './components/chat/NotesPanel.vue'
 import AILogo from './components/common/AILogo.vue'
 import AuthModal from './components/auth/AuthModal.vue'
+import AdminPanel from './components/admin/AdminPanel.vue'
 
 type NotesPanelExposed = {
 	setNewNoteText: (text: string) => void
@@ -47,6 +62,7 @@ type NotesPanelExposed = {
 
 const showProfile = ref(false)
 const showNotes = ref(false)
+const showAdmin = ref(false)
 const showAuthModal = ref(false)
 const notesPanelRef = ref<NotesPanelExposed | null>(null)
 
@@ -63,6 +79,11 @@ const handleEscape = (e: KeyboardEvent) => {
 	if (e.key !== 'Escape') return
 
 	if (showAuthModal.value) {
+		return
+	}
+
+	if (showAdmin.value) {
+		showAdmin.value = false
 		return
 	}
 
@@ -89,7 +110,11 @@ onMounted(async () => {
 	window.addEventListener('save-to-notes', handleSaveToNotes as EventListener)
 
 	userStore.hydrateAuth()
-	await modelsStore.fetchModels()
+	try {
+		await userStore.finalizeOAuthCallbackFromLocation()
+	} catch (error) {
+		console.error('OAuth callback finalize error', error)
+	}
 
 	if (!userStore.isAuthenticated) {
 		showAuthModal.value = true
@@ -105,3 +130,8 @@ onUnmounted(() => {
 	window.removeEventListener('save-to-notes', handleSaveToNotes as EventListener)
 })
 </script>
+<style>
+.top-bar-left {
+	display: flex;
+}
+</style>

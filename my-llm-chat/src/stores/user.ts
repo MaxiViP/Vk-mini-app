@@ -255,6 +255,30 @@ export const useUserStore = defineStore('user', () => {
 		}
 	}
 
+
+	async function finalizeOAuthCallbackFromLocation() {
+		const callbackMatch = window.location.pathname.match(/^\/oauth\/(vk|google|yandex)\/callback$/)
+		if (!callbackMatch) return false
+
+		const provider = callbackMatch[1] as OAuthProvider
+		const params = new URLSearchParams(window.location.search)
+		const code = params.get('code')
+		const state = params.get('state')
+		if (!code || !state) {
+			throw new Error('OAuth callback не содержит code/state')
+		}
+
+		authPending.value = true
+		try {
+			const result = await authApi.finalizeOAuth({ provider, code, state })
+			applyAuthResult(result)
+			window.history.replaceState({}, document.title, '/')
+			return true
+		} finally {
+			authPending.value = false
+		}
+	}
+
 	return {
 		user,
 		token,
@@ -274,6 +298,7 @@ export const useUserStore = defineStore('user', () => {
 		rechargeBalance,
 		createYooKassaPayment,
 		confirmYooKassaPayment,
+		finalizeOAuthCallbackFromLocation,
 		logout,
 	}
 })

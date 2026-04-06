@@ -1,6 +1,7 @@
 <template>
 	<div class="chat">
 		<div class="messages">
+			<ScrollBtn type="bottom" class="scroll-down" />
 			<Message v-for="(msg, idx) in chat.messages" :key="idx" :message="msg" />
 			<!-- Индикатор печати — стилизованный как сообщение бота -->
 			<div v-if="chat.isLoading" class="message assistant typing">
@@ -13,7 +14,6 @@
 		</div>
 		<ChatInput @send="sendWithFallback" :disabled="chat.isLoading" />
 	</div>
-	<handleScroll type="bottom" target=".messages" class="scroll-down" />
 </template>
 
 <script setup lang="ts">
@@ -22,7 +22,7 @@ import { useModelsStore } from '../../stores/models'
 import Message from './Message.vue'
 import ChatInput from './ChatInput.vue'
 
-import handleScroll from '../common/ScrollBtn.vue'
+import ScrollBtn from '../common/ScrollBtn.vue'
 
 const chat = useChatStore()
 const modelsStore = useModelsStore()
@@ -67,16 +67,12 @@ async function sendWithFallback(messageText: string) {
 }
 </script>
 <style scoped>
-.scroll-down {
-	/* transform: translate(-50%, 0) rotate(180deg); */
-	bottom: 80px;
-	top: auto;
-	position: absolute;
-}
+
 .chat {
 	position: relative;
 	display: flex;
 	flex-direction: column;
+	height: 100%;
 	gap: 12px;
 }
 

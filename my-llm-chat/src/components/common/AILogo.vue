@@ -22,10 +22,12 @@
 }
 
 .ai-logo svg {
-	width: 320px;
+	/* width: 320px; */
 	height: 44px;
 	display: block;
 	overflow: visible;
+	margin-top: 5px;
+ 
 }
 
 .logo-text {

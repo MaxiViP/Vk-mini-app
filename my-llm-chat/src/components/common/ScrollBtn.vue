@@ -1,6 +1,12 @@
 <template>
-	<button class="scroll-btn" @click="handleScroll" type="button">
-		↑
+	<button
+		class="scroll-btn"
+		:class="type"
+		@click="handleScroll"
+		type="button"
+		:aria-label="type === 'bottom' ? 'Прокрутить вниз' : 'Прокрутить вверх'"
+	>
+		{{ type === 'bottom' ? '↓' : '↑' }}
 	</button>
 </template>
 
@@ -16,12 +22,22 @@ const props = withDefaults(
 	},
 )
 
+const getTargetElement = (): HTMLElement | null => {
+	if (!props.target) return null
+	return document.querySelector(props.target) as HTMLElement | null
+}
+
 const handleScroll = () => {
-	const el = props.target
-		? (document.querySelector(props.target) as HTMLElement | null)
-		: null
+	const el = getTargetElement()
+
+	console.log('type:', props.type)
+	console.log('target:', props.target)
+	console.log('element:', el)
 
 	if (el) {
+		console.log('scrollHeight:', el.scrollHeight)
+		console.log('clientHeight:', el.clientHeight)
+
 		el.scrollTo({
 			top: props.type === 'bottom' ? el.scrollHeight : 0,
 			behavior: 'smooth',
@@ -29,8 +45,10 @@ const handleScroll = () => {
 		return
 	}
 
+	const pageHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)
+
 	window.scrollTo({
-		top: props.type === 'bottom' ? document.body.scrollHeight : 0,
+		top: props.type === 'bottom' ? pageHeight : 0,
 		behavior: 'smooth',
 	})
 }
@@ -64,7 +82,7 @@ const handleScroll = () => {
 	background: var(--overlay-light);
 	border-color: var(--color-primary);
 }
- 
+
 .scroll-btn:hover {
 	background: var(--overlay-light);
 	border-color: var(--color-primary);
