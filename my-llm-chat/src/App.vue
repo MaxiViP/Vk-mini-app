@@ -69,7 +69,7 @@ const notesPanelRef = ref<NotesPanelExposed | null>(null)
 const modelsStore = useModelsStore()
 const userStore = useUserStore()
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+const API_BASE_URL = ''
 const ACTIVITY_INTERVAL_SEC = 30
 const sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
 let activityTimer: number | null = null
