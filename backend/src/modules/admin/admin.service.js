@@ -1,6 +1,7 @@
 import prisma from '../../db/prisma.js'
 import logger from '../../config/logger.js'
 
+// Вспомогательные функции
 const buildDateFilter = ({ dateFrom, dateTo }) => {
 	if (!dateFrom && !dateTo) return undefined
 	return {
@@ -14,6 +15,7 @@ const resolveInternalUserId = async rawUserId => {
 	const raw = String(rawUserId)
 
 	if (/^\d+$/.test(raw)) {
+		// Ищем по publicId числовому
 		try {
 			const user = await prisma.user.findUnique({
 				where: { publicId: Number(raw) },
@@ -32,8 +34,9 @@ const resolveInternalUserId = async rawUserId => {
 		}
 	}
 
+	// Ищем по внутреннему id (строку приводим к числу)
 	const user = await prisma.user.findUnique({
-		where: { id: raw },
+		where: { id: Number(raw) },
 		select: { id: true },
 	})
 	return user ? { id: user.id, publicId: null } : null
@@ -42,36 +45,42 @@ const resolveInternalUserId = async rawUserId => {
 const applyPagination = ({ limit = 100, cursor = null }) => ({
 	take: Math.min(limit, 500),
 	skip: cursor ? 1 : 0,
-	cursor: cursor ? { id: cursor } : undefined,
+	cursor: cursor ? { id: Number(cursor) } : undefined,
 	orderBy: { createdAt: 'desc' },
 })
 
 export const adminService = {
+	// Универсальный метод для списка пользователей с фильтром и fallback
 	async listUsersOverview({ limit = 100, query = null } = {}) {
 		const q = query?.toString().trim()
+		const baseQuery = {
+			take: Math.min(limit, 500),
+			orderBy: { createdAt: 'desc' },
+		}
+
 		const buildWhere = ({ insensitive = true, withPublicId = true } = {}) => {
 			if (!q) return {}
 			const textFilter = value => (insensitive ? { contains: value, mode: 'insensitive' } : { contains: value })
+
 			return {
 				OR: [
-					{ id: textFilter(q) },
 					{ email: textFilter(q) },
 					{ firstName: textFilter(q) },
 					{ lastName: textFilter(q) },
-					...(withPublicId && Number.isFinite(Number(q)) ? [{ publicId: Number(q) }] : []),
+					...(withPublicId && /^\d+$/.test(q) ? [{ publicId: Number(q) }] : []),
 				],
 			}
 		}
 
 		const buildSelect = ({ withPublicId = true } = {}) => ({
 			id: true,
-			...(withPublicId ? { publicId: true } : {}),
 			email: true,
 			phoneE164: true,
 			firstName: true,
 			lastName: true,
 			status: true,
 			createdAt: true,
+			...(withPublicId ? { publicId: true } : {}),
 			wallets: {
 				select: {
 					balanceMinor: true,
@@ -79,11 +88,6 @@ export const adminService = {
 				},
 			},
 		})
-
-		const baseQuery = {
-			take: Math.min(limit, 500),
-			orderBy: { createdAt: 'desc' },
-		}
 
 		try {
 			return await prisma.user.findMany({
@@ -114,6 +118,7 @@ export const adminService = {
 				}),
 				select: buildSelect({ withPublicId: !missingPublicId }),
 			})
+
 			if (missingPublicId) {
 				logger.warn('Admin users query returned rows without publicId (migration likely missing)', {
 					count: rows.length,
@@ -187,9 +192,7 @@ export const adminService = {
 
 		const internalUserId = resolvedUser.id
 		const dateFilter = buildDateFilter({ dateFrom, dateTo })
-		const whereBase = {
-			createdAt: dateFilter,
-		}
+		const whereBase = { createdAt: dateFilter }
 
 		const [audit, usage, ledger, payments, workspace] = await Promise.all([
 			prisma.auditLog.findMany({
@@ -223,8 +226,7 @@ export const adminService = {
 		const apiRequests = audit.filter(item => item.action === 'api.request')
 		const heartbeats = audit.filter(item => item.action === 'user.activity.heartbeat')
 		const activeSeconds = heartbeats.reduce((acc, item) => {
-			const raw = item?.afterJson?.activeSeconds
-			const n = Number(raw)
+			const n = Number(item?.afterJson?.activeSeconds)
 			return acc + (Number.isFinite(n) ? n : 0)
 		}, 0)
 
@@ -258,77 +260,13 @@ export const adminService = {
 		}
 	},
 
-  // Внутри adminService
-async listUsersOverview({ limit = 100, query = null } = {}) {
-  const q = query?.toString().trim();
-  const baseQuery = {
-    take: Math.min(limit, 500),
-    orderBy: { createdAt: 'desc' },
-  };
-
-  try {
-    if (!q) {
-      // простой запрос без фильтрации
-      return prisma.user.findMany({
-        ...baseQuery,
-        select: {
-          id: true,
-          email: true,
-          phoneE164: true,
-          firstName: true,
-          lastName: true,
-          status: true,
-          createdAt: true,
-          publicId: true,
-        },
-      });
-    }
-
-    // фильтрация только через contains без mode
-    return prisma.user.findMany({
-      ...baseQuery,
-      where: {
-        OR: [
-          { email: { contains: q } },
-          { firstName: { contains: q } },
-          { lastName: { contains: q } },
-        ],
-      },
-      select: {
-        id: true,
-        email: true,
-        phoneE164: true,
-        firstName: true,
-        lastName: true,
-        status: true,
-        createdAt: true,
-        publicId: true,
-      },
-    });
-  } catch (error) {
-    // fallback: если нет publicId
-    const rows = await prisma.user.findMany({
-      ...baseQuery,
-      select: {
-        id: true,
-        email: true,
-        phoneE164: true,
-        firstName: true,
-        lastName: true,
-        status: true,
-        createdAt: true,
-      },
-    });
-    return rows.map((row, index) => ({ ...row, publicId: index + 1 }));
-  }
-}
-
 	async getUserTimeline({ userId, limit = 100, dateFrom = null, dateTo = null }) {
 		const resolvedUser = await resolveInternalUserId(userId)
 		if (!resolvedUser) return { events: [], ledger: [], usage: [] }
 
 		const internalUserId = resolvedUser.id
 		const dateFilter = buildDateFilter({ dateFrom, dateTo })
+
 		const [events, ledger, usage] = await Promise.all([
 			prisma.auditLog.findMany({
 				where: {
@@ -361,16 +299,10 @@ async listUsersOverview({ limit = 100, query = null } = {}) {
 				prisma.payment.aggregate({ _sum: { amountMinor: true }, where: { status: 'succeeded' } }),
 				prisma.usageEvent.aggregate({ _sum: { costMinor: true } }),
 				prisma.usageEvent
-					.groupBy({
-						by: ['userId'],
-						where: { createdAt: { gte: new Date(Date.now() - 7 * 24 * 3600 * 1000) } },
-					})
+					.groupBy({ by: ['userId'], where: { createdAt: { gte: new Date(Date.now() - 7 * 24 * 3600 * 1000) } } })
 					.then(rows => rows.length),
 				prisma.usageEvent
-					.groupBy({
-						by: ['userId'],
-						where: { createdAt: { gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) } },
-					})
+					.groupBy({ by: ['userId'], where: { createdAt: { gte: new Date(Date.now() - 30 * 24 * 3600 * 1000) } } })
 					.then(rows => rows.length),
 				prisma.user.count({ where: { payments: { some: { status: 'succeeded' } } } }),
 			])
