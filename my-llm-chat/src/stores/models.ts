@@ -3,14 +3,13 @@ import { ref } from 'vue'
 import axios from 'axios'
 import type { Model } from '../types'
 
-const API_BASE_URL = ''
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
 
 export const useModelsStore = defineStore('models', () => {
 	const models = ref<Model[]>([])
 	const selectedModel = ref<string | null>(null)
 	const isLoading = ref(false)
 	const error = ref<string | null>(null)
-
 	async function fetchModels() {
 		isLoading.value = true
 		error.value = null
