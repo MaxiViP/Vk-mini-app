@@ -2,7 +2,9 @@
 	<div class="app-container">
 		<div class="top-bar">
 			<div class="top-bar-left">
-				<button class="pill-btn" @click="showProfile = true">👤 Профиль</button>
+				<button class="pill-btn" @click="showProfile = true">
+					👤 <span class="btn-text">{{ fullName }}</span>
+				</button>
 				<button class="pill-btn" @click="showAdmin = true">🛠️</button>
 			</div>
 
@@ -55,6 +57,12 @@ import NotesPanel from './components/chat/NotesPanel.vue'
 import AILogo from './components/common/AILogo.vue'
 import AuthModal from './components/auth/AuthModal.vue'
 import AdminPanel from './components/admin/AdminPanel.vue'
+import { computed } from 'vue'
+
+const fullName = computed(() => {
+	if (!userStore.user) return 'Профиль'
+	return `${userStore.user.firstName} ${userStore.user.lastName || ''}`.trim()
+})
 
 type NotesPanelExposed = {
 	setNewNoteText: (text: string) => void
@@ -179,5 +187,6 @@ onUnmounted(() => {
 <style>
 .top-bar-left {
 	display: flex;
+	gap: 4px;
 }
 </style>

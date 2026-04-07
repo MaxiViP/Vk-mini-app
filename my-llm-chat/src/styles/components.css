@@ -3,6 +3,7 @@
 	align-items: center;
 	justify-content: center;
 	padding: 6px 12px;
+	gap: 4px;
 	border: 1px solid var(--color-accent);
 	border-radius: var(--radius-xl);
 	background: transparent;
@@ -165,6 +166,12 @@ select {
 	.dropdown-group {
 		min-width: 150px;
 	}
+	/* 
+	.pill-btn .btn-text {
+		max-width: 60px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	} */
 }
 
 @media (max-width: 560px) {
@@ -179,5 +186,9 @@ select {
 
 	.dropdown-group select {
 		flex: 1;
+	}
+
+	.pill-btn .btn-text {
+		display: none;
 	}
 }

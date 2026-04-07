@@ -203,7 +203,7 @@ onMounted(loadAll)
 	flex-direction: column;
 	gap: 12px;
 	width: min(1200px, 100%);
-	max-height: calc(100vh - 140px);
+	max-height: calc(800px - 140px);
 	overflow-y: auto;
 	overflow-x: hidden;
 	padding-right: 4px;

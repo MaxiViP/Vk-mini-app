@@ -2,12 +2,14 @@
 	<div class="profile">
 		<template v-if="userStore.user">
 			<div class="profile-header">
-				<img :src="avatarUrl" alt="avatar" class="profile-avatar" />
-
-				<div class="profile-head-info">
-					<h2>{{ userStore.user.firstName }} {{ userStore.user.lastName }}</h2>
-					<p class="profile-id">Личный кабинет</p>
+				<div class="profile-header-user">
+					<img :src="avatarUrl" alt="avatar" class="profile-avatar" />
+					<div class="profile-head-info">
+						<h2>{{ userStore.user.firstName }} {{ userStore.user.lastName }}</h2>
+						<p class="profile-id">Личный кабинет</p>
+					</div>
 				</div>
+
 				<p
 					v-if="statusMessage"
 					:class="[
@@ -17,17 +19,16 @@
 				>
 					{{ statusMessage }}
 				</p>
-			</div>
+				<div class="profile-stats">
+					<div class="stat-card">
+						<span class="stat-label">Баланс</span>
+						<strong>{{ userStore.user.balance.toFixed(0) }} ₽</strong>
+					</div>
 
-			<div class="profile-stats">
-				<div class="stat-card">
-					<span class="stat-label">Баланс</span>
-					<strong>{{ userStore.user.balance.toFixed(0) }} ₽</strong>
-				</div>
-
-				<div class="stat-card">
-					<span class="stat-label">Осталось запросов</span>
-					<strong>{{ userStore.user.requestsLeft }}</strong>
+					<div class="stat-card">
+						<span class="stat-label">Осталось запросов</span>
+						<strong>{{ userStore.user.requestsLeft }}</strong>
+					</div>
 				</div>
 			</div>
 
