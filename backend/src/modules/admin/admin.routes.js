@@ -80,6 +80,7 @@ router.get('/users', async (req, res, next) => {
 	})
 
 	try {
+		logger.info('Admin users request started', { query: req.query.query, limit: Number(req.query.limit || 100) })
 		const data = await adminService.listUsersOverview({
 			limit,
 			query,

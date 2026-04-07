@@ -258,6 +258,71 @@ export const adminService = {
 		}
 	},
 
+  // Внутри adminService
+async listUsersOverview({ limit = 100, query = null } = {}) {
+  const q = query?.toString().trim();
+  const baseQuery = {
+    take: Math.min(limit, 500),
+    orderBy: { createdAt: 'desc' },
+  };
+
+  try {
+    if (!q) {
+      // простой запрос без фильтрации
+      return prisma.user.findMany({
+        ...baseQuery,
+        select: {
+          id: true,
+          email: true,
+          phoneE164: true,
+          firstName: true,
+          lastName: true,
+          status: true,
+          createdAt: true,
+          publicId: true,
+        },
+      });
+    }
+
+    // фильтрация только через contains без mode
+    return prisma.user.findMany({
+      ...baseQuery,
+      where: {
+        OR: [
+          { email: { contains: q } },
+          { firstName: { contains: q } },
+          { lastName: { contains: q } },
+        ],
+      },
+      select: {
+        id: true,
+        email: true,
+        phoneE164: true,
+        firstName: true,
+        lastName: true,
+        status: true,
+        createdAt: true,
+        publicId: true,
+      },
+    });
+  } catch (error) {
+    // fallback: если нет publicId
+    const rows = await prisma.user.findMany({
+      ...baseQuery,
+      select: {
+        id: true,
+        email: true,
+        phoneE164: true,
+        firstName: true,
+        lastName: true,
+        status: true,
+        createdAt: true,
+      },
+    });
+    return rows.map((row, index) => ({ ...row, publicId: index + 1 }));
+  }
+}
+
 	async getUserTimeline({ userId, limit = 100, dateFrom = null, dateTo = null }) {
 		const resolvedUser = await resolveInternalUserId(userId)
 		if (!resolvedUser) return { events: [], ledger: [], usage: [] }
