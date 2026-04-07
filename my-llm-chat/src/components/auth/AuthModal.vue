@@ -7,8 +7,13 @@
 						<h2 id="auth-title" class="auth-title">Вход и регистрация</h2>
 						<p class="auth-subtitle">Выберите способ входа. Регистрация создаётся автоматически при первом логине.</p>
 
+						<!-- OAuth кнопки -->
 						<div class="auth-provider-list">
-							<button class="auth-provider-btn auth-provider-btn--vk" :disabled="userStore.authPending" @click="login('vk')">
+							<button
+								class="auth-provider-btn auth-provider-btn--vk"
+								:disabled="userStore.authPending"
+								@click="login('vk')"
+							>
 								Войти через VK ID
 							</button>
 							<button
@@ -29,6 +34,7 @@
 
 						<div class="auth-divider">или</div>
 
+						<!-- Вход по телефону -->
 						<form class="phone-auth" @submit.prevent="handlePhoneCodeRequest">
 							<label for="phone-input">Вход по номеру телефона</label>
 							<input
@@ -37,38 +43,37 @@
 								type="tel"
 								placeholder="+7 (999) 123-45-67"
 								required
-								:disabled="userStore.authPending"
+								:disabled="userStore.authPending || !!userStore.phoneChallenge"
 							/>
-							<button type="submit" class="submit-btn" :disabled="userStore.authPending || phone.length < 10">
+							<button
+								type="submit"
+								class="submit-btn"
+								:disabled="userStore.authPending || phone.length < 10 || !!userStore.phoneChallenge"
+							>
 								Получить код
 							</button>
 						</form>
 
+						<!-- Шаг с кодом -->
 						<div v-if="userStore.phoneChallenge" class="code-step">
-							<details class="test-code-dropdown" open>
-								<summary>Тестовый код для разработки</summary>
-								<div class="test-code-value">{{ userStore.phoneChallenge.testCode }}</div>
-							</details>
+							<p>Ваш код для входа:</p>
+							<div class="test-code-value">{{ userStore.phoneChallenge.testCode }}</div>
 
-							<form @submit.prevent="handlePhoneLogin">
-								<label for="sms-code-input">Код из SMS</label>
-								<input
-									id="sms-code-input"
-									v-model="smsCode"
-									inputmode="numeric"
-									maxlength="6"
-									placeholder="Введите 6 цифр"
-									required
-									:disabled="userStore.authPending"
-								/>
-								<button type="submit" class="submit-btn" :disabled="userStore.authPending || smsCode.length !== 6">
-									Подтвердить и войти
-								</button>
-							</form>
+							<label for="sms-code-input">Введите код</label>
+							<input
+								id="sms-code-input"
+								v-model="smsCode"
+								inputmode="numeric"
+								maxlength="6"
+								placeholder="Введите 6 цифр"
+								:disabled="userStore.authPending"
+							/>
 						</div>
 
 						<div class="auth-divider">временный доступ для разработки</div>
-						<button class="admin-dev-btn" :disabled="userStore.authPending" @click="loginDevAdmin">Войти как админ (dev)</button>
+						<button class="admin-dev-btn" :disabled="userStore.authPending" @click="loginDevAdmin">
+							Войти как админ (dev)
+						</button>
 
 						<p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 					</div>
@@ -79,8 +84,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-
+import { ref, watch } from 'vue'
 import { useUserStore } from '../../stores/user'
 
 defineProps<{ visible: boolean }>()
@@ -96,6 +100,8 @@ const noop = () => {}
 const handleAuthSuccess = () => {
 	errorMessage.value = ''
 	smsCode.value = ''
+	phone.value = ''
+	userStore.phoneChallenge = null
 	emit('authenticated')
 }
 
@@ -109,26 +115,37 @@ const login = async (provider: 'vk' | 'google' | 'yandex') => {
 	}
 }
 
+// Отправка кода по телефону
 const handlePhoneCodeRequest = async () => {
 	try {
 		errorMessage.value = ''
 		smsCode.value = ''
-		await userStore.sendPhoneCode(phone.value)
+		const result = await userStore.sendPhoneCode(phone.value)
+		// В сторе поле phoneChallenge ожидает testCode, а с бэка приходит debugCode
+		userStore.phoneChallenge = {
+			challengeId: result.challengeId,
+			expiresInSec: result.expiresInSec,
+			testCode: result.debugCode ?? null,
+		}
 	} catch (error) {
 		errorMessage.value = error instanceof Error ? error.message : 'Не удалось отправить код.'
 	}
 }
 
-const handlePhoneLogin = async () => {
-	try {
-		errorMessage.value = ''
-		await userStore.loginByPhone(smsCode.value)
-		handleAuthSuccess()
-	} catch (error) {
-		errorMessage.value = error instanceof Error ? error.message : 'Ошибка проверки кода.'
+// Автоматическая проверка кода (сравниваем введённое значение с testCode)
+watch(smsCode, async val => {
+	if (userStore.phoneChallenge && val === userStore.phoneChallenge.testCode) {
+		try {
+			errorMessage.value = ''
+			await userStore.loginByPhone(val)
+			handleAuthSuccess()
+		} catch (error) {
+			errorMessage.value = error instanceof Error ? error.message : 'Ошибка проверки кода.'
+		}
 	}
-}
+})
 
+// Вход как dev-admin
 const loginDevAdmin = async () => {
 	try {
 		errorMessage.value = ''
@@ -220,15 +237,11 @@ input {
 	margin: 2px 0;
 }
 
-.test-code-dropdown {
-	font-size: 13px;
-}
-
 .test-code-value {
 	font-family: monospace;
 	font-size: 18px;
 	font-weight: 700;
-	margin-top: 6px;
+	margin: 6px 0;
 }
 
 .error-message {

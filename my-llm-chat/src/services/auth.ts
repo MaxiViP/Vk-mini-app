@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://195.140.146.86/'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://195.140.146.86'
 
 export type OAuthProvider = 'vk' | 'google' | 'yandex'
 
