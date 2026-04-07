@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -54,7 +54,7 @@ enum PaymentStatus {
 }
 
 model User {
-  id         String     @id @default(uuid()) @db.Uuid
+  id         String     @id @default(uuid())
   email      String?    @unique
   phoneE164  String?    @unique @map("phone_e164")
   firstName  String?    @map("first_name")
@@ -66,7 +66,7 @@ model User {
 
   authIdentities AuthIdentity[]
   sessions       Session[]
-  wallets        Wallet?
+  wallet         Wallet?
   walletLedger   WalletLedger[]
   subscriptions  Subscription[]
   payments       Payment[]
@@ -78,11 +78,11 @@ model User {
 }
 
 model UserWorkspace {
-  userId        String   @id @map("user_id") @db.Uuid
-  chatHistory   Json     @default("[]") @map("chat_history_json")
-  notesPayload  Json     @default("{\"notes\":[],\"folders\":[{\"id\":\"inbox\",\"name\":\"Входящие\"}]}") @map("notes_payload_json")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-  createdAt     DateTime @default(now()) @map("created_at")
+  userId       String   @id @map("user_id")
+  chatHistory  Json?
+  notesPayload Json?
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -90,12 +90,12 @@ model UserWorkspace {
 }
 
 model AuthIdentity {
-  id               String       @id @default(uuid()) @db.Uuid
-  userId           String       @map("user_id") @db.Uuid
-  provider         AuthProvider
-  providerUserId   String       @map("provider_user_id")
-  providerPayload  Json?        @map("provider_payload_json")
-  createdAt        DateTime     @default(now()) @map("created_at")
+  id              String       @id @default(uuid())
+  userId          String       @map("user_id")
+  provider        AuthProvider
+  providerUserId  String       @map("provider_user_id")
+  providerPayload Json?
+  createdAt       DateTime     @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -105,13 +105,13 @@ model AuthIdentity {
 }
 
 model Session {
-  id               String    @id @default(uuid()) @db.Uuid
-  userId           String    @map("user_id") @db.Uuid
+  id               String    @id @default(uuid())
+  userId           String    @map("user_id")
   refreshTokenHash String    @map("refresh_token_hash")
   userAgent        String?   @map("user_agent")
   ip               String?
   expiresAt        DateTime  @map("expires_at")
-  revokedAt        DateTime? @map("revoked_at")
+  revokedAt        DateTime?
   createdAt        DateTime  @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -122,23 +122,23 @@ model Session {
 }
 
 model OtpCode {
-  id        String    @id @default(uuid()) @db.Uuid
-  phoneE164 String    @map("phone_e164")
-  codeHash  String    @map("code_hash")
-  attempts  Int       @default(0)
-  expiresAt DateTime  @map("expires_at")
-  consumedAt DateTime? @map("consumed_at")
-  createdAt DateTime  @default(now()) @map("created_at")
+  id         String    @id @default(uuid())
+  phoneE164  String    @map("phone_e164")
+  codeHash   String    @map("code_hash")
+  attempts   Int       @default(0)
+  expiresAt  DateTime  @map("expires_at")
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now()) @map("created_at")
 
-  @@index([phoneE164, expiresAt(sort: Desc)])
+  @@index([phoneE164, expiresAt])
   @@map("otp_codes")
 }
 
 model Wallet {
-  userId      String   @id @map("user_id") @db.Uuid
-  balanceMinor Int     @default(0) @map("balance_minor")
-  currency    String   @default("RUB")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  userId       String   @id @map("user_id")
+  balanceMinor Int      @default(0) @map("balance_minor")
+  currency     String   @default("RUB")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -146,24 +146,24 @@ model Wallet {
 }
 
 model WalletLedger {
-  id             String       @id @default(uuid()) @db.Uuid
-  userId         String       @map("user_id") @db.Uuid
+  id             String       @id @default(uuid())
+  userId         String       @map("user_id")
   type           LedgerType
   amountMinor    Int          @map("amount_minor")
   reason         LedgerReason
-  referenceType  String?      @map("reference_type")
-  referenceId    String?      @map("reference_id")
+  referenceType  String?
+  referenceId    String?
   idempotencyKey String       @unique @map("idempotency_key")
   createdAt      DateTime     @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, createdAt])
   @@map("wallet_ledger")
 }
 
 model Plan {
-  id                String   @id @default(uuid()) @db.Uuid
+  id                String   @id @default(uuid())
   code              String   @unique
   name              String
   monthlyPriceMinor Int      @map("monthly_price_minor")
@@ -176,14 +176,14 @@ model Plan {
 }
 
 model Subscription {
-  id                  String             @id @default(uuid()) @db.Uuid
-  userId              String             @map("user_id") @db.Uuid
-  planId              String             @map("plan_id") @db.Uuid
-  status              SubscriptionStatus @default(active)
-  periodStart         DateTime           @map("period_start")
-  periodEnd           DateTime           @map("period_end")
-  cancelAtPeriodEnd   Boolean            @default(false) @map("cancel_at_period_end")
-  createdAt           DateTime           @default(now()) @map("created_at")
+  id                String             @id @default(uuid())
+  userId            String             @map("user_id")
+  planId            String             @map("plan_id")
+  status            SubscriptionStatus @default(active)
+  periodStart       DateTime           @map("period_start")
+  periodEnd         DateTime           @map("period_end")
+  cancelAtPeriodEnd Boolean            @default(false) @map("cancel_at_period_end")
+  createdAt         DateTime           @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan Plan @relation(fields: [planId], references: [id], onDelete: Restrict)
@@ -194,8 +194,8 @@ model Subscription {
 }
 
 model Payment {
-  id                String          @id @default(uuid()) @db.Uuid
-  userId            String          @map("user_id") @db.Uuid
+  id                String          @id @default(uuid())
+  userId            String          @map("user_id")
   provider          PaymentProvider
   providerPaymentId String          @unique @map("provider_payment_id")
   amountMinor       Int             @map("amount_minor")
@@ -207,26 +207,26 @@ model Payment {
   user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   events PaymentEvent[]
 
-  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, createdAt])
   @@map("payments")
 }
 
 model PaymentEvent {
-  id            String   @id @default(uuid()) @db.Uuid
-  paymentId     String   @map("payment_id") @db.Uuid
-  eventType     String   @map("event_type")
-  rawPayload    Json     @map("raw_payload_json")
-  receivedAt    DateTime @default(now()) @map("received_at")
+  id         String   @id @default(uuid())
+  paymentId  String   @map("payment_id")
+  eventType  String   @map("event_type")
+  rawPayload Json
+  receivedAt DateTime @default(now()) @map("received_at")
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
 
-  @@index([paymentId, receivedAt(sort: Desc)])
+  @@index([paymentId, receivedAt])
   @@map("payment_events")
 }
 
 model UsageEvent {
-  id            String   @id @default(uuid()) @db.Uuid
-  userId        String   @map("user_id") @db.Uuid
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
   modelProvider String   @map("model_provider")
   modelName     String   @map("model_name")
   inputTokens   Int      @default(0) @map("input_tokens")
@@ -237,26 +237,26 @@ model UsageEvent {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, createdAt])
   @@index([requestId])
   @@map("usage_events")
 }
 
 model AuditLog {
-  id          String   @id @default(uuid()) @db.Uuid
-  actorUserId String?  @map("actor_user_id") @db.Uuid
+  id          String   @id @default(uuid())
+  actorUserId String?  @map("actor_user_id")
   entityType  String   @map("entity_type")
   entityId    String   @map("entity_id")
   action      String
-  beforeJson  Json?    @map("before_json")
-  afterJson   Json?    @map("after_json")
+  beforeJson  Json?
+  afterJson   Json?
   ip          String?
-  userAgent   String?  @map("user_agent")
+  userAgent   String?
   createdAt   DateTime @default(now()) @map("created_at")
 
   actorUser User? @relation("ActorUserAuditLog", fields: [actorUserId], references: [id], onDelete: SetNull)
 
-  @@index([entityType, entityId, createdAt(sort: Desc)])
-  @@index([actorUserId, createdAt(sort: Desc)])
+  @@index([entityType, entityId, createdAt])
+  @@index([actorUserId, createdAt])
   @@map("audit_log")
 }
