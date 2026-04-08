@@ -13,6 +13,41 @@
 
 					<div class="context-body">
 						<section class="context-section">
+							<h4>Действия</h4>
+							<div class="context-actions">
+								<button
+									class="primary-action"
+									type="button"
+									@click="openFilePicker"
+									:disabled="!chat.isExternalBackend || chat.isUploadingFile || chat.isLoading"
+								>
+									{{ chat.isUploadingFile ? 'Загрузка...' : 'Добавить файл' }}
+								</button>
+
+								<button
+									class="secondary-action"
+									type="button"
+									@click="toggleVoiceRecording"
+									:disabled="!chat.isExternalBackend || chat.isUploadingFile || chat.isLoading"
+								>
+									{{ isRecording ? 'Остановить запись' : 'Записать голос' }}
+								</button>
+							</div>
+
+							<input
+								ref="fileInputRef"
+								class="hidden-file-input"
+								type="file"
+								accept=".txt,.csv,.pdf,.docx,.xlsx"
+								@change="handleFileSelected"
+							/>
+
+							<p v-if="!chat.isExternalBackend" class="context-empty">
+								Файлы и голос работают только в режиме `vk-ai` backend.
+							</p>
+						</section>
+
+						<section class="context-section">
 							<h4>Сессия</h4>
 							<div class="context-card">
 								<p><b>Status:</b> {{ chat.backendStatus }}</p>
@@ -64,14 +99,93 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useChatStore } from '../../stores/chat'
 
 defineProps<{ visible: boolean }>()
 const emit = defineEmits<{ (e: 'update:visible', value: boolean): void }>()
 const chat = useChatStore()
 
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const isRecording = ref(false)
+let mediaRecorder: MediaRecorder | null = null
+let mediaStream: MediaStream | null = null
+let recordedChunks: Blob[] = []
+
 const close = () => emit('update:visible', false)
 const formatDate = (value: number) => new Date(value).toLocaleString()
+
+const stopRecordingTracks = () => {
+	mediaStream?.getTracks().forEach(track => track.stop())
+	mediaStream = null
+}
+
+const openFilePicker = () => {
+	fileInputRef.value?.click()
+}
+
+const handleFileSelected = async (event: Event) => {
+	const input = event.target as HTMLInputElement
+	const file = input.files?.[0]
+	if (!file) return
+
+	try {
+		await chat.uploadContextFile(file)
+	} catch (error) {
+		chat.addSystemMessage(`Не удалось загрузить файл: ${(error as Error).message}`)
+	}
+
+	input.value = ''
+}
+
+const toggleVoiceRecording = async () => {
+	try {
+		if (isRecording.value) {
+			mediaRecorder?.stop()
+			return
+		}
+
+		if (!navigator.mediaDevices?.getUserMedia) {
+			throw new Error('MediaRecorder is not supported in this browser')
+		}
+
+		mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+		recordedChunks = []
+		mediaRecorder = new MediaRecorder(mediaStream)
+
+		mediaRecorder.ondataavailable = event => {
+			if (event.data.size > 0) recordedChunks.push(event.data)
+		}
+
+		mediaRecorder.onstop = async () => {
+			try {
+				const blob = new Blob(recordedChunks, { type: mediaRecorder?.mimeType || 'audio/webm' })
+				const extension = blob.type.includes('ogg') ? 'ogg' : 'webm'
+				const file = new File([blob], `voice-${Date.now()}.${extension}`, { type: blob.type || 'audio/webm' })
+				await chat.sendVoiceMessage(file)
+			} catch (error) {
+				chat.addSystemMessage(`Не удалось отправить голосовое: ${(error as Error).message}`)
+			} finally {
+				recordedChunks = []
+				isRecording.value = false
+				stopRecordingTracks()
+			}
+		}
+
+		mediaRecorder.onerror = () => {
+			isRecording.value = false
+			stopRecordingTracks()
+			chat.addSystemMessage('Голосовой ввод недоступен')
+		}
+
+		mediaRecorder.start()
+		isRecording.value = true
+	} catch (error) {
+		isRecording.value = false
+		stopRecordingTracks()
+		chat.addSystemMessage(`Голосовой ввод недоступен: ${(error as Error).message}`)
+	}
+}
 </script>
 
 <style scoped>
@@ -137,6 +251,42 @@ const formatDate = (value: number) => new Date(value).toLocaleString()
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
+}
+
+.context-actions {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 10px;
+}
+
+.primary-action,
+.secondary-action {
+	padding: 12px 14px;
+	border-radius: 14px;
+	border: none;
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.primary-action {
+	background: linear-gradient(180deg, var(--color-primary), var(--color-primary-hover));
+	color: #fff;
+}
+
+.secondary-action {
+	background: rgba(255, 107, 107, 0.16);
+	color: #ffc1c1;
+	border: 1px solid rgba(255, 107, 107, 0.18);
+}
+
+.primary-action:disabled,
+.secondary-action:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.hidden-file-input {
+	display: none;
 }
 
 .context-card,
@@ -221,6 +371,10 @@ const formatDate = (value: number) => new Date(value).toLocaleString()
 
 	.context-body {
 		padding-inline: 12px;
+	}
+
+	.context-actions {
+		grid-template-columns: 1fr;
 	}
 }
 </style>
