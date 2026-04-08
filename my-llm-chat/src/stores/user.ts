@@ -16,6 +16,7 @@ const mapApiUserToUiUser = (apiUser: {
 	lastName: string | null
 	avatarUrl: string | null
 	phoneE164: string | null
+	isAdmin?: boolean
 }) => ({
 	vkId: apiUser.id,
 	firstName: apiUser.firstName || 'User',
@@ -24,6 +25,7 @@ const mapApiUserToUiUser = (apiUser: {
 	balance: 0,
 	requestsLeft: 0,
 	phoneE164: apiUser.phoneE164 || undefined,
+	isAdmin: Boolean(apiUser.isAdmin),
 })
 
 const safeParseUser = (raw: string | null): User | null => {
@@ -67,6 +69,7 @@ export const useUserStore = defineStore('user', () => {
 			lastName: string | null
 			avatarUrl: string | null
 			phoneE164: string | null
+			isAdmin?: boolean
 		}
 	}) => {
 		token.value = result.accessToken
@@ -158,26 +161,6 @@ export const useUserStore = defineStore('user', () => {
 			applyAuthResult(result)
 			phoneChallenge.value = null
 			return result
-		} finally {
-			authPending.value = false
-		}
-	}
-
-	async function loginAsDevAdmin() {
-		authPending.value = true
-		try {
-			token.value = 'dev-admin-token'
-			refreshToken.value = 'dev-admin-refresh-token'
-			user.value = {
-				vkId: 'dev-admin',
-				firstName: 'Dev',
-				lastName: 'Admin',
-				photo_200: 'https://via.placeholder.com/200?text=Admin',
-				balance: 999999,
-				requestsLeft: 999999,
-				phoneE164: '+70000000000',
-			}
-			persistAuthState()
 		} finally {
 			authPending.value = false
 		}
@@ -293,7 +276,6 @@ export const useUserStore = defineStore('user', () => {
 		loginByProvider,
 		sendPhoneCode,
 		loginByPhone,
-		loginAsDevAdmin,
 		refreshAuth,
 		rechargeBalance,
 		createYooKassaPayment,

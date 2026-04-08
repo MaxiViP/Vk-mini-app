@@ -2,6 +2,7 @@ import { Router } from 'express'
 
 import { userService } from './user.service.js'
 import { authMiddleware } from '../auth/auth.middleware.js'
+import { requireAdmin } from '../../shared/access.js'
 
 const router = Router()
 
@@ -26,7 +27,7 @@ router.post('/me/activity', authMiddleware, async (req, res, next) => {
 	}
 })
 
-router.get('/', authMiddleware, async (req, res, next) => {
+router.get('/', authMiddleware, requireAdmin, async (req, res, next) => {
 	try {
 		const users = await userService.listUsers({
 			limit: Number(req.query.limit || 20),
@@ -38,7 +39,7 @@ router.get('/', authMiddleware, async (req, res, next) => {
 	}
 })
 
-router.post('/', authMiddleware, async (req, res, next) => {
+router.post('/', authMiddleware, requireAdmin, async (req, res, next) => {
 	try {
 		const user = await userService.createUser(req.body, {
 			actorUserId: req.user.id,
@@ -51,7 +52,7 @@ router.post('/', authMiddleware, async (req, res, next) => {
 	}
 })
 
-router.patch('/:id', authMiddleware, async (req, res, next) => {
+router.patch('/:id', authMiddleware, requireAdmin, async (req, res, next) => {
 	try {
 		const updated = await userService.updateUser(req.params.id, req.body, {
 			actorUserId: req.user.id,
@@ -64,7 +65,7 @@ router.patch('/:id', authMiddleware, async (req, res, next) => {
 	}
 })
 
-router.delete('/:id', authMiddleware, async (req, res, next) => {
+router.delete('/:id', authMiddleware, requireAdmin, async (req, res, next) => {
 	try {
 		const deleted = await userService.deleteUser(req.params.id, {
 			actorUserId: req.user.id,

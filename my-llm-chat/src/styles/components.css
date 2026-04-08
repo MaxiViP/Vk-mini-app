@@ -2,14 +2,17 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	padding: 6px 12px;
+	padding: 8px 14px;
 	gap: 4px;
 	border: 1px solid var(--color-accent);
 	border-radius: var(--radius-xl);
 	background: transparent;
 	color: var(--color-text);
 	cursor: pointer;
-	font-size: 16px;
+	font-size: 15px;
+	line-height: 1.2;
+	white-space: nowrap;
+	max-width: 100%;
 	transition: background var(--transition-base);
 }
 
@@ -34,18 +37,21 @@ select {
 	align-items: center;
 	gap: 16px;
 	flex-wrap: wrap;
+	width: min(100%, calc(var(--content-width) + 2 * var(--app-gutter)));
+	align-self: center;
 	padding: 12px 16px;
 	background: rgba(0, 0, 0, 0.3);
 	border-radius: var(--radius-lg);
-	margin: 8px 16px 0;
+	margin: 0;
+	box-sizing: border-box;
 }
 
 .dropdown-group {
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	flex: 1 1 auto;
-	min-width: 180px;
+	flex: 1 1 260px;
+	min-width: min(240px, 100%);
 }
 
 .dropdown-group label {
@@ -65,7 +71,7 @@ select {
 .custom-select {
 	position: relative;
 	width: 100%;
-	min-width: 160px;
+	min-width: 0;
 	user-select: none;
 }
 
@@ -158,30 +164,27 @@ select {
 
 @media (max-width: 768px) {
 	.model-selector {
-		margin: 8px 8px 0;
 		padding: 10px 12px;
 		gap: 12px;
 	}
 
 	.dropdown-group {
-		min-width: 150px;
+		min-width: min(220px, 100%);
 	}
-	/* 
-	.pill-btn .btn-text {
-		max-width: 60px;
-		overflow: hidden;
-		text-overflow: ellipsis;
-	} */
 }
 
 @media (max-width: 560px) {
 	.model-selector {
 		flex-direction: column;
 		align-items: stretch;
+		padding: 12px;
 	}
 
 	.dropdown-group {
 		width: 100%;
+		min-width: 0;
+		flex-direction: column;
+		align-items: stretch;
 	}
 
 	.dropdown-group select {
@@ -190,5 +193,16 @@ select {
 
 	.pill-btn .btn-text {
 		display: none;
+	}
+}
+
+@media (max-width: 420px) {
+	.pill-btn {
+		padding-inline: 12px;
+		font-size: 14px;
+	}
+
+	.model-selector {
+		border-radius: 14px;
 	}
 }

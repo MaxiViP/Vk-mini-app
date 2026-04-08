@@ -2,11 +2,10 @@
 	background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.01)), var(--color-surface);
 	border: 1px solid var(--color-border-soft);
 	border-radius: var(--radius-2xl);
-	padding: 24px;
+	padding: clamp(16px, 2.2vw, 24px);
 	text-align: center;
-	max-width: 920px;
-	/* margin: 16px auto; */
-	max-height: calc(800px - 32px);
+	width: min(100%, 920px);
+	max-height: min(calc(var(--viewport-height) - 32px), 920px);
 	overflow-y: auto;
 	overflow-x: hidden;
 	overscroll-behavior: contain;
@@ -39,19 +38,21 @@
 .profile-header-user {
 	display: flex;
 	justify-content: space-between;
-	gap: 8px;
+	gap: 14px;
 	align-items: center;
+	min-width: 0;
 }
 
 .profile-header {
 	display: flex;
 	align-items: center;
-	justify-content: center;
-	gap: 16px;
+	justify-content: space-between;
+	gap: 18px;
 	text-align: left;
 	padding-bottom: 20px;
 	margin-bottom: 20px;
 	border-bottom: 1px solid var(--color-border-soft);
+	flex-wrap: wrap;
 }
 
 .profile-head-info {
@@ -86,6 +87,7 @@
 	border-radius: 12px;
 	font-weight: 600;
 	text-align: center;
+	flex: 1 1 260px;
 }
 
 .profile-status.success {
@@ -115,6 +117,7 @@
 	grid-template-columns: repeat(2, minmax(0, 1fr));
 	gap: 12px;
 	margin-bottom: 20px;
+	flex: 1 1 320px;
 }
 
 .stat-card {
@@ -421,15 +424,16 @@
 
 @media (max-width: 768px) {
 	.profile {
-		/* margin: 6px; */
-		padding: 6px;
-		/* max-height: calc(100vh - 12px); */
+		padding: 14px;
+		max-height: min(calc(var(--viewport-height) - 16px), 100%);
 	}
 
 	.profile-header {
-		/* flex-direction: column; */
+		flex-direction: column;
+		align-items: stretch;
 		text-align: center;
 	}
+
 	.profile-header-user {
 		flex-direction: column;
 	}
@@ -439,9 +443,8 @@
 	}
 
 	.profile-stats {
-		display: flex;
-		justify-content: center;
-		flex-direction: column;
+		grid-template-columns: 1fr;
+		width: 100%;
 	}
 
 	.profile h2 {
@@ -450,6 +453,11 @@
 }
 
 @media (max-width: 480px) {
+	.profile {
+		padding: 12px;
+		border-radius: 18px;
+	}
+
 	.profile-avatar {
 		width: 72px;
 		height: 72px;

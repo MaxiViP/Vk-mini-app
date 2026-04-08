@@ -44,7 +44,10 @@ router.get('/history', authMiddleware, async (req, res, next) => {
 
 router.get('/:id', authMiddleware, async (req, res, next) => {
 	try {
-		const result = await billingService.getPaymentById(req.params.id)
+		const result = await billingService.getPaymentById({
+			paymentId: req.params.id,
+			actorUserId: req.user.id,
+		})
 		res.json(result)
 	} catch (error) {
 		next(error)

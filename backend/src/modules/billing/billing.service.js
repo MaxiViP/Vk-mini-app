@@ -3,6 +3,7 @@ import crypto from 'node:crypto'
 import prisma from '../../db/prisma.js'
 import { AppError } from '../../shared/errors.js'
 import { logBusinessEvent } from '../../shared/observability.js'
+import { isAdminUser } from '../../shared/access.js'
 
 const toMinor = amount => {
 	const numeric = Number(amount)
@@ -148,12 +149,15 @@ export const billingService = {
 
 		return { payments, ledger }
 	},
-	async getPaymentById(paymentId) {
+	async getPaymentById({ paymentId, actorUserId }) {
 		const payment = await prisma.payment.findUnique({
 			where: { id: paymentId },
 			include: { events: { orderBy: { receivedAt: 'desc' } } },
 		})
 		if (!payment) throw new AppError('Payment not found', 404)
+		if (payment.userId !== actorUserId && !(await isAdminUser(actorUserId))) {
+			throw new AppError('Forbidden', 403)
+		}
 		return payment
 	},
 }

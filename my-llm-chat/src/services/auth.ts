@@ -21,6 +21,7 @@ export interface AuthResult {
 		lastName: string | null
 		avatarUrl: string | null
 		status: 'active' | 'blocked' | 'deleted'
+		isAdmin?: boolean
 	}
 }
 

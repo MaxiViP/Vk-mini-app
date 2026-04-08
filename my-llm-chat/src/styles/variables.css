@@ -38,8 +38,14 @@
 	--overlay-light-4: rgba(255, 255, 255, 0.4);
 
 	--container-width: 1200px;
-	--content-width: 900px;
+	--content-width: 960px;
 	--profile-width: 400px;
+	--app-gutter: clamp(12px, 2vw, 24px);
+	--section-gap: clamp(12px, 1.8vw, 20px);
+	--top-bar-height: 56px;
+	--input-offset: clamp(12px, 2vw, 24px);
+	--input-bottom-safe: max(16px, env(safe-area-inset-bottom));
+	--viewport-height: 100vh;
 
 	--radius-sm: 8px;
 	--radius-md: 12px;

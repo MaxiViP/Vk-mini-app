@@ -18,7 +18,6 @@
 				<table class="users-table">
 					<thead>
 						<tr>
-							<th>publicId</th>
 							<th>UUID</th>
 							<th>Имя</th>
 							<th>Email</th>
@@ -30,13 +29,12 @@
 					</thead>
 					<tbody>
 						<tr v-for="user in users" :key="user.id" @click="selectUser(user)">
-							<td>{{ user.publicId }}</td>
 							<td class="mono">{{ user.id }}</td>
 							<td>{{ formatName(user) }}</td>
 							<td>{{ user.email || '-' }}</td>
 							<td>{{ user.phoneE164 || '-' }}</td>
 							<td>{{ user.status }}</td>
-							<td>{{ formatBalance(user.wallets?.balanceMinor, user.wallets?.currency) }}</td>
+							<td>{{ formatBalance(user.wallet?.balanceMinor, user.wallet?.currency) }}</td>
 							<td>{{ formatDate(user.createdAt) }}</td>
 						</tr>
 					</tbody>
@@ -78,6 +76,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import axios from 'axios'
+import type { AxiosError } from 'axios'
 
 import { useUserStore } from '../../stores/user'
 
@@ -85,14 +84,13 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000
 
 interface AdminUserRow {
 	id: string
-	publicId: number
 	email: string | null
 	phoneE164: string | null
 	firstName: string | null
 	lastName: string | null
 	status: string
 	createdAt: string
-	wallets: {
+	wallet: {
 		balanceMinor: number
 		currency: string
 	} | null
@@ -116,7 +114,6 @@ const dateTo = ref('')
 
 const authHeaders = () => ({
 	Authorization: `Bearer ${userStore.token}`,
-	'X-Admin-Secret': import.meta.env.VITE_ADMIN_MONITOR_SECRET || '',
 })
 
 const toIso = (value: string) => (value ? new Date(value).toISOString() : undefined)
@@ -124,6 +121,22 @@ const normalizedUserId = () => {
 	const value = userId.value?.trim()
 	if (!value || value === 'null' || value === 'undefined') return undefined
 	return value
+}
+
+const resolveAdminErrorMessage = (error: unknown) => {
+	const axiosError = error as AxiosError<{ message?: string; details?: { code?: string } }>
+	const apiMessage = axiosError.response?.data?.message
+	const errorCode = axiosError.response?.data?.details?.code
+
+	if (errorCode === 'DATABASE_UNAVAILABLE') {
+		return 'Локальный backend не может подключиться к MySQL. Пользователи из серверной базы появятся только после деплоя на сервер или при запуске локальной БД.'
+	}
+
+	if (apiMessage) {
+		return `Админ-панель не загрузилась: ${apiMessage}`
+	}
+
+	return 'Не удалось загрузить данные админ-панели. Проверьте backend-логи.'
 }
 
 const loadAll = async () => {
@@ -169,7 +182,7 @@ const loadAll = async () => {
 		}
 	} catch (error) {
 		console.error('Admin panel load failed', error)
-		errorMessage.value = 'Не удалось загрузить данные админ-панели. Проверьте backend-логи.'
+		errorMessage.value = resolveAdminErrorMessage(error)
 	} finally {
 		loading.value = false
 	}
@@ -203,7 +216,7 @@ onMounted(loadAll)
 	flex-direction: column;
 	gap: 12px;
 	width: min(1200px, 100%);
-	max-height: calc(800px - 140px);
+	max-height: min(calc(var(--viewport-height) - 48px), 900px);
 	overflow-y: auto;
 	overflow-x: hidden;
 	padding-right: 4px;
@@ -293,6 +306,28 @@ pre {
 
 	.users-table {
 		font-size: 11px;
+	}
+}
+
+@media (max-width: 560px) {
+	.admin-panel {
+		max-height: min(calc(var(--viewport-height) - 20px), 100%);
+		padding-right: 0;
+	}
+
+	.filters {
+		grid-template-columns: 1fr;
+		padding: 10px;
+	}
+
+	.users-table th,
+	.users-table td {
+		padding: 5px;
+	}
+
+	pre {
+		font-size: 11px;
+		padding: 8px;
 	}
 }
 </style>

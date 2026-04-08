@@ -7,7 +7,7 @@ export const userService = {
 		const user = await prisma.user.findUnique({
 			where: { id: userId },
 			include: {
-				wallets: true,
+				wallet: true,
 				subscriptions: {
 					where: { status: 'active' },
 					include: { plan: true },

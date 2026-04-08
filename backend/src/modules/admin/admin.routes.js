@@ -2,17 +2,10 @@ import { Router } from 'express'
 
 import { authMiddleware } from '../auth/auth.middleware.js'
 import { adminService } from './admin.service.js'
-import { AppError } from '../../shared/errors.js'
 import logger from '../../config/logger.js'
+import { requireAdmin } from '../../shared/access.js'
 
 const router = Router()
-
-const requireAdmin = (req, _res, next) => {
-	if (req.user?.id === 'dev-admin' || req.header('x-admin-secret') === process.env.ADMIN_MONITOR_SECRET) {
-		return next()
-	}
-	return next(new AppError('Admin access required', 403))
-}
 
 router.use(authMiddleware, requireAdmin)
 

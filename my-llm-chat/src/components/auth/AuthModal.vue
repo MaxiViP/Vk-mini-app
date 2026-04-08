@@ -7,13 +7,8 @@
 						<h2 id="auth-title" class="auth-title">Вход и регистрация</h2>
 						<p class="auth-subtitle">Выберите способ входа. Регистрация создаётся автоматически при первом логине.</p>
 
-						<!-- OAuth кнопки -->
 						<div class="auth-provider-list">
-							<button
-								class="auth-provider-btn auth-provider-btn--vk"
-								:disabled="userStore.authPending"
-								@click="login('vk')"
-							>
+							<button class="auth-provider-btn auth-provider-btn--vk" :disabled="userStore.authPending" @click="login('vk')">
 								Войти через VK ID
 							</button>
 							<button
@@ -34,7 +29,6 @@
 
 						<div class="auth-divider">или</div>
 
-						<!-- Вход по телефону -->
 						<form class="phone-auth" @submit.prevent="handlePhoneCodeRequest">
 							<label for="phone-input">Вход по номеру телефона</label>
 							<input
@@ -54,12 +48,11 @@
 							</button>
 						</form>
 
-						<!-- Шаг с кодом -->
 						<div v-if="userStore.phoneChallenge" class="code-step">
 							<p>Ваш код для входа:</p>
 							<div class="test-code-value">{{ userStore.phoneChallenge.testCode }}</div>
 
-							<label for="sms-code-input">Введите код</label>
+							<label for="sms-code-input">Код подставится автоматически</label>
 							<input
 								id="sms-code-input"
 								v-model="smsCode"
@@ -70,11 +63,6 @@
 							/>
 						</div>
 
-						<div class="auth-divider">временный доступ для разработки</div>
-						<button class="admin-dev-btn" :disabled="userStore.authPending" @click="loginDevAdmin">
-							Войти как админ (dev)
-						</button>
-
 						<p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 					</div>
 				</div>
@@ -84,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { onUnmounted, ref, watch } from 'vue'
 import { useUserStore } from '../../stores/user'
 
 defineProps<{ visible: boolean }>()
@@ -94,6 +82,7 @@ const userStore = useUserStore()
 const phone = ref('')
 const smsCode = ref('')
 const errorMessage = ref('')
+let autoFillTimer: number | null = null
 
 const noop = () => {}
 
@@ -115,24 +104,27 @@ const login = async (provider: 'vk' | 'google' | 'yandex') => {
 	}
 }
 
-// Отправка кода по телефону
 const handlePhoneCodeRequest = async () => {
 	try {
 		errorMessage.value = ''
 		smsCode.value = ''
 		const result = await userStore.sendPhoneCode(phone.value)
-		// В сторе поле phoneChallenge ожидает testCode, а с бэка приходит debugCode
 		userStore.phoneChallenge = {
 			challengeId: result.challengeId,
 			expiresInSec: result.expiresInSec,
 			testCode: result.debugCode ?? null,
+		}
+		if (autoFillTimer) window.clearTimeout(autoFillTimer)
+		if (result.debugCode) {
+			autoFillTimer = window.setTimeout(() => {
+				smsCode.value = result.debugCode ?? ''
+			}, 1000)
 		}
 	} catch (error) {
 		errorMessage.value = error instanceof Error ? error.message : 'Не удалось отправить код.'
 	}
 }
 
-// Автоматическая проверка кода (сравниваем введённое значение с testCode)
 watch(smsCode, async val => {
 	if (userStore.phoneChallenge && val === userStore.phoneChallenge.testCode) {
 		try {
@@ -145,16 +137,9 @@ watch(smsCode, async val => {
 	}
 })
 
-// Вход как dev-admin
-const loginDevAdmin = async () => {
-	try {
-		errorMessage.value = ''
-		await userStore.loginAsDevAdmin()
-		handleAuthSuccess()
-	} catch (error) {
-		errorMessage.value = error instanceof Error ? error.message : 'Не удалось войти как dev-admin.'
-	}
-}
+onUnmounted(() => {
+	if (autoFillTimer) window.clearTimeout(autoFillTimer)
+})
 </script>
 
 <style scoped>
@@ -190,8 +175,7 @@ const loginDevAdmin = async () => {
 }
 
 .auth-provider-btn,
-.submit-btn,
-.admin-dev-btn {
+.submit-btn {
 	width: 100%;
 	padding: 10px 12px;
 	border-radius: 12px;
@@ -210,11 +194,6 @@ const loginDevAdmin = async () => {
 .submit-btn {
 	background: #f1f3f5;
 	color: #111;
-}
-
-.admin-dev-btn {
-	background: #111827;
-	color: #fff;
 }
 
 .phone-auth,

@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken'
 import env from '../../config/env.js'
 import prisma from '../../db/prisma.js'
 import { AppError } from '../../shared/errors.js'
+import { isAdminUser } from '../../shared/access.js'
 
 const ACCESS_TOKEN_TTL = '15m'
 const REFRESH_TOKEN_TTL_DAYS = 30
@@ -59,12 +60,16 @@ export const authService = {
 		await ensureWalletExists(user.id)
 		const accessToken = signAccessToken(user)
 		const sessionData = await createSession({ userId: user.id, userAgent, ip })
+		const admin = await isAdminUser(user.id)
 
 		return {
 			accessToken,
 			refreshToken: sessionData.refreshToken,
 			refreshTokenExpiresAt: sessionData.expiresAt,
-			user,
+			user: {
+				...user,
+				isAdmin: admin,
+			},
 		}
 	},
 

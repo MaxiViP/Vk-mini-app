@@ -16,13 +16,6 @@ export const authMiddleware = (req, _res, next) => {
 	}
 
 	const token = header.slice('Bearer '.length)
-	if (env.nodeEnv !== 'production' && token === 'dev-admin-token') {
-		req.user = {
-			id: 'dev-admin',
-			status: 'active',
-		}
-		return next()
-	}
 
 	try {
 		const payload = jwt.verify(token, env.jwtSecret)

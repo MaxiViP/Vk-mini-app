@@ -1,7 +1,6 @@
 import prisma from '../../db/prisma.js'
 import logger from '../../config/logger.js'
 
-// Вспомогательные функции
 const buildDateFilter = ({ dateFrom, dateTo }) => {
 	if (!dateFrom && !dateTo) return undefined
 	return {
@@ -12,45 +11,23 @@ const buildDateFilter = ({ dateFrom, dateTo }) => {
 
 const resolveInternalUserId = async rawUserId => {
 	if (!rawUserId) return null
-	const raw = String(rawUserId)
 
-	if (/^\d+$/.test(raw)) {
-		// Ищем по publicId числовому
-		try {
-			const user = await prisma.user.findUnique({
-				where: { publicId: Number(raw) },
-				select: { id: true, publicId: true },
-			})
-			return user || null
-		} catch (error) {
-			const message = String(error?.message || '')
-			if (message.includes('public_id') || message.includes('publicId')) {
-				logger.warn('resolveInternalUserId: publicId lookup unavailable (migration missing)', {
-					rawUserId: raw,
-				})
-				return null
-			}
-			throw error
-		}
-	}
-
-	// Ищем по внутреннему id (строку приводим к числу)
 	const user = await prisma.user.findUnique({
-		where: { id: Number(raw) },
+		where: { id: String(rawUserId) },
 		select: { id: true },
 	})
-	return user ? { id: user.id, publicId: null } : null
+
+	return user ? { id: user.id } : null
 }
 
 const applyPagination = ({ limit = 100, cursor = null }) => ({
 	take: Math.min(limit, 500),
 	skip: cursor ? 1 : 0,
-	cursor: cursor ? { id: Number(cursor) } : undefined,
+	cursor: cursor ? { id: String(cursor) } : undefined,
 	orderBy: { createdAt: 'desc' },
 })
 
 export const adminService = {
-	// Универсальный метод для списка пользователей с фильтром и fallback
 	async listUsersOverview({ limit = 100, query = null } = {}) {
 		const q = query?.toString().trim()
 		const baseQuery = {
@@ -58,21 +35,21 @@ export const adminService = {
 			orderBy: { createdAt: 'desc' },
 		}
 
-		const buildWhere = ({ insensitive = true, withPublicId = true } = {}) => {
+		const buildWhere = ({ insensitive = true } = {}) => {
 			if (!q) return {}
 			const textFilter = value => (insensitive ? { contains: value, mode: 'insensitive' } : { contains: value })
 
 			return {
 				OR: [
 					{ email: textFilter(q) },
+					{ phoneE164: textFilter(q) },
 					{ firstName: textFilter(q) },
 					{ lastName: textFilter(q) },
-					...(withPublicId && /^\d+$/.test(q) ? [{ publicId: Number(q) }] : []),
 				],
 			}
 		}
 
-		const buildSelect = ({ withPublicId = true } = {}) => ({
+		const select = {
 			id: true,
 			email: true,
 			phoneE164: true,
@@ -80,56 +57,33 @@ export const adminService = {
 			lastName: true,
 			status: true,
 			createdAt: true,
-			...(withPublicId ? { publicId: true } : {}),
-			wallets: {
+			wallet: {
 				select: {
 					balanceMinor: true,
 					currency: true,
 				},
 			},
-		})
+		}
 
 		try {
 			return await prisma.user.findMany({
 				...baseQuery,
-				where: buildWhere({ insensitive: true, withPublicId: true }),
-				select: buildSelect({ withPublicId: true }),
+				where: buildWhere({ insensitive: true }),
+				select,
 			})
 		} catch (error) {
-			const message = String(error?.message || '')
-			const unsupportedInsensitive = message.includes('Unknown argument `mode`')
-			const missingPublicId = message.includes('public_id') || message.includes('publicId')
-
-			if (!unsupportedInsensitive && !missingPublicId) {
-				throw error
-			}
+			const unsupportedInsensitive = String(error?.message || '').includes('Unknown argument `mode`')
+			if (!unsupportedInsensitive) throw error
 
 			logger.warn('Admin users query fallback activated', {
-				unsupportedInsensitive,
-				missingPublicId,
 				query: q || null,
 			})
 
-			const rows = await prisma.user.findMany({
+			return prisma.user.findMany({
 				...baseQuery,
-				where: buildWhere({
-					insensitive: !unsupportedInsensitive,
-					withPublicId: !missingPublicId,
-				}),
-				select: buildSelect({ withPublicId: !missingPublicId }),
+				where: buildWhere({ insensitive: false }),
+				select,
 			})
-
-			if (missingPublicId) {
-				logger.warn('Admin users query returned rows without publicId (migration likely missing)', {
-					count: rows.length,
-				})
-				return rows.map((row, index) => ({
-					...row,
-					publicId: index + 1,
-				}))
-			}
-
-			return rows
 		}
 	},
 
@@ -233,7 +187,6 @@ export const adminService = {
 		return {
 			summary: {
 				userId: internalUserId,
-				publicId: resolvedUser.publicId,
 				totalAuditEvents: audit.length,
 				totalApiRequests: apiRequests.length,
 				totalHeartbeats: heartbeats.length,

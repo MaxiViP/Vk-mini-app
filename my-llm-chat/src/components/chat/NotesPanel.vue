@@ -355,20 +355,20 @@ defineExpose({ setNewNoteText })
 /* оставил как было */
 .notes-overlay {
 	position: fixed;
-	top: 0;
-	left: 0;
-	right: 0;
-	bottom: 0;
+	inset: 0;
 	background-color: rgba(0, 0, 0, 0.5);
 	z-index: 1000;
 	display: flex;
 	justify-content: flex-end;
+	padding-left: 16px;
+	box-sizing: border-box;
 }
 
 .notes-panel {
-	width: 380px;
-	max-width: 90vw;
+	width: min(420px, 100%);
+	max-width: 100%;
 	height: 100%;
+	max-height: var(--viewport-height);
 	background: #2f2f2f;
 	color: #ececec;
 	display: flex;
@@ -441,6 +441,7 @@ defineExpose({ setNewNoteText })
 .add-folder {
 	display: flex;
 	gap: 10px;
+	flex-wrap: wrap;
 }
 
 .add-folder input,
@@ -515,6 +516,7 @@ defineExpose({ setNewNoteText })
 .add-note-actions {
 	display: flex;
 	gap: 10px;
+	flex-wrap: wrap;
 }
 
 .add-note button {
@@ -582,6 +584,7 @@ defineExpose({ setNewNoteText })
 	display: flex;
 	gap: 12px;
 	justify-content: space-between;
+	flex-wrap: wrap;
 }
 
 .export-btn,
@@ -606,5 +609,40 @@ defineExpose({ setNewNoteText })
 .clear-btn:disabled {
 	opacity: 0.5;
 	cursor: not-allowed;
+}
+
+@media (max-width: 768px) {
+	.notes-overlay {
+		padding-left: 0;
+	}
+
+	.notes-panel {
+		width: min(100%, 520px);
+	}
+}
+
+@media (max-width: 560px) {
+	.notes-panel {
+		width: 100%;
+		max-width: 100%;
+	}
+
+	.notes-header,
+	.notes-content,
+	.notes-footer {
+		padding-inline: 12px;
+	}
+
+	.add-folder button,
+	.add-note button,
+	.export-btn,
+	.clear-btn {
+		width: 100%;
+	}
+
+	.folder-select,
+	.note-actions select {
+		width: 100%;
+	}
 }
 </style>

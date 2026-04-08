@@ -7,14 +7,38 @@ export class AppError extends Error {
 	}
 }
 
+const isDatabaseUnavailableError = error => {
+	const message = String(error?.message || '')
+	return (
+		message.includes('Can\'t reach database server') ||
+		message.includes('Cant reach database server') ||
+		message.includes('Connection refused') ||
+		message.includes('ECONNREFUSED')
+	)
+}
+
+const normalizeError = error => {
+	if (error instanceof AppError) return error
+
+	if (isDatabaseUnavailableError(error)) {
+		return new AppError('Database is unavailable', 503, {
+			code: 'DATABASE_UNAVAILABLE',
+			hint: 'Configure DATABASE_URL for a reachable database or run a local MySQL instance.',
+		})
+	}
+
+	return error
+}
+
 export const notFoundHandler = (req, _res, next) => {
 	next(new AppError(`Route ${req.method} ${req.originalUrl} not found`, 404))
 }
 
 export const errorHandler = (error, _req, res, _next) => {
-	const statusCode = error.statusCode || 500
+	const normalizedError = normalizeError(error)
+	const statusCode = normalizedError.statusCode || 500
 	res.status(statusCode).json({
-		message: error.message || 'Internal server error',
-		details: error.details || null,
+		message: normalizedError.message || 'Internal server error',
+		details: normalizedError.details || null,
 	})
 }

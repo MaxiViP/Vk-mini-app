@@ -8,10 +8,34 @@ export interface Model {
 	baseUrl?: string // для локальных моделей
 }
 
+export interface MessageSource {
+	type: string
+	name: string
+}
+
+export interface MessageMeta {
+	sourceType?: string
+	sources?: MessageSource[]
+	transcript?: string
+	audioReplyUrl?: string
+	fileName?: string
+	statusLabel?: string
+}
+
+export interface SourceHistoryItem {
+	id: string
+	timestamp: number
+	sourceType?: string
+	sources: MessageSource[]
+	replyPreview: string
+	transcript?: string
+}
+
 export interface Message {
 	role: 'user' | 'assistant'
 	content: string
 	timestamp?: number
+	meta?: MessageMeta
 }
 
 export interface User {
@@ -22,6 +46,7 @@ export interface User {
 	balance: number
 	requestsLeft: number
 	phoneE164?: string
+	isAdmin?: boolean
 }
 
 export interface ChatHistoryItem {
