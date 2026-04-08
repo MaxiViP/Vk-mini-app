@@ -43,6 +43,11 @@
 	min-width: 0;
 }
 
+.profile-header-logout {
+	margin-left: auto;
+	flex-shrink: 0;
+}
+
 .profile-header {
 	display: flex;
 	align-items: center;
@@ -426,6 +431,8 @@
 	.profile {
 		padding: 14px;
 		max-height: min(calc(var(--viewport-height) - 16px), 100%);
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	.profile-header {
@@ -436,6 +443,11 @@
 
 	.profile-header-user {
 		flex-direction: column;
+	}
+
+	.profile-header-logout {
+		margin-left: 0;
+		width: 100%;
 	}
 
 	.profile-head-info {
@@ -456,6 +468,9 @@
 	.profile {
 		padding: 12px;
 		border-radius: 18px;
+		max-height: calc(var(--viewport-height) - 8px);
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
 	}
 
 	.profile-avatar {

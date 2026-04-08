@@ -8,6 +8,7 @@
 						<h2>{{ userStore.user.firstName }} {{ userStore.user.lastName }}</h2>
 						<p class="profile-id">Личный кабинет</p>
 					</div>
+					<button @click="userStore.logout" class="logout-btn profile-header-logout">Выйти</button>
 				</div>
 
 				<p
