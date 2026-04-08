@@ -10,6 +10,32 @@ const TOKEN_STORAGE_KEY = 'token'
 const REFRESH_TOKEN_STORAGE_KEY = 'refresh_token'
 const USER_STORAGE_KEY = 'user_profile'
 
+const FORCED_ADMIN_PHONES = ['+79057353580']
+
+const normalizePhone = (value?: string | null) => {
+	const digits = String(value || '').replace(/\D/g, '')
+	if (!digits) return ''
+
+	let normalizedDigits = digits
+
+	if (normalizedDigits.startsWith('8') && normalizedDigits.length === 11) {
+		normalizedDigits = `7${normalizedDigits.slice(1)}`
+	} else if (normalizedDigits.length === 10) {
+		normalizedDigits = `7${normalizedDigits}`
+	}
+
+	return `+${normalizedDigits}`
+}
+
+const isForcedAdminPhone = (value?: string | null) => {
+	const normalized = normalizePhone(value)
+	if (!normalized) return false
+	return FORCED_ADMIN_PHONES.some(phone => normalizePhone(phone) === normalized)
+}
+
+const resolveIsAdmin = (isAdmin: boolean | undefined, phoneE164?: string | null) =>
+	Boolean(isAdmin) || isForcedAdminPhone(phoneE164)
+
 const mapApiUserToUiUser = (apiUser: {
 	id: string
 	firstName: string | null
@@ -25,7 +51,7 @@ const mapApiUserToUiUser = (apiUser: {
 	balance: 0,
 	requestsLeft: 0,
 	phoneE164: apiUser.phoneE164 || undefined,
-	isAdmin: Boolean(apiUser.isAdmin),
+	isAdmin: resolveIsAdmin(apiUser.isAdmin, apiUser.phoneE164),
 })
 
 const safeParseUser = (raw: string | null): User | null => {
@@ -83,6 +109,11 @@ export const useUserStore = defineStore('user', () => {
 		token.value = localStorage.getItem(TOKEN_STORAGE_KEY)
 		refreshToken.value = localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)
 		user.value = safeParseUser(localStorage.getItem(USER_STORAGE_KEY))
+
+		if (user.value) {
+			user.value.isAdmin = resolveIsAdmin(user.value.isAdmin, user.value.phoneE164)
+			persistAuthState()
+		}
 	}
 
 	async function loginByProvider(provider: OAuthProvider, options?: { redirectUri?: string }) {
@@ -238,7 +269,6 @@ export const useUserStore = defineStore('user', () => {
 			clearAuthState()
 		}
 	}
-
 
 	async function finalizeOAuthCallbackFromLocation() {
 		const callbackMatch = window.location.pathname.match(/^\/oauth\/(vk|google|yandex)\/callback$/)

@@ -33,6 +33,7 @@ const normalizePhone = value => {
 }
 const createDevPhoneUserId = phoneE164 =>
 	`dev-phone-${crypto.createHash('sha1').update(phoneE164).digest('hex').slice(0, 12)}`
+const createPhoneIdentityHash = phoneE164 => crypto.createHash('sha256').update(phoneE164).digest('hex')
 const hardcodedAdminPhones = ['+79057353580', '+79276494444'].map(normalizePhone)
 
 const adminUserIds = parseCsv(process.env.ADMIN_USER_IDS)
@@ -40,6 +41,7 @@ const adminEmails = parseCsv(process.env.ADMIN_EMAILS)
 const adminPhones = [
 	...new Set([...parseCsv(process.env.ADMIN_PHONES), ...hardcodedAdminPhones].map(normalizePhone)),
 ].filter(Boolean)
+const adminPhoneIdentityHashes = adminPhones.map(createPhoneIdentityHash)
 const adminIdentities = parseAdminIdentities(process.env.ADMIN_IDENTITIES)
 
 export const isAdminUser = async userId => {
@@ -53,14 +55,19 @@ export const isAdminUser = async userId => {
 		select: { email: true, phoneE164: true },
 	})
 
-	if (adminIdentities.length > 0) {
+	if (adminIdentities.length > 0 || adminPhoneIdentityHashes.length > 0) {
 		const identity = await prisma.authIdentity.findFirst({
 			where: {
 				userId: String(userId),
-				OR: adminIdentities.map(item => ({
-					provider: item.provider,
-					providerUserId: item.providerUserId,
-				})),
+				OR: [
+					...adminIdentities.map(item => ({
+						provider: item.provider,
+						providerUserId: item.providerUserId,
+					})),
+					...(adminPhoneIdentityHashes.length > 0
+						? [{ provider: 'phone', providerUserId: { in: adminPhoneIdentityHashes } }]
+						: []),
+				],
 			},
 			select: { id: true },
 		})
