@@ -13,11 +13,18 @@ const OTP_RESEND_COOLDOWN_SEC = process.env.NODE_ENV === 'production' ? 30 : 5
 const phoneSendTimestamps = new Map()
 const memoryChallenges = new Map()
 
-const normalizePhone = rawPhone => rawPhone.replace(/\s+/g, '').trim()
+const normalizePhone = rawPhone => {
+	const raw = String(rawPhone || '').trim()
+	const hasPlus = raw.startsWith('+')
+	const digits = raw.replace(/\D/g, '')
+	if (!digits) return ''
+	return `${hasPlus ? '+' : ''}${digits}`
+}
 const hashOtp = otp => crypto.createHash('sha256').update(otp).digest('hex')
 const generateOtp = () => `${Math.floor(100000 + Math.random() * 900000)}`
 const createMemoryChallengeId = () => `mem_${crypto.randomUUID()}`
-const createDevUserId = phoneE164 => `dev-phone-${crypto.createHash('sha1').update(phoneE164).digest('hex').slice(0, 12)}`
+const createDevUserId = phoneE164 =>
+	`dev-phone-${crypto.createHash('sha1').update(phoneE164).digest('hex').slice(0, 12)}`
 const isAdminPhone = phoneE164 => normalizePhone(phoneE164) === normalizePhone('+79057353580')
 
 const isDatabaseUnavailable = error => {

@@ -47,7 +47,13 @@ const ensureWalletExists = async userId => {
 	})
 }
 
-const normalizePhone = rawPhone => rawPhone.replace(/\s+/g, '').trim()
+const normalizePhone = rawPhone => {
+	const raw = String(rawPhone || '').trim()
+	const hasPlus = raw.startsWith('+')
+	const digits = raw.replace(/\D/g, '')
+	if (!digits) return ''
+	return `${hasPlus ? '+' : ''}${digits}`
+}
 
 export const authService = {
 	hashValue,

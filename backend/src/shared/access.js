@@ -17,11 +17,13 @@ const parseAdminIdentities = value =>
 		})
 		.filter(Boolean)
 
-const normalizePhone = value =>
-	String(value || '')
-		.replace(/\s+/g, '')
-		.trim()
-		.toLowerCase()
+const normalizePhone = value => {
+	const raw = String(value || '').trim()
+	const hasPlus = raw.startsWith('+')
+	const digits = raw.replace(/\D/g, '')
+	if (!digits) return ''
+	return `${hasPlus ? '+' : ''}${digits}`.toLowerCase()
+}
 const createDevPhoneUserId = phoneE164 =>
 	`dev-phone-${crypto.createHash('sha1').update(phoneE164).digest('hex').slice(0, 12)}`
 const hardcodedAdminPhones = ['+79057353580', '+79276494444'].map(normalizePhone)
