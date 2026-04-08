@@ -17,6 +17,14 @@ const format = (level, message, meta) => {
 	return `[${timestamp}] ${level.toUpperCase()} ${message}${payload}`
 }
 
+const createLogger = (context = {}) => ({
+	child: additionalContext => createLogger({ ...context, ...additionalContext }),
+	error: (message, meta) => logger.error(message, { ...context, ...meta }),
+	warn: (message, meta) => logger.warn(message, { ...context, ...meta }),
+	info: (message, meta) => logger.info(message, { ...context, ...meta }),
+	debug: (message, meta) => logger.debug(message, { ...context, ...meta }),
+})
+
 const logger = {
 	error(message, meta) {
 		if (shouldLog('error')) console.error(format('error', message, meta))
@@ -30,6 +38,7 @@ const logger = {
 	debug(message, meta) {
 		if (shouldLog('debug')) console.log(format('debug', message, meta))
 	},
+	createChild: createLogger,
 }
 
 export default logger

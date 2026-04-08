@@ -87,45 +87,132 @@ const getClientForModel = selectedModel => {
 }
 
 export const llmService = {
-	async listModels() {
-		const now = Date.now()
-		if (modelsCache && now - cacheTimestamp < CACHE_TTL_MS) {
-			return modelsCache
-		}
+    async listModels() {
+        const now = Date.now()
+        if (modelsCache && now - cacheTimestamp < CACHE_TTL_MS) {
+            return modelsCache
+        }
 
-		const [openaiModels, groqModels, openrouterModels] = await Promise.all([
-			safeListModels(openaiClient, 'openai'),
-			safeListModels(groqClient, 'groq'),
-			safeListModels(openrouterClient, 'openrouter'),
-		])
+        const [openaiModels, groqModels, openrouterModels] = await Promise.all([
+            safeListModels(openaiClient, 'openai'),
+            safeListModels(groqClient, 'groq'),
+            safeListModels(openrouterClient, 'openrouter'),
+        ])
 
-		modelsCache = [...openaiModels, ...groqModels, ...openrouterModels, ...CLOUDFLARE_MODELS, ...LOCAL_MODELS]
-		cacheTimestamp = now
+        modelsCache = [...openaiModels, ...groqModels, ...openrouterModels, ...CLOUDFLARE_MODELS, ...LOCAL_MODELS]
+        cacheTimestamp = now
 
-		return modelsCache
-	},
+        return modelsCache
+    },
 
-	async chat({ message, modelId, history = [] }) {
-		const allModels = await this.listModels()
-		const selectedModel = allModels.find(model => model.id === modelId)
+    async chat({ message, modelId, history = [] }) {
+        const allModels = await this.listModels()
+        const selectedModel = allModels.find(model => model.id === modelId)
 
-		if (!selectedModel) {
-			const error = new Error('Модель не найдена')
-			error.statusCode = 400
-			throw error
-		}
+        if (!selectedModel) {
+            const error = new Error('Модель не найдена')
+            error.statusCode = 400                                                                                    
+            throw error
+        }
 
-		const client = getClientForModel(selectedModel)
-		const messages = [
-			...history.map(item => ({ role: item.role, content: item.content })),
-			{ role: 'user', content: message },
-		]
+        const client = getClientForModel(selectedModel)
+        const messages = [
+            ...history.map(item => ({ role: item.role, content: item.content })),
+            { role: 'user', content: message },
+        ]
 
-		return client.chat.completions.create({
-			model: selectedModel.model,
-			messages,
-			stream: true,
-			temperature: 0.7,
-		})
-	},
+        return client.chat.completions.create({
+            model: selectedModel.model,
+            messages,
+            stream: true,
+            temperature: 0.7,
+        })
+    },
+}
+=======                                                                                                               
+// Добавить таймауты и retry логику                                                                                   
+const withTimeout = (promise, timeoutMs, errorMessage = 'Timeout') => {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => 
+            setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+        )
+    ])
+}
+
+const withRetry = async (fn, maxRetries = 3, delayMs = 1000) => {
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            return await fn()
+        } catch (error) {
+            if (i === maxRetries - 1) throw error
+            await new Promise(resolve => setTimeout(resolve, delayMs * (i + 1)))
+        }
+    }
+}
+
+export const llmService = {
+    async listModels() {
+        const now = Date.now()
+        if (modelsCache && now - cacheTimestamp < CACHE_TTL_MS) {
+            return modelsCache
+        }
+
+        const [openaiModels, groqModels, openrouterModels] = await Promise.all([
+            safeListModels(openaiClient, 'openai'),
+            safeListModels(groqClient, 'groq'),
+            safeListModels(openrouterClient, 'openrouter'),
+        ])
+
+        modelsCache = [...openaiModels, ...groqModels, ...openrouterModels, ...CLOUDFLARE_MODELS, ...LOCAL_MODELS]
+        cacheTimestamp = now
+
+        return modelsCache
+    },
+
+    async chat({ message, modelId, history = [], userId, maxTokens = 1000 }) {
+        // Добавить проверку лимитов                                                                                  
+        if (message.length > 4000) {
+            throw new Error('Message too long')
+        }
+
+        const allModels = await this.listModels()
+        const selectedModel = allModels.find(model => model.id === modelId)
+
+        if (!selectedModel) {
+            const error = new Error('Модель не найдена')
+            error.statusCode = 400                                                                                    
+            throw error
+        }
+
+        const client = getClientForModel(selectedModel)
+        const messages = [
+            ...history.map(item => ({ role: item.role, content: item.content })),
+            { role: 'user', content: message },
+        ]
+
+        try {
+            return await withRetry(async () => 
+                withTimeout(
+                    client.chat.completions.create({
+                        model: selectedModel.model,
+                        messages,
+                        stream: true,
+                        temperature: 0.7,
+                        max_tokens: maxTokens
+                    }),
+                    30000,
+                    'LLM request timeout'
+                )
+            )
+        } catch (error) {
+            logger.error('LLM request failed', { 
+                error: error.message, 
+                modelId, 
+                userId,
+                messageLength: message.length 
+            })
+            throw new Error('LLM service unavailable')
+        }
+    },
 }
