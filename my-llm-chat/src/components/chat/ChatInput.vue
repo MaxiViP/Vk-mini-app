@@ -33,7 +33,8 @@
 					ref="deleteZoneRef"
 					:class="['delete-zone', { 'delete-zone--active': isDeleteHover }]"
 				>
-					🗑
+					<span class="delete-zone__icon">🗑</span>
+					<span class="delete-zone__label">Удалить</span>
 				</div>
 
 				<button
@@ -378,27 +379,44 @@ onBeforeUnmount(() => {
 	bottom: calc(100% + 10px);
 	left: 50%;
 	transform: translateX(-50%) scale(0.94);
-	width: 44px;
+	min-width: 92px;
 	height: 44px;
-	border-radius: 14px;
+	padding: 0 12px;
+	border-radius: 16px;
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	background: rgba(255, 255, 255, 0.08);
-	border: 1px solid rgba(255, 255, 255, 0.1);
-	box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
-	font-size: 18px;
+	gap: 8px;
+	background: rgba(24, 27, 34, 0.96);
+	border: 1px solid rgba(255, 255, 255, 0.16);
+	box-shadow: 0 14px 34px rgba(0, 0, 0, 0.32);
+	color: #fff;
+	font-size: 14px;
+	font-weight: 600;
 	pointer-events: none;
+	z-index: 80;
 	transition:
 		transform var(--transition-fast),
 		background var(--transition-base),
-		border-color var(--transition-base);
+		border-color var(--transition-base),
+		box-shadow var(--transition-base);
 }
 
 .delete-zone--active {
-	background: rgba(255, 107, 107, 0.22);
-	border-color: rgba(255, 107, 107, 0.45);
+	background: rgba(255, 107, 107, 0.96);
+	border-color: rgba(255, 160, 160, 0.85);
+	box-shadow: 0 16px 40px rgba(255, 107, 107, 0.28);
 	transform: translateX(-50%) scale(1.06);
+}
+
+.delete-zone__icon {
+	font-size: 16px;
+	line-height: 1;
+}
+
+.delete-zone__label {
+	line-height: 1;
+	white-space: nowrap;
 }
 
 @media (max-width: 560px) {
@@ -412,8 +430,11 @@ onBeforeUnmount(() => {
 	}
 
 	.delete-zone {
-		width: 40px;
+		min-width: 84px;
 		height: 40px;
+		padding-inline: 10px;
+		gap: 6px;
+		font-size: 12px;
 	}
 }
 </style>
