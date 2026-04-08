@@ -30,14 +30,12 @@ app.get('/health', (_req, res) => {
 app.use('/api/auth', authRoutes)
 app.use('/api/users', userRoutes)
 app.use('/api/billing', billingRoutes)
+// Backward-compatible alias for older clients that still call /api/payments/*
 app.use('/api/payments', billingRoutes)
 app.use('/api/usage', usageRoutes)
 app.use('/api/llm', llmRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/workspace', workspaceRoutes)
- 
-
-app.use('/api', llmRoutes)
 
 app.use(notFoundHandler)
 app.use(errorHandler)

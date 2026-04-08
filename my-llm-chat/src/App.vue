@@ -5,7 +5,7 @@
 				<button class="pill-btn" @click="showProfile = true">
 					<span class="btn-text">{{ fullName }}</span>
 				</button>
-				<button v-if="userStore.user?.isAdmin" class="pill-btn" @click="showAdmin = true">Админ</button>
+				<button v-if="userStore.user?.isAdmin" class="pill-btn" @click="showAdmin = true">Админка</button>
 				<button :class="['pill-btn', { 'pill-btn--active': isChatContextOpen }]" @click="toggleChatContext">Контекст</button>
 			</div>
 
@@ -192,6 +192,13 @@ onMounted(async () => {
 	if (!userStore.isAuthenticated) {
 		showAuthModal.value = true
 	} else {
+		if (userStore.refreshToken) {
+			try {
+				await userStore.refreshAuth()
+			} catch (error) {
+				console.warn('Auth refresh failed, fallback to existing session', error)
+			}
+		}
 		await userStore.initVKUser()
 	}
 
