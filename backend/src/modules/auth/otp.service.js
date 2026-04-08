@@ -8,7 +8,7 @@ import { authService } from './auth.service.js'
 
 const OTP_TTL_SECONDS = 5 * 60
 const OTP_MAX_ATTEMPTS = 5
-const OTP_RESEND_COOLDOWN_SEC = 30
+const OTP_RESEND_COOLDOWN_SEC = process.env.NODE_ENV === 'production' ? 30 : 5
 
 const phoneSendTimestamps = new Map()
 const memoryChallenges = new Map()
