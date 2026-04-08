@@ -48,11 +48,18 @@ const ensureWalletExists = async userId => {
 }
 
 const normalizePhone = rawPhone => {
-	const raw = String(rawPhone || '').trim()
-	const hasPlus = raw.startsWith('+')
-	const digits = raw.replace(/\D/g, '')
+	const digits = String(rawPhone || '').replace(/\D/g, '')
 	if (!digits) return ''
-	return `${hasPlus ? '+' : ''}${digits}`
+
+	let normalizedDigits = digits
+
+	if (normalizedDigits.length === 11 && normalizedDigits.startsWith('8')) {
+		normalizedDigits = `7${normalizedDigits.slice(1)}`
+	} else if (normalizedDigits.length === 10) {
+		normalizedDigits = `7${normalizedDigits}`
+	}
+
+	return `+${normalizedDigits}`
 }
 
 export const authService = {
