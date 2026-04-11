@@ -219,8 +219,12 @@ export const useUserStore = defineStore('user', () => {
 	}
 
 	async function createYooKassaPayment(amount: number): Promise<YooKassaPaymentSession> {
+		if (!token.value) {
+			throw new Error('Требуется авторизация')
+		}
+
 		try {
-			return await createYooKassaPaymentRequest(amount)
+			return await createYooKassaPaymentRequest(amount, token.value)
 		} catch (error) {
 			if (!isTestMode.value) throw error
 
