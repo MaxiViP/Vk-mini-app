@@ -72,6 +72,7 @@ export const useChatStore = defineStore('chat', () => {
 	const voiceRecords = ref<string[]>([])
 	const sourceHistory = ref<SourceHistoryItem[]>([])
 	let saveTimer: number | null = null
+	let abortController: AbortController | null = null
 
 	const isExternalBackend = computed(() => isVkAiBackend)
 	const backendLabel = computed(() => (isExternalBackend.value ? 'VK AI backend' : 'Internal LLM backend'))
@@ -83,7 +84,12 @@ export const useChatStore = defineStore('chat', () => {
 		localStorage.setItem(CONVERSATION_STORAGE_KEY, nextId)
 	}
 
-	const pushSourceHistory = (payload: { sourceType?: string; sources?: MessageMeta['sources']; replyPreview: string; transcript?: string }) => {
+	const pushSourceHistory = (payload: {
+		sourceType?: string
+		sources?: MessageMeta['sources']
+		replyPreview: string
+		transcript?: string
+	}) => {
 		if ((!payload.sources || payload.sources.length === 0) && !payload.sourceType) return
 
 		sourceHistory.value.unshift({
@@ -302,6 +308,12 @@ export const useChatStore = defineStore('chat', () => {
 		})
 	}
 
+	function abortRequest() {
+		abortController?.abort()
+		abortController = null
+		isLoading.value = false
+	}
+
 	async function uploadContextFile(file: File) {
 		if (!isExternalBackend.value) {
 			throw new Error('File context upload is available only for VK AI backend mode')
@@ -422,6 +434,8 @@ export const useChatStore = defineStore('chat', () => {
 				throw new Error('Model is required')
 			}
 
+			abortController = new AbortController()
+
 			const response = await fetch(`${internalApiBaseUrl}/api/llm/chat`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -430,6 +444,7 @@ export const useChatStore = defineStore('chat', () => {
 					modelId: model.id,
 					history: history ?? messages.value.map(toHistoryItem),
 				}),
+				signal: abortController.signal,
 			})
 
 			if (!response.ok) {
@@ -461,9 +476,11 @@ export const useChatStore = defineStore('chat', () => {
 					if (!line.startsWith('data: ')) continue
 					const data = line.slice(6)
 					if (data === '[DONE]') continue
+
 					assistantMessage += data
+
 					const lastMsg = messages.value[messages.value.length - 1]
-					if (lastMsg.role === 'assistant') {
+					if (lastMsg && lastMsg.role === 'assistant') {
 						lastMsg.content = assistantMessage
 					}
 				}
@@ -472,10 +489,16 @@ export const useChatStore = defineStore('chat', () => {
 			if (!isExternalBackend.value && assistantIndex >= 0) {
 				messages.value.splice(assistantIndex, 1)
 			}
+
+			if ((err as Error).name === 'AbortError') {
+				throw err
+			}
+
 			console.error('LLM error:', err)
 			throw err
 		} finally {
 			isLoading.value = false
+			abortController = null
 		}
 	}
 
@@ -493,6 +516,7 @@ export const useChatStore = defineStore('chat', () => {
 		voiceRecords,
 		sourceHistory,
 		sendMessage,
+		abortRequest,
 		sendVoiceMessage,
 		addSystemMessage,
 		addUserMessage,

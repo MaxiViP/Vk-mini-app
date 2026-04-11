@@ -43,11 +43,13 @@
 
 		<ChatInput
 			@send="sendWithFallback"
+			@stop="stopGeneration"
 			@upload-file="uploadFile"
 			@voice-recorded="uploadVoice"
 			@voice-error="handleVoiceError"
-			:disabled="chat.isLoading"
+			:disabled="false"
 			:uploading="chat.isUploadingFile"
+			:is-generating="chat.isLoading"
 			:show-file-action="chat.isExternalBackend"
 		/>
 
@@ -110,13 +112,26 @@ const handleToggleChatContext = (event: Event) => {
 	showContextPanel.value = !showContextPanel.value
 }
 
+function stopGeneration() {
+	chat.abortRequest()
+}
+
 async function sendWithFallback(messageText: string) {
+	if (chat.isLoading) return
+
 	if (chat.isExternalBackend) {
 		chat.addUserMessage(messageText)
 		try {
 			await chat.sendMessage(messageText, fallbackExternalModel, chat.messages.map(m => ({ role: m.role, content: m.content })))
 		} catch (error) {
-			chat.addSystemMessage(`VK AI backend недоступен: ${(error as Error).message}`)
+			const typedError = error as Error
+
+			if (typedError.name === 'AbortError') {
+				chat.addSystemMessage('Генерация остановлена пользователем')
+				return
+			}
+
+			chat.addSystemMessage(`VK AI backend недоступен: ${typedError.message}`)
 		}
 		return
 	}
@@ -125,7 +140,7 @@ async function sendWithFallback(messageText: string) {
 	if (!currentModel) return
 
 	const allModels = modelsStore.models
-	const startIndex = allModels.findIndex(m => m.id === currentModel?.id)
+	const startIndex = allModels.findIndex(m => m.id === currentModel.id)
 	const orderedModels = [...allModels.slice(startIndex), ...allModels.slice(0, startIndex)]
 
 	const baseHistory = chat.messages.map(m => ({ role: m.role, content: m.content }))
@@ -136,14 +151,21 @@ async function sendWithFallback(messageText: string) {
 	for (const model of orderedModels) {
 		try {
 			await chat.sendMessage(messageText, model, baseHistory)
-			if (model.id !== currentModel?.id) {
+			if (model.id !== currentModel.id) {
 				modelsStore.selectModel(model.id)
 				console.log(`Переключились на рабочую модель: ${model.name}`)
 			}
 			return
 		} catch (error) {
+			const typedError = error as Error
+
+			if (typedError.name === 'AbortError') {
+				chat.addSystemMessage('Генерация остановлена пользователем')
+				return
+			}
+
 			console.warn(`Модель ${model.name} не ответила:`, error)
-			lastError = error as Error
+			lastError = typedError
 			chat.addSystemMessage(`Модель "${model.name}" не ответила, пробуем другую...`)
 		}
 	}

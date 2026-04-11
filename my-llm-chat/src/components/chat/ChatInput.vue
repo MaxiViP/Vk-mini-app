@@ -6,7 +6,7 @@
 				class="attach-btn"
 				type="button"
 				@click="openFilePicker"
-				:disabled="disabled || uploading || isRecording"
+				:disabled="disabled || uploading || isRecording || isGenerating"
 				title="Добавить файл"
 			>
 				+
@@ -22,9 +22,9 @@
 
 			<input
 				v-model="text"
-				@keydown.enter.prevent="submit"
+				@keydown.enter.prevent="handleEnter"
 				placeholder="Напишите сообщение..."
-				:disabled="disabled"
+				:disabled="disabled || isGenerating"
 			/>
 
 			<div class="action-slot">
@@ -38,7 +38,7 @@
 				</div>
 
 				<button
-					v-if="showVoiceTrigger"
+					v-if="showVoiceTrigger && !isGenerating"
 					ref="voiceButtonRef"
 					class="voice-btn"
 					type="button"
@@ -56,15 +56,15 @@
 					v-else
 					class="send-btn"
 					type="button"
-					:disabled="disabled || !text.trim()"
-					@click="handleSendClick"
+					:disabled="sendButtonDisabled"
+					@click="handleSendOrStopClick"
 					@pointerdown="handleSendPressStart"
 					@pointerup="handleSendPressEnd"
 					@pointerleave="handleSendPressEnd"
 					@pointercancel="handleSendPressEnd"
-					title="Отправить сообщение"
+					:title="isGenerating ? 'Остановить запрос' : 'Отправить сообщение'"
 				>
-					→
+					{{ isGenerating ? '■' : '→' }}
 				</button>
 			</div>
 		</div>
@@ -72,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import ScrollBtn from '../common/ScrollBtn.vue'
 
 const LONG_PRESS_MS = 450
@@ -82,10 +82,12 @@ const props = defineProps<{
 	disabled?: boolean
 	uploading?: boolean
 	showFileAction?: boolean
+	isGenerating?: boolean
 }>()
 
 const emit = defineEmits<{
 	(e: 'send', message: string): void
+	(e: 'stop'): void
 	(e: 'upload-file', file: File): void
 	(e: 'voice-recorded', file: File): void
 	(e: 'voice-error', message: string): void
@@ -107,6 +109,11 @@ let voiceModeTimer: number | null = null
 let pressTriggeredVoiceMode = false
 let discardRecording = false
 
+const sendButtonDisabled = computed(() => {
+	if (props.isGenerating) return false
+	return !!props.disabled || (!text.value.trim() && !showVoiceTrigger.value)
+})
+
 const clearLongPressTimer = () => {
 	if (longPressTimer) {
 		window.clearTimeout(longPressTimer)
@@ -123,27 +130,44 @@ const clearVoiceModeTimer = () => {
 
 const scheduleVoiceModeHide = () => {
 	clearVoiceModeTimer()
-	if (isRecording.value) return
+	if (isRecording.value || props.isGenerating) return
+
 	voiceModeTimer = window.setTimeout(() => {
 		showVoiceTrigger.value = false
 	}, VOICE_MODE_TIMEOUT_MS)
 }
 
 const submit = () => {
-	if (!text.value.trim() || props.disabled) return
+	if (!text.value.trim() || props.disabled || props.isGenerating) return
 	emit('send', text.value)
 	text.value = ''
+	showVoiceTrigger.value = false
 }
 
-const handleSendClick = () => {
-	if (pressTriggeredVoiceMode) {
-		pressTriggeredVoiceMode = false
+const handleEnter = () => {
+	if (props.isGenerating) {
+		emit('stop')
 		return
 	}
 	submit()
 }
 
+const handleSendOrStopClick = () => {
+	if (props.isGenerating) {
+		emit('stop')
+		return
+	}
+
+	if (pressTriggeredVoiceMode) {
+		pressTriggeredVoiceMode = false
+		return
+	}
+
+	submit()
+}
+
 const handleSendPressStart = () => {
+	if (props.isGenerating) return
 	if (props.disabled || props.uploading || text.value.trim()) return
 
 	clearLongPressTimer()
@@ -162,6 +186,7 @@ const handleSendPressEnd = () => {
 }
 
 const openFilePicker = () => {
+	if (props.isGenerating) return
 	fileInputRef.value?.click()
 }
 
@@ -210,6 +235,8 @@ const handleRecordingPointerCancel = () => {
 }
 
 const toggleVoiceRecording = async () => {
+	if (props.isGenerating) return
+
 	clearVoiceModeTimer()
 
 	try {
@@ -244,7 +271,9 @@ const toggleVoiceRecording = async () => {
 			const blob = new Blob(recordedChunks, { type: mediaRecorder?.mimeType || 'audio/webm' })
 			const extension = blob.type.includes('ogg') ? 'ogg' : 'webm'
 			const file = new File([blob], `voice-${Date.now()}.${extension}`, { type: blob.type || 'audio/webm' })
+
 			emit('voice-recorded', file)
+
 			recordedChunks = []
 			isRecording.value = false
 			isDeleteHover.value = false
