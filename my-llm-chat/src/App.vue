@@ -5,7 +5,17 @@
 				<button class="pill-btn" @click="showProfile = true">
 					<span class="btn-text">{{ fullName }}</span>
 				</button>
+
 				<button v-if="userStore.user?.isAdmin" class="pill-btn" @click="showAdmin = true">Админка</button>
+
+				<button
+					v-if="!isVkAiBackend"
+					:class="['pill-btn', { 'pill-btn--active': isModelSelectorOpen }]"
+					@click="toggleModelSelector"
+				>
+					Модели
+				</button>
+
 				<button :class="['pill-btn', { 'pill-btn--active': isChatContextOpen }]" @click="toggleChatContext">Контекст</button>
 			</div>
 
@@ -14,7 +24,7 @@
 			<button class="pill-btn" @click="showNotes = true">Заметки</button>
 		</div>
 
-		<ModelSelector v-if="!isVkAiBackend" />
+		<ModelSelector v-if="!isVkAiBackend && isModelSelectorOpen" />
 		<Chat />
 	</div>
 
@@ -77,6 +87,7 @@ const showNotes = ref(false)
 const showAdmin = ref(false)
 const showAuthModal = ref(false)
 const isChatContextOpen = ref(false)
+const isModelSelectorOpen = ref(false)
 const notesPanelRef = ref<NotesPanelExposed | null>(null)
 
 const API_BASE_URL = ''
@@ -137,6 +148,10 @@ const toggleChatContext = () => {
 			detail: { open: !isChatContextOpen.value },
 		}),
 	)
+}
+
+const toggleModelSelector = () => {
+	isModelSelectorOpen.value = !isModelSelectorOpen.value
 }
 
 const handleEscape = (e: KeyboardEvent) => {

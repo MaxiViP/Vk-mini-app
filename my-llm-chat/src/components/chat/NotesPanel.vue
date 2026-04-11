@@ -95,7 +95,6 @@ import { useUserStore } from '../../stores/user'
 
 const INBOX_FOLDER_ID = 'inbox'
 const ALL_FOLDER_ID = 'all'
-const STORAGE_KEY_PREFIX = 'user_notes_v2'
 
 interface Folder {
 	id: string
@@ -119,10 +118,11 @@ const newNoteText = ref('')
 const newFolderName = ref('')
 const selectedFolderId = ref(INBOX_FOLDER_ID)
 const activeFolderId = ref<string>(ALL_FOLDER_ID)
-let saveTimer: number | null = null
 let isHydrating = false
+let lastSavedHash = ''
+let saveInFlight: Promise<void> | null = null
+let pendingSave = false
 
-const getStorageKey = () => `${STORAGE_KEY_PREFIX}:${userStore.user?.vkId || 'guest'}`
 const isLikelyJwt = (token?: string | null) => Boolean(token && token.split('.').length === 3)
 
 const mergeFoldersWithDefault = (savedFolders?: Folder[]) => {
@@ -142,23 +142,7 @@ const applyNotesPayload = (payload?: Partial<NotesPayload>) => {
 	folders.value = mergeFoldersWithDefault(payload?.folders as Folder[] | undefined)
 }
 
-const loadLocalPayload = () => {
-	const key = getStorageKey()
-	const savedPayload = localStorage.getItem(key)
-	console.log('[notes] loadLocalPayload:start', { key, hasSaved: Boolean(savedPayload) })
-	if (!savedPayload) {
-		applyNotesPayload({ notes: [], folders: defaultFolders })
-		return
-	}
-
-	try {
-		applyNotesPayload(JSON.parse(savedPayload) as NotesPayload)
-		console.log('[notes] loadLocalPayload:success', { notes: notes.value.length, folders: folders.value.length })
-	} catch (e) {
-		console.error('[notes] loadLocalPayload:error', e)
-		applyNotesPayload({ notes: [], folders: defaultFolders })
-	}
-}
+const payloadHash = (payload: NotesPayload) => JSON.stringify(payload)
 
 const persistNotes = () => {
 	if (isHydrating) {
@@ -167,9 +151,6 @@ const persistNotes = () => {
 	}
 
 	const payload: NotesPayload = { notes: notes.value, folders: folders.value }
-	const key = getStorageKey()
-	localStorage.setItem(key, JSON.stringify(payload))
-	console.log('[notes] persistNotes:local_saved', { key, notes: payload.notes.length, folders: payload.folders.length })
 
 	if (!userStore.token || !isLikelyJwt(userStore.token) || !userStore.user?.vkId) {
 		console.log('[notes] persistNotes:server_skipped', {
@@ -179,16 +160,33 @@ const persistNotes = () => {
 		})
 		return
 	}
-	if (saveTimer) window.clearTimeout(saveTimer)
-	saveTimer = window.setTimeout(async () => {
-		try {
-			console.log('[notes] persistNotes:server_save:start', { notes: payload.notes.length })
-			await saveNotesPayload(userStore.token!, payload)
-			console.log('[notes] persistNotes:server_save:success')
-		} catch (error) {
-			console.error('[notes] persistNotes:server_save:error', error)
+
+	const currentHash = payloadHash(payload)
+	if (currentHash === lastSavedHash) return
+	pendingSave = true
+	if (saveInFlight) return
+
+	const flush = async () => {
+		while (pendingSave) {
+			pendingSave = false
+			const latestPayload: NotesPayload = { notes: [...notes.value], folders: [...folders.value] }
+			const latestHash = payloadHash(latestPayload)
+			if (latestHash === lastSavedHash) continue
+
+			try {
+				console.log('[notes] persistNotes:server_save:start', { notes: latestPayload.notes.length })
+				await saveNotesPayload(userStore.token!, latestPayload)
+				lastSavedHash = latestHash
+				console.log('[notes] persistNotes:server_save:success')
+			} catch (error) {
+				console.error('[notes] persistNotes:server_save:error', error)
+			}
 		}
-	}, 500)
+	}
+
+	saveInFlight = flush().finally(() => {
+		saveInFlight = null
+	})
 }
 
 const syncNotesWithServer = async () => {
@@ -204,23 +202,14 @@ const syncNotesWithServer = async () => {
 	console.log('[notes] syncNotesWithServer:start', { userId: userStore.user?.vkId })
 	isHydrating = true
 	try {
-		const localSnapshot: NotesPayload = { notes: [...notes.value], folders: [...folders.value] }
 		const workspace = await fetchWorkspace(userStore.token)
 		const serverPayload = workspace.notesPayload
-
-		if ((serverPayload?.notes?.length || 0) === 0 && localSnapshot.notes.length > 0) {
-			console.log('[notes] syncNotesWithServer:server_empty_use_local', { localNotes: localSnapshot.notes.length })
-			applyNotesPayload(localSnapshot)
-			await saveNotesPayload(userStore.token, localSnapshot)
-		} else {
-			applyNotesPayload(serverPayload)
-		}
-
-		localStorage.setItem(getStorageKey(), JSON.stringify({ notes: notes.value, folders: folders.value }))
+		lastSavedHash = payloadHash(serverPayload)
+		applyNotesPayload(serverPayload)
 		console.log('[notes] syncNotesWithServer:success', { notes: notes.value.length, folders: folders.value.length })
 	} catch (error) {
-		console.warn('[notes] syncNotesWithServer:fallback_to_localStorage', error)
-		loadLocalPayload()
+		console.warn('[notes] syncNotesWithServer:error', error)
+		applyNotesPayload({ notes: [], folders: defaultFolders })
 	} finally {
 		isHydrating = false
 	}
@@ -231,7 +220,6 @@ const setNewNoteText = (text: string) => {
 }
 
 onMounted(async () => {
-	loadLocalPayload()
 	await syncNotesWithServer()
 })
 
@@ -240,7 +228,6 @@ watch([notes, folders], persistNotes, { deep: true })
 watch(
 	() => userStore.user?.vkId,
 	async () => {
-		loadLocalPayload()
 		await syncNotesWithServer()
 	},
 )

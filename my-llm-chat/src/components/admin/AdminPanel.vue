@@ -74,7 +74,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import axios from 'axios'
 import type { AxiosError } from 'axios'
 
@@ -111,6 +111,8 @@ const usersQuery = ref('')
 const eventType = ref('')
 const dateFrom = ref('')
 const dateTo = ref('')
+const AUTO_REFRESH_MS = 5000
+let refreshTimer: number | null = null
 
 const authHeaders = () => ({
 	Authorization: `Bearer ${userStore.token}`,
@@ -208,7 +210,22 @@ const formatName = (user: AdminUserRow) => {
 const pretty = (data: unknown) => JSON.stringify(data, null, 2)
 
 onMounted(loadAll)
+
+onMounted(() => {
+	refreshTimer = window.setInterval(() => {
+		void loadAll()
+	}, AUTO_REFRESH_MS)
+})
+
+onUnmounted(() => {
+	if (refreshTimer) {
+		window.clearInterval(refreshTimer)
+		refreshTimer = null
+	}
+})
 </script>
+
+ 
 
 <style scoped>
 .admin-panel {
