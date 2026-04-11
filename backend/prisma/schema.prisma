@@ -217,7 +217,7 @@ model PaymentEvent {
   id         String   @id @default(uuid())
   paymentId  String   @map("payment_id")
   eventType  String   @map("event_type")
-  rawPayload Json
+  rawPayload Json     @map("raw_payload_json")
   receivedAt DateTime @default(now()) @map("received_at")
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
