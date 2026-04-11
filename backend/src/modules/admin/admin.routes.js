@@ -4,13 +4,15 @@ import { authMiddleware } from '../auth/auth.middleware.js'
 import { adminService } from './admin.service.js'
 import logger from '../../config/logger.js'
 import { requireAdmin } from '../../shared/access.js'
+import { asyncHandler } from '../../shared/async-handler.js'
 
 const router = Router()
 
 router.use(authMiddleware, requireAdmin)
 
-router.get('/events', async (req, res, next) => {
-	try {
+router.get(
+	'/events',
+	asyncHandler(async (req, res) => {
 		const data = await adminService.getBusinessEvents({
 			limit: Number(req.query.limit || 100),
 			cursor: req.query.cursor || null,
@@ -19,13 +21,12 @@ router.get('/events', async (req, res, next) => {
 			dateTo: req.query.dateTo || null,
 		})
 		res.json(data)
-	} catch (error) {
-		next(error)
-	}
-})
+	}),
+)
 
-router.get('/ledger', async (req, res, next) => {
-	try {
+router.get(
+	'/ledger',
+	asyncHandler(async (req, res) => {
 		const data = await adminService.getLedger({
 			userId: req.query.userId || null,
 			limit: Number(req.query.limit || 100),
@@ -34,13 +35,12 @@ router.get('/ledger', async (req, res, next) => {
 			dateTo: req.query.dateTo || null,
 		})
 		res.json(data)
-	} catch (error) {
-		next(error)
-	}
-})
+	}),
+)
 
-router.get('/audit', async (req, res, next) => {
-	try {
+router.get(
+	'/audit',
+	asyncHandler(async (req, res) => {
 		const data = await adminService.getAuditLog({
 			userId: req.query.userId || null,
 			limit: Number(req.query.limit || 100),
@@ -49,19 +49,16 @@ router.get('/audit', async (req, res, next) => {
 			dateTo: req.query.dateTo || null,
 		})
 		res.json(data)
-	} catch (error) {
-		next(error)
-	}
-})
+	}),
+)
 
-router.get('/metrics', async (_req, res, next) => {
-	try {
+router.get(
+	'/metrics',
+	asyncHandler(async (_req, res) => {
 		const data = await adminService.getMetrics()
 		res.json(data)
-	} catch (error) {
-		next(error)
-	}
-})
+	}),
+)
 
 router.get('/users', async (req, res, next) => {
 	const limit = Number(req.query.limit || 100)
@@ -73,7 +70,6 @@ router.get('/users', async (req, res, next) => {
 	})
 
 	try {
-		logger.info('Admin users request started', { query: req.query.query, limit: Number(req.query.limit || 100) })
 		const data = await adminService.listUsersOverview({
 			limit,
 			query,
@@ -96,21 +92,21 @@ router.get('/users', async (req, res, next) => {
 	}
 })
 
-router.get('/users/:id/actions', async (req, res, next) => {
-	try {
+router.get(
+	'/users/:id/actions',
+	asyncHandler(async (req, res) => {
 		const data = await adminService.getUserActions(req.params.id, {
 			limit: Number(req.query.limit || 200),
 			dateFrom: req.query.dateFrom || null,
 			dateTo: req.query.dateTo || null,
 		})
 		res.json(data)
-	} catch (error) {
-		next(error)
-	}
-})
+	}),
+)
 
-router.get('/users/:id/timeline', async (req, res, next) => {
-	try {
+router.get(
+	'/users/:id/timeline',
+	asyncHandler(async (req, res) => {
 		const data = await adminService.getUserTimeline({
 			userId: req.params.id,
 			limit: Number(req.query.limit || 100),
@@ -118,9 +114,7 @@ router.get('/users/:id/timeline', async (req, res, next) => {
 			dateTo: req.query.dateTo || null,
 		})
 		res.json(data)
-	} catch (error) {
-		next(error)
-	}
-})
+	}),
+)
 
 export default router

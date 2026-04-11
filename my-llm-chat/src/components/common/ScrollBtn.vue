@@ -30,14 +30,7 @@ const getTargetElement = (): HTMLElement | null => {
 const handleScroll = () => {
 	const el = getTargetElement()
 
-	console.log('type:', props.type)
-	console.log('target:', props.target)
-	console.log('element:', el)
-
 	if (el) {
-		console.log('scrollHeight:', el.scrollHeight)
-		console.log('clientHeight:', el.clientHeight)
-
 		el.scrollTo({
 			top: props.type === 'bottom' ? el.scrollHeight : 0,
 			behavior: 'smooth',
@@ -83,25 +76,20 @@ const handleScroll = () => {
 	border-color: var(--color-primary);
 }
 
-.scroll-btn:hover {
-	background: var(--overlay-light);
-	border-color: var(--color-primary);
-}
-
-.scroll-btn.up {
+.scroll-btn.top {
 	transform: translate(-50%, -50%);
 }
 
-.scroll-btn.up:hover {
+.scroll-btn.top:hover {
 	transform: translate(-50%, -50%) translateY(-2px);
 }
 
-.scroll-btn.down {
-	transform: rotate(180deg);
+.scroll-btn.bottom {
+	transform: translate(-50%, -50%);
 }
 
-.scroll-btn.down:hover {
-	transform: rotate(180deg) translateY(2px);
+.scroll-btn.bottom:hover {
+	transform: translate(-50%, -50%) translateY(-2px);
 }
 
 .scroll-btn.static {

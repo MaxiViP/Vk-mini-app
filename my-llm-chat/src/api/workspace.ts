@@ -33,30 +33,36 @@ const authHeaders = (token: string) => ({
 	Authorization: `Bearer ${token}`,
 })
 
-export async function fetchWorkspace(token: string): Promise<WorkspaceResponse> {
-	const response = await fetch(`${API_BASE_URL}/api/workspace/me`, {
-		headers: { Authorization: `Bearer ${token}` },
+async function requestWorkspace<TResponse>(path: string, token: string, init?: RequestInit): Promise<TResponse> {
+	const response = await fetch(`${API_BASE_URL}${path}`, {
+		...init,
+		headers: {
+			...(init?.body ? authHeaders(token) : { Authorization: `Bearer ${token}` }),
+			...(init?.headers || {}),
+		},
 	})
-	if (!response.ok) throw new Error(`Workspace fetch failed: HTTP ${response.status}`)
-	return response.json()
+
+	if (!response.ok) {
+		throw new Error(`Workspace request failed: ${init?.method || 'GET'} ${path} returned HTTP ${response.status}`)
+	}
+
+	return response.json() as Promise<TResponse>
+}
+
+export async function fetchWorkspace(token: string): Promise<WorkspaceResponse> {
+	return requestWorkspace<WorkspaceResponse>('/api/workspace/me', token)
 }
 
 export async function saveChatHistory(token: string, chatHistory: WorkspaceMessage[]) {
-	const response = await fetch(`${API_BASE_URL}/api/workspace/me/chat-history`, {
+	return requestWorkspace<{ chatHistory: WorkspaceMessage[]; updatedAt: string }>('/api/workspace/me/chat-history', token, {
 		method: 'PUT',
-		headers: authHeaders(token),
 		body: JSON.stringify({ chatHistory }),
 	})
-	if (!response.ok) throw new Error(`Chat history save failed: HTTP ${response.status}`)
-	return response.json()
 }
 
 export async function saveNotesPayload(token: string, notesPayload: NotesPayload) {
-	const response = await fetch(`${API_BASE_URL}/api/workspace/me/notes`, {
+	return requestWorkspace<{ notesPayload: NotesPayload; updatedAt: string }>('/api/workspace/me/notes', token, {
 		method: 'PUT',
-		headers: authHeaders(token),
 		body: JSON.stringify({ notesPayload }),
 	})
-	if (!response.ok) throw new Error(`Notes save failed: HTTP ${response.status}`)
-	return response.json()
 }

@@ -3,11 +3,14 @@ import { Router } from 'express'
 import { billingService } from './billing.service.js'
 import { authMiddleware } from '../auth/auth.middleware.js'
 import { requireFields } from '../../shared/validate.js'
+import { asyncHandler } from '../../shared/async-handler.js'
 
 const router = Router()
 
-router.post('/yookassa/create', authMiddleware, async (req, res, next) => {
-	try {
+router.post(
+	'/yookassa/create',
+	authMiddleware,
+	asyncHandler(async (req, res) => {
 		requireFields(req.body, ['amount'])
 		const result = await billingService.createYooKassaPayment({
 			userId: req.user.id,
@@ -16,42 +19,39 @@ router.post('/yookassa/create', authMiddleware, async (req, res, next) => {
 			idempotencyKey: req.body.idempotencyKey || req.header('Idempotency-Key') || undefined,
 		})
 		res.status(201).json(result)
-	} catch (error) {
-		next(error)
-	}
-})
+	}),
+)
 
-router.post('/yookassa/webhook', async (req, res, next) => {
-	try {
+router.post(
+	'/yookassa/webhook',
+	asyncHandler(async (req, res) => {
 		const result = await billingService.handleYooKassaWebhook(req.body)
 		res.json(result)
-	} catch (error) {
-		next(error)
-	}
-})
+	}),
+)
 
-router.get('/history', authMiddleware, async (req, res, next) => {
-	try {
+router.get(
+	'/history',
+	authMiddleware,
+	asyncHandler(async (req, res) => {
 		const result = await billingService.getHistory({
 			userId: req.user.id,
 			limit: Number(req.query.limit || 50),
 		})
 		res.json(result)
-	} catch (error) {
-		next(error)
-	}
-})
+	}),
+)
 
-router.get('/:id', authMiddleware, async (req, res, next) => {
-	try {
+router.get(
+	'/:id',
+	authMiddleware,
+	asyncHandler(async (req, res) => {
 		const result = await billingService.getPaymentById({
 			paymentId: req.params.id,
 			actorUserId: req.user.id,
 		})
 		res.json(result)
-	} catch (error) {
-		next(error)
-	}
-})
+	}),
+)
 
 export default router

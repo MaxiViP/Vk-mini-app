@@ -74,6 +74,34 @@ const upsertDefaultWorkspace = userId => {
 	})
 }
 
+const buildWorkspaceFallback = payload => ({
+	...payload,
+	updatedAt: new Date(),
+})
+
+const persistWorkspace = async (userId, update) => {
+	if (!prisma.userWorkspace) {
+		return buildWorkspaceFallback(update)
+	}
+
+	try {
+		return await prisma.userWorkspace.upsert({
+			where: { userId },
+			update,
+			create: {
+				userId,
+				chatHistory: update.chatHistory ?? [],
+				notesPayload: update.notesPayload ?? DEFAULT_NOTES_PAYLOAD,
+			},
+		})
+	} catch (error) {
+		if (isWorkspaceStorageUnavailable(error)) {
+			return buildWorkspaceFallback(update)
+		}
+		throw error
+	}
+}
+
 export const workspaceService = {
 	async getWorkspace(userId) {
 		if (!prisma.userWorkspace) return getDefaultWorkspacePayload()
@@ -98,27 +126,7 @@ export const workspaceService = {
 
 	async saveChatHistory(userId, chatHistory) {
 		const sanitized = sanitizeChatHistory(chatHistory)
-		if (!prisma.userWorkspace) {
-			return { chatHistory: sanitized, updatedAt: new Date() }
-		}
-
-		let workspace
-		try {
-			workspace = await prisma.userWorkspace.upsert({
-				where: { userId },
-				update: { chatHistory: sanitized },
-				create: {
-					userId,
-					chatHistory: sanitized,
-					notesPayload: DEFAULT_NOTES_PAYLOAD,
-				},
-			})
-		} catch (error) {
-			if (isWorkspaceStorageUnavailable(error)) {
-				return { chatHistory: sanitized, updatedAt: new Date() }
-			}
-			throw error
-		}
+		const workspace = await persistWorkspace(userId, { chatHistory: sanitized })
 
 		return {
 			chatHistory: sanitizeChatHistory(workspace.chatHistory),
@@ -128,27 +136,7 @@ export const workspaceService = {
 
 	async saveNotesPayload(userId, notesPayload) {
 		const sanitized = sanitizeNotesPayload(notesPayload)
-		if (!prisma.userWorkspace) {
-			return { notesPayload: sanitized, updatedAt: new Date() }
-		}
-
-		let workspace
-		try {
-			workspace = await prisma.userWorkspace.upsert({
-				where: { userId },
-				update: { notesPayload: sanitized },
-				create: {
-					userId,
-					chatHistory: [],
-					notesPayload: sanitized,
-				},
-			})
-		} catch (error) {
-			if (isWorkspaceStorageUnavailable(error)) {
-				return { notesPayload: sanitized, updatedAt: new Date() }
-			}
-			throw error
-		}
+		const workspace = await persistWorkspace(userId, { notesPayload: sanitized })
 
 		return {
 			notesPayload: sanitizeNotesPayload(workspace.notesPayload),
