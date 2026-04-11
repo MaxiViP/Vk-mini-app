@@ -153,8 +153,8 @@ model WalletLedger {
   type           LedgerType
   amountMinor    Int          @map("amount_minor")
   reason         LedgerReason
-  referenceType  String?
-  referenceId    String?
+  referenceType  String? @map("reference_type")
+  referenceId    String? @map("reference_id")
   idempotencyKey String       @unique @map("idempotency_key")
   createdAt      DateTime     @default(now()) @map("created_at")
 
