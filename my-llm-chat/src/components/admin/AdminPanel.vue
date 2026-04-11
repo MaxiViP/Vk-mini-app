@@ -8,7 +8,7 @@
 			<input v-model="eventType" placeholder="Event type" />
 			<input v-model="dateFrom" type="datetime-local" />
 			<input v-model="dateTo" type="datetime-local" />
-			<button @click="loadAll" :disabled="loading">Обновить</button>
+			<button @click="handleRefreshClick" :disabled="loading">Обновить</button>
 		</div>
 
 		<section class="users-table-wrap">
@@ -111,8 +111,10 @@ const usersQuery = ref('')
 const eventType = ref('')
 const dateFrom = ref('')
 const dateTo = ref('')
-const AUTO_REFRESH_MS = 5000
+const AUTO_REFRESH_MS = 15000
+const RATE_LIMIT_COOLDOWN_MS = 30000
 let refreshTimer: number | null = null
+let rateLimitedUntil = 0
 
 const authHeaders = () => ({
 	Authorization: `Bearer ${userStore.token}`,
@@ -141,7 +143,23 @@ const resolveAdminErrorMessage = (error: unknown) => {
 	return 'Не удалось загрузить данные админ-панели. Проверьте backend-логи.'
 }
 
-const loadAll = async () => {
+const isRateLimitError = (error: unknown) => {
+	const axiosError = error as AxiosError
+	return axiosError.response?.status === 429
+}
+
+const loadUsers = async () => {
+	const usersRes = await axios.get<AdminUserRow[]>(`${API_BASE_URL}/api/admin/users`, {
+		headers: authHeaders(),
+		params: { limit: 100, query: usersQuery.value || undefined },
+	})
+	users.value = usersRes.data
+}
+
+const loadAll = async ({ usersOnly = false } = {}) => {
+	if (loading.value) return
+	if (Date.now() < rateLimitedUntil) return
+
 	loading.value = true
 	errorMessage.value = ''
 	try {
@@ -150,20 +168,18 @@ const loadAll = async () => {
 			...(eventType.value ? { eventType: eventType.value } : {}),
 			...(dateFrom.value ? { dateFrom: toIso(dateFrom.value) } : {}),
 			...(dateTo.value ? { dateTo: toIso(dateTo.value) } : {}),
-			limit: 200,
+			limit: 100,
 		}
 
-		const [usersRes, eventsRes, ledgerRes, auditRes, metricsRes] = await Promise.all([
-			axios.get<AdminUserRow[]>(`${API_BASE_URL}/api/admin/users`, {
-				headers: authHeaders(),
-				params: { limit: 200, query: usersQuery.value || undefined },
-			}),
+		await loadUsers()
+		if (usersOnly) return
+
+		const [eventsRes, ledgerRes, auditRes, metricsRes] = await Promise.all([
 			axios.get(`${API_BASE_URL}/api/admin/events`, { headers: authHeaders(), params }),
 			axios.get(`${API_BASE_URL}/api/admin/ledger`, { headers: authHeaders(), params }),
 			axios.get(`${API_BASE_URL}/api/admin/audit`, { headers: authHeaders(), params }),
 			axios.get(`${API_BASE_URL}/api/admin/metrics`, { headers: authHeaders() }),
 		])
-		users.value = usersRes.data
 		events.value = eventsRes.data
 		ledger.value = ledgerRes.data
 		audit.value = auditRes.data
@@ -175,7 +191,7 @@ const loadAll = async () => {
 				params: {
 					...(dateFrom.value ? { dateFrom: toIso(dateFrom.value) } : {}),
 					...(dateTo.value ? { dateTo: toIso(dateTo.value) } : {}),
-					limit: 200,
+					limit: 100,
 				},
 			})
 			userActions.value = userActionsRes.data
@@ -184,7 +200,14 @@ const loadAll = async () => {
 		}
 	} catch (error) {
 		console.error('Admin panel load failed', error)
-		errorMessage.value = resolveAdminErrorMessage(error)
+		if (isRateLimitError(error)) {
+			rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS
+			errorMessage.value = `Слишком много запросов к админ API (429). Автообновление поставлено на паузу на ${Math.round(
+				RATE_LIMIT_COOLDOWN_MS / 1000,
+			)} сек.`
+		} else {
+			errorMessage.value = resolveAdminErrorMessage(error)
+		}
 	} finally {
 		loading.value = false
 	}
@@ -209,11 +232,15 @@ const formatName = (user: AdminUserRow) => {
 
 const pretty = (data: unknown) => JSON.stringify(data, null, 2)
 
+const handleRefreshClick = async () => {
+	await loadAll()
+}
+
 onMounted(loadAll)
 
 onMounted(() => {
 	refreshTimer = window.setInterval(() => {
-		void loadAll()
+		void loadAll({ usersOnly: true })
 	}, AUTO_REFRESH_MS)
 })
 
@@ -224,8 +251,6 @@ onUnmounted(() => {
 	}
 })
 </script>
-
- 
 
 <style scoped>
 .admin-panel {

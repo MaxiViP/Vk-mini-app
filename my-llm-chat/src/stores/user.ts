@@ -4,7 +4,7 @@ import bridge from '@vkontakte/vk-bridge'
 
 import type { User, YooKassaPaymentSession } from '../types'
 import { confirmYooKassaPaymentRequest, createYooKassaPaymentRequest } from '../api/payments'
-import { authApi, type OAuthProvider } from '../services/auth'
+import { authApi, type OAuthProvider, type UserProfileResponse } from '../services/auth'
 
 const TOKEN_STORAGE_KEY = 'token'
 const REFRESH_TOKEN_STORAGE_KEY = 'refresh_token'
@@ -43,12 +43,13 @@ const mapApiUserToUiUser = (apiUser: {
 	avatarUrl: string | null
 	phoneE164: string | null
 	isAdmin?: boolean
+	wallet?: { balanceMinor: number } | null
 }) => ({
 	vkId: apiUser.id,
 	firstName: apiUser.firstName || 'User',
 	lastName: apiUser.lastName || '',
 	photo_200: apiUser.avatarUrl || undefined,
-	balance: 0,
+	balance: Number(apiUser.wallet?.balanceMinor || 0) / 100,
 	requestsLeft: 0,
 	phoneE164: apiUser.phoneE164 || undefined,
 	isAdmin: resolveIsAdmin(apiUser.isAdmin, apiUser.phoneE164),
@@ -103,11 +104,23 @@ export const useUserStore = defineStore('user', () => {
 			avatarUrl: string | null
 			phoneE164: string | null
 			isAdmin?: boolean
+			wallet?: { balanceMinor: number } | null
 		}
 	}) => {
 		token.value = result.accessToken
 		refreshToken.value = result.refreshToken
 		user.value = mapApiUserToUiUser(result.user)
+		persistAuthState()
+	}
+
+	const syncProfileFromServer = async () => {
+		if (!token.value) return
+		const profile: UserProfileResponse = await authApi.getMe(token.value)
+		const currentUser = user.value
+		user.value = {
+			...mapApiUserToUiUser(profile),
+			requestsLeft: currentUser?.requestsLeft || 0,
+		}
 		persistAuthState()
 	}
 
@@ -119,6 +132,7 @@ export const useUserStore = defineStore('user', () => {
 		if (user.value) {
 			user.value.isAdmin = resolveIsAdmin(user.value.isAdmin, user.value.phoneE164)
 			persistAuthState()
+			void syncProfileFromServer()
 		}
 	}
 
@@ -135,6 +149,7 @@ export const useUserStore = defineStore('user', () => {
 					state: start.state,
 				})
 				applyAuthResult(finalize)
+				await syncProfileFromServer()
 				return finalize
 			}
 
@@ -162,6 +177,7 @@ export const useUserStore = defineStore('user', () => {
 				state: 'vk-bridge',
 			})
 			applyAuthResult(finalize)
+			await syncProfileFromServer()
 		} catch (err) {
 			console.error('VK init error', err)
 		} finally {
@@ -197,6 +213,7 @@ export const useUserStore = defineStore('user', () => {
 				code,
 			})
 			applyAuthResult(result)
+			await syncProfileFromServer()
 			phoneChallenge.value = null
 			return result
 		} finally {
@@ -208,6 +225,7 @@ export const useUserStore = defineStore('user', () => {
 		if (!refreshToken.value) throw new Error('Нет refresh token')
 		const result = await authApi.refresh(refreshToken.value)
 		applyAuthResult(result)
+		await syncProfileFromServer()
 		return result
 	}
 
@@ -249,9 +267,11 @@ export const useUserStore = defineStore('user', () => {
 	}
 
 	async function confirmYooKassaPayment(paymentId: string, amount: number) {
+		if (!token.value) throw new Error('Требуется авторизация')
+
 		try {
-			const response = await confirmYooKassaPaymentRequest(paymentId)
-			await rechargeBalance(response.amount)
+			const response = await confirmYooKassaPaymentRequest(paymentId, token.value)
+			await syncProfileFromServer()
 			return response
 		} catch (error) {
 			const status = (error as { response?: { status?: number } })?.response?.status
@@ -296,6 +316,7 @@ export const useUserStore = defineStore('user', () => {
 		try {
 			const result = await authApi.finalizeOAuth({ provider, code, state })
 			applyAuthResult(result)
+			await syncProfileFromServer()
 			window.history.replaceState({}, document.title, '/')
 			return true
 		} finally {
@@ -322,6 +343,7 @@ export const useUserStore = defineStore('user', () => {
 		createYooKassaPayment,
 		confirmYooKassaPayment,
 		finalizeOAuthCallbackFromLocation,
+		syncProfileFromServer,
 		logout,
 	}
 })

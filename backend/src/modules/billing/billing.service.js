@@ -12,6 +12,47 @@ const toMinor = amount => {
 }
 
 export const billingService = {
+	async applySuccessfulPayment(payment) {
+		if (!payment) throw new AppError('Payment not found', 404)
+
+		if (payment.status !== 'succeeded') {
+			await prisma.payment.update({
+				where: { id: payment.id },
+				data: { status: 'succeeded' },
+			})
+		}
+
+		await prisma.wallet.upsert({
+			where: { userId: payment.userId },
+			update: { balanceMinor: { increment: payment.amountMinor } },
+			create: { userId: payment.userId, balanceMinor: payment.amountMinor, currency: 'RUB' },
+		})
+
+		const ledgerKey = `payment_success_${payment.id}`
+		const ledgerExisting = await prisma.walletLedger.findUnique({ where: { idempotencyKey: ledgerKey } })
+		if (!ledgerExisting) {
+			await prisma.walletLedger.create({
+				data: {
+					userId: payment.userId,
+					type: 'credit',
+					amountMinor: payment.amountMinor,
+					reason: 'payment_topup',
+					referenceType: 'payment',
+					referenceId: payment.id,
+					idempotencyKey: ledgerKey,
+				},
+			})
+		}
+
+		await logBusinessEvent({
+			eventType: 'balance.changed',
+			actorUserId: payment.userId,
+			entityType: 'wallet',
+			entityId: payment.userId,
+			payload: { deltaMinor: payment.amountMinor, reason: 'payment_topup' },
+		})
+	},
+
 	async createYooKassaPayment({ userId, amount, returnUrl, idempotencyKey }) {
 		const amountMinor = toMinor(amount)
 		const safeIdempotencyKey = idempotencyKey || crypto.randomUUID()
@@ -99,38 +140,35 @@ export const billingService = {
 		})
 
 		if (status === 'succeeded') {
-			await prisma.wallet.upsert({
-				where: { userId: payment.userId },
-				update: { balanceMinor: { increment: payment.amountMinor } },
-				create: { userId: payment.userId, balanceMinor: payment.amountMinor, currency: 'RUB' },
-			})
-
-			const ledgerKey = `payment_success_${payment.id}`
-			const ledgerExisting = await prisma.walletLedger.findUnique({ where: { idempotencyKey: ledgerKey } })
-			if (!ledgerExisting) {
-				await prisma.walletLedger.create({
-					data: {
-						userId: payment.userId,
-						type: 'credit',
-						amountMinor: payment.amountMinor,
-						reason: 'payment_topup',
-						referenceType: 'payment',
-						referenceId: payment.id,
-						idempotencyKey: ledgerKey,
-					},
-				})
-			}
-
-			await logBusinessEvent({
-				eventType: 'balance.changed',
-				actorUserId: payment.userId,
-				entityType: 'wallet',
-				entityId: payment.userId,
-				payload: { deltaMinor: payment.amountMinor, reason: 'payment_topup' },
-			})
+			await this.applySuccessfulPayment(payment)
 		}
 
 		return updated
+	},
+
+	async confirmYooKassaPayment({ paymentId, actorUserId }) {
+		const payment = await prisma.payment.findUnique({ where: { id: paymentId } })
+		if (!payment) throw new AppError('Payment not found', 404)
+		if (payment.userId !== actorUserId && !(await isAdminUser(actorUserId))) {
+			throw new AppError('Forbidden', 403)
+		}
+
+		await prisma.paymentEvent.create({
+			data: {
+				paymentId: payment.id,
+				eventType: 'manual_confirm',
+				rawPayload: { actorUserId },
+			},
+		})
+
+		await this.applySuccessfulPayment(payment)
+
+		return {
+			paymentId: payment.id,
+			status: 'succeeded',
+			amount: payment.amountMinor / 100,
+			isStub: true,
+		}
 	},
 
 	async getHistory({ userId, limit = 50 }) {

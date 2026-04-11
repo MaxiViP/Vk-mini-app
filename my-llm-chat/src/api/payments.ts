@@ -18,12 +18,23 @@ export async function createYooKassaPaymentRequest(
 	return response.data
 }
 
-export async function confirmYooKassaPaymentRequest(paymentId: string): Promise<{
+export async function confirmYooKassaPaymentRequest(
+	paymentId: string,
+	accessToken: string,
+): Promise<{
 	paymentId: string
 	status: 'succeeded'
 	amount: number
 	isStub: boolean
 }> {
-	const response = await axios.post(`${API_BASE_URL}/api/payments/yookassa/confirm`, { paymentId })
+	const response = await axios.post(
+		`${API_BASE_URL}/api/payments/yookassa/confirm`,
+		{ paymentId },
+		{
+			headers: {
+				Authorization: `Bearer ${accessToken}`,
+			},
+		},
+	)
 	return response.data
 }

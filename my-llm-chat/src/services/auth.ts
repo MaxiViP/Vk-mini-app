@@ -25,6 +25,21 @@ export interface AuthResult {
 	}
 }
 
+export interface UserProfileResponse {
+	id: string
+	email: string | null
+	phoneE164: string | null
+	firstName: string | null
+	lastName: string | null
+	avatarUrl: string | null
+	status: 'active' | 'blocked' | 'deleted'
+	isAdmin?: boolean
+	wallet?: {
+		balanceMinor: number
+		currency: string
+	} | null
+}
+
 export const authApi = {
 	startOAuth(provider: OAuthProvider, redirectUri: string) {
 		return axios
@@ -61,6 +76,14 @@ export const authApi = {
 	logout(refreshToken: string) {
 		return axios
 			.post<{ success: boolean }>(`${API_BASE_URL}/api/auth/logout`, { refreshToken })
+			.then(response => response.data)
+	},
+
+	getMe(accessToken: string) {
+		return axios
+			.get<UserProfileResponse>(`${API_BASE_URL}/api/users/me`, {
+				headers: { Authorization: `Bearer ${accessToken}` },
+			})
 			.then(response => response.data)
 	},
 }

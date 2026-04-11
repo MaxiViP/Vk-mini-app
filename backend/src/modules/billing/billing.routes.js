@@ -30,6 +30,19 @@ router.post(
 	}),
 )
 
+router.post(
+	'/yookassa/confirm',
+	authMiddleware,
+	asyncHandler(async (req, res) => {
+		requireFields(req.body, ['paymentId'])
+		const result = await billingService.confirmYooKassaPayment({
+			paymentId: req.body.paymentId,
+			actorUserId: req.user.id,
+		})
+		res.json(result)
+	}),
+)
+
 router.get(
 	'/history',
 	authMiddleware,
