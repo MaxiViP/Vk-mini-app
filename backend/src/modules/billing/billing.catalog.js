@@ -1,6 +1,6 @@
 export const PAYG_PRICING_MINOR = {
-	basic: 200,
-	premium: 1400,
+	basic: 500,
+	premium: 500,
 }
 
 export const PLAN_CATALOG = [

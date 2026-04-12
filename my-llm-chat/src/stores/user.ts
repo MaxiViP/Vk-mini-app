@@ -49,6 +49,31 @@ const safeParse = <T>(raw: string | null): T | null => {
 
 const getHttpStatus = (error: unknown) => (error as { response?: { status?: number } })?.response?.status || null
 
+const DEFAULT_FALLBACK_PLANS = [
+	{
+		id: 'fallback-weekly-basic',
+		code: 'weekly-basic',
+		name: 'Базовая подписка',
+		priceMinor: 34900,
+		price: 349,
+		intervalDays: 7,
+		includedRequests: 700,
+		accessTier: 'basic' as const,
+		isActive: true,
+	},
+	{
+		id: 'fallback-monthly-premium',
+		code: 'monthly-premium',
+		name: 'Премиум подписка',
+		priceMinor: 199000,
+		price: 1990,
+		intervalDays: 30,
+		includedRequests: 2500,
+		accessTier: 'premium' as const,
+		isActive: true,
+	},
+]
+
 const createFallbackBillingSummary = (
 	profile: UserProfileResponse,
 	previousBilling: BillingSummary | null,
@@ -62,12 +87,12 @@ const createFallbackBillingSummary = (
 			currency: profile.wallet?.currency || previousBilling?.wallet.currency || 'RUB',
 		},
 		activeSubscription: previousBilling?.activeSubscription || null,
-		plans: previousBilling?.plans || [],
+		plans: previousBilling?.plans?.length ? previousBilling.plans : DEFAULT_FALLBACK_PLANS,
 		paygPricing: previousBilling?.paygPricing || {
-			basicMinor: 200,
-			basic: 2,
-			premiumMinor: 1400,
-			premium: 14,
+			basicMinor: 500,
+			basic: 5,
+			premiumMinor: 500,
+			premium: 5,
 		},
 		usageSnapshot: {
 			remainingIncludedRequests: previousBilling?.usageSnapshot.remainingIncludedRequests || 0,

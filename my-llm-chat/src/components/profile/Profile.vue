@@ -58,8 +58,7 @@
 					</p>
 
 					<p class="hint-text">
-						Базовые модели: {{ userStore.billing?.paygPricing.basic || 2 }} ₽ за запрос. Премиальные:
-						{{ userStore.billing?.paygPricing.premium || 14 }} ₽ за запрос.
+						Любой запрос в режиме pay-per-request: {{ userStore.billing?.paygPricing.basic || 5 }} ₽.
 					</p>
 				</div>
 
@@ -103,7 +102,7 @@
 						<ul>
 							<li>Баланс списывается из кошелька в базе</li>
 							<li>Сценарий включается автоматически, когда нет активной подписки</li>
-							<li>Подходит как резервный продакшен-режим даже без подключённого эквайринга</li>
+							<li>Каждый запрос стоит {{ userStore.billing?.paygPricing.basic || 5 }} ₽</li>
 						</ul>
 
 						<button disabled>
