@@ -39,7 +39,10 @@ const isOtpStorageUnavailable = error => {
 		message.includes('econnrefused') ||
 		message.includes('otp_codes') ||
 		message.includes('otpcode') ||
-		message.includes('prisma client is not initialized')
+		message.includes('prisma client is not initialized') ||
+		(message.includes('cannot read properties of undefined') && message.includes('create')) ||
+		(message.includes('cannot read properties of undefined') && message.includes('findunique')) ||
+		(message.includes('cannot read properties of undefined') && message.includes('update'))
 	)
 }
 
@@ -48,6 +51,18 @@ const validateOtpRecord = otpRecord => {
 	if (otpRecord.consumedAt) throw new AppError('Challenge already used', 400)
 	if (otpRecord.expiresAt < new Date()) throw new AppError('OTP expired', 400)
 	if (otpRecord.attempts >= OTP_MAX_ATTEMPTS) throw new AppError('OTP attempts exceeded', 429)
+}
+
+const createInMemoryChallenge = ({ phoneE164, codeHash, expiresAt, challengeId = createMemoryChallengeId() }) => {
+	memoryChallenges.set(challengeId, {
+		id: challengeId,
+		phoneE164,
+		codeHash,
+		expiresAt,
+		attempts: 0,
+		consumedAt: null,
+	})
+	return challengeId
 }
 
 const issueDevPhoneAuthResult = phoneE164 => {
@@ -109,13 +124,11 @@ export const otpService = {
 			})
 
 			phoneSendTimestamps.set(phoneE164, now)
-			memoryChallenges.set(challenge.id, {
-				id: challenge.id,
+			createInMemoryChallenge({
 				phoneE164,
 				codeHash,
 				expiresAt,
-				attempts: 0,
-				consumedAt: null,
+				challengeId: challenge.id,
 			})
 
 			return {
@@ -124,16 +137,12 @@ export const otpService = {
 				debugCode: shouldExposeDebugOtp ? code : undefined,
 			}
 		} catch (error) {
-			if (!isOtpStorageUnavailable(error)) throw error
+			if (error instanceof AppError) throw error
 
-			const challengeId = createMemoryChallengeId()
-			memoryChallenges.set(challengeId, {
-				id: challengeId,
+			const challengeId = createInMemoryChallenge({
 				phoneE164,
 				codeHash,
 				expiresAt,
-				attempts: 0,
-				consumedAt: null,
 			})
 			phoneSendTimestamps.set(phoneE164, now)
 
@@ -175,7 +184,7 @@ export const otpService = {
 		try {
 			otpRecord = await prisma.otpCode.findUnique({ where: { id: challengeId } })
 		} catch (error) {
-			if (!isOtpStorageUnavailable(error)) throw error
+			if (error instanceof AppError) throw error
 			otpRecord = memoryChallenges.get(challengeId) || null
 		}
 		validateOtpRecord(otpRecord)
@@ -186,10 +195,15 @@ export const otpService = {
 				otpRecord.attempts += 1
 				memoryChallenges.set(otpRecord.id, otpRecord)
 			} else {
-				await prisma.otpCode.update({
-					where: { id: otpRecord.id },
-					data: { attempts: { increment: 1 } },
-				})
+				try {
+					await prisma.otpCode.update({
+						where: { id: otpRecord.id },
+						data: { attempts: { increment: 1 } },
+					})
+				} catch {
+					otpRecord.attempts += 1
+					memoryChallenges.set(otpRecord.id, otpRecord)
+				}
 			}
 			throw new AppError('Invalid OTP code', 400)
 		}
@@ -198,17 +212,22 @@ export const otpService = {
 			otpRecord.consumedAt = new Date()
 			memoryChallenges.set(otpRecord.id, otpRecord)
 		} else {
-			await prisma.otpCode.update({
-				where: { id: otpRecord.id },
-				data: { consumedAt: new Date() },
-			})
+			try {
+				await prisma.otpCode.update({
+					where: { id: otpRecord.id },
+					data: { consumedAt: new Date() },
+				})
+			} catch {
+				otpRecord.consumedAt = new Date()
+				memoryChallenges.set(otpRecord.id, otpRecord)
+			}
 		}
 
 		try {
 			const user = await authService.upsertPhoneUser({ phoneE164: otpRecord.phoneE164 })
 			return await authService.issueTokens({ user, userAgent, ip })
 		} catch (error) {
-			if (!isOtpStorageUnavailable(error)) throw error
+			if (!isOtpStorageUnavailable(error) && !(error instanceof TypeError)) throw error
 			return issueDevPhoneAuthResult(otpRecord.phoneE164)
 		}
 	},
