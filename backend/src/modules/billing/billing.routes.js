@@ -7,6 +7,32 @@ import { asyncHandler } from '../../shared/async-handler.js'
 
 const router = Router()
 
+router.get(
+	'/summary',
+	authMiddleware,
+	asyncHandler(async (req, res) => {
+		const result = await billingService.getSummary({
+			userId: req.user.id,
+			historyLimit: Number(req.query.historyLimit || 20),
+		})
+		res.json(result)
+	}),
+)
+
+router.post(
+	'/subscriptions/purchase',
+	authMiddleware,
+	asyncHandler(async (req, res) => {
+		requireFields(req.body, ['planCode'])
+		const result = await billingService.purchaseSubscription({
+			userId: req.user.id,
+			planCode: req.body.planCode,
+			idempotencyKey: req.body.idempotencyKey || req.header('Idempotency-Key') || undefined,
+		})
+		res.status(201).json(result)
+	}),
+)
+
 router.post(
 	'/yookassa/create',
 	authMiddleware,

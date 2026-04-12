@@ -1,5 +1,7 @@
 import { OpenAI } from 'openai'
+
 import logger from '../../config/logger.js'
+import { resolveModelTier } from '../billing/billing.catalog.js'
 
 const sanitizeEnv = value => (typeof value === 'string' ? value.trim().replace(/^['"]|['"]$/g, '') : '')
 
@@ -30,11 +32,25 @@ const cloudflareClient = cloudflareBaseUrl
 			baseURL: cloudflareBaseUrl,
 		})
 	: null
-	
+
+const LOCAL_LLM_BASE_URL =
+	process.env.LOCAL_LLM_BASE_URL || process.env.LOCAL_MODEL_BASE_URL || 'http://127.0.0.1:8000/v1'
+
+const FREE_MODEL_PROVIDERS = new Set(['groq', 'openrouter', 'cloudflare'])
+const REQUESTS_PER_ROTATION = 3
+const CACHE_TTL_MS = 5 * 60 * 1000
+
+const userRequestCounters = new Map()
+
+const decorateModel = model => ({
+	...model,
+	billingTier: resolveModelTier(model),
+})
+
 const OPENAI_FALLBACK_MODELS = [
 	{ id: 'openai-gpt-4o-mini', name: 'OpenAI: GPT-4o mini', provider: 'openai', model: 'gpt-4o-mini' },
 	{ id: 'openai-gpt-4.1-mini', name: 'OpenAI: GPT-4.1 mini', provider: 'openai', model: 'gpt-4.1-mini' },
-]
+].map(decorateModel)
 
 const GROQ_FALLBACK_MODELS = [
 	{
@@ -49,7 +65,7 @@ const GROQ_FALLBACK_MODELS = [
 		provider: 'groq',
 		model: 'llama-3.1-8b-instant',
 	},
-]
+].map(decorateModel)
 
 const OPENROUTER_FALLBACK_MODELS = [
 	{
@@ -64,7 +80,7 @@ const OPENROUTER_FALLBACK_MODELS = [
 		provider: 'openrouter',
 		model: 'anthropic/claude-3.5-haiku',
 	},
-]
+].map(decorateModel)
 
 const CLOUDFLARE_MODELS = [
 	{ id: 'cf-gpt4o', name: 'GPT-4o (Cloudflare)', provider: 'cloudflare', model: 'gpt-4o' },
@@ -74,13 +90,7 @@ const CLOUDFLARE_MODELS = [
 		provider: 'cloudflare',
 		model: '@cf/meta/llama-3-70b-instruct',
 	},
-]
-
-const LOCAL_LLM_BASE_URL =
-	process.env.LOCAL_LLM_BASE_URL || process.env.LOCAL_MODEL_BASE_URL || 'http://127.0.0.1:8000/v1'
-	const FREE_MODEL_PROVIDERS = new Set(['groq', 'openrouter', 'cloudflare'])
-const REQUESTS_PER_ROTATION = 3
-const userRequestCounters = new Map()
+].map(decorateModel)
 
 const LOCAL_MODELS = [
 	{
@@ -97,11 +107,10 @@ const LOCAL_MODELS = [
 		model: 'my-legal-v2',
 		baseUrl: LOCAL_LLM_BASE_URL,
 	},
-]
+].map(decorateModel)
 
 let modelsCache = null
 let cacheTimestamp = 0
-const CACHE_TTL_MS = 5 * 60 * 1000
 
 const dedupeModels = models => {
 	const seen = new Set()
@@ -138,7 +147,9 @@ const resolveModelForRequest = (allModels, selectedModel, userId) => {
 		return selectedModel
 	}
 
-	const rotationPool = allModels.filter(model => FREE_MODEL_PROVIDERS.has(model.provider))
+	const rotationPool = allModels.filter(
+		model => FREE_MODEL_PROVIDERS.has(model.provider) && model.billingTier === selectedModel.billingTier,
+	)
 	if (rotationPool.length < 2) return selectedModel
 
 	const currentCount = userRequestCounters.get(userId || 'guest') || 0
@@ -160,16 +171,17 @@ const resolveModelForRequest = (allModels, selectedModel, userId) => {
 	return rotatedModel
 }
 
-
 const safeListModels = async (client, provider, fallbackModels = []) => {
 	try {
 		const response = await client.models.list()
-		const dynamicModels = response.data.map(model => ({
-			id: `${provider}-${model.id}`,
-			name: `${provider.toUpperCase()}: ${model.id}`,
-			provider,
-			model: model.id,
-		}))
+		const dynamicModels = response.data.map(model =>
+			decorateModel({
+				id: `${provider}-${model.id}`,
+				name: `${provider.toUpperCase()}: ${model.id}`,
+				provider,
+				model: model.id,
+			}),
+		)
 		return dedupeModels([...dynamicModels, ...fallbackModels])
 	} catch (error) {
 		logger.warn(`Failed to load models from ${provider}`, { message: error.message, status: error.status || null })
@@ -181,13 +193,13 @@ const withTimeout = (promise, timeoutMs, errorMessage = 'Timeout') =>
 	Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(errorMessage)), timeoutMs))])
 
 const withRetry = async (fn, maxRetries = 3, delayMs = 1000) => {
-	for (let i = 0; i < maxRetries; i++) {
+	for (let index = 0; index < maxRetries; index += 1) {
 		try {
 			return await fn()
 		} catch (error) {
-			if (i === maxRetries - 1) throw error
-			logger.warn(`Retry ${i + 1} failed: ${error.message}`)
-			await new Promise(resolve => setTimeout(resolve, delayMs * (i + 1)))
+			if (index === maxRetries - 1) throw error
+			logger.warn(`Retry ${index + 1} failed: ${error.message}`)
+			await new Promise(resolve => setTimeout(resolve, delayMs * (index + 1)))
 		}
 	}
 }
@@ -214,34 +226,28 @@ export const llmService = {
 		return modelsCache
 	},
 
-	async chat({ message, modelId, history = [], userId, maxTokens = 1000, stream = false }) {
-		if (!message) throw new Error('Message is required')
-		if (message.length > 4000) throw new Error('Message too long')
-
+	async resolveModel({ modelId, userId }) {
 		const allModels = await this.listModels()
-		const selectedModel = allModels.find(m => m.id === modelId)
+		const selectedModel = allModels.find(model => model.id === modelId)
 		if (!selectedModel) {
-			const error = new Error('Модель не найдена')
+			const error = new Error('Model not found')
 			error.statusCode = 400
 			throw error
 		}
 
-		const effectiveModel = resolveModelForRequest(allModels, selectedModel, userId)
+		return resolveModelForRequest(allModels, selectedModel, userId)
+	},
+
+	async chat({ message, modelId, selectedModel, history = [], userId, maxTokens = 1000 }) {
+		if (!message) throw new Error('Message is required')
+		if (message.length > 4000) throw new Error('Message too long')
+
+		const effectiveModel = selectedModel || (await this.resolveModel({ modelId, userId }))
 		const client = getClientForModel(effectiveModel)
-		const messages = [...history.map(h => ({ role: h.role, content: h.content })), { role: 'user', content: message }]
+		const messages = [...history.map(item => ({ role: item.role, content: item.content })), { role: 'user', content: message }]
 
 		try {
-			if (stream) {
-				return client.chat.completions.create({
-					model: effectiveModel.model,
-					messages,
-					stream: true,
-					temperature: 0.7,
-					max_tokens: maxTokens,
-				})
-			}
-
-			return await withRetry(() =>
+			const completion = await withRetry(() =>
 				withTimeout(
 					client.chat.completions.create({
 						model: effectiveModel.model,
@@ -253,10 +259,15 @@ export const llmService = {
 					'LLM request timeout',
 				),
 			)
+
+			return {
+				model: effectiveModel,
+				completion,
+			}
 		} catch (error) {
 			logger.error('LLM request failed', {
 				error: error.message,
-				modelId,
+				modelId: effectiveModel.id,
 				effectiveModelId: effectiveModel.id,
 				userId,
 				messageLength: message.length,

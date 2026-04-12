@@ -1,7 +1,7 @@
 import axios from 'axios'
 import type { YooKassaPaymentSession } from '../types'
 
-const API_BASE_URL = ''
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 export async function createYooKassaPaymentRequest(
 	amount: number,
 	accessToken: string,
@@ -27,7 +27,12 @@ export async function confirmYooKassaPaymentRequest(
 	amount: number
 	isStub: boolean
 }> {
-	const response = await axios.post(
+	const response = await axios.post<{
+		paymentId: string
+		status: 'succeeded'
+		amount: number
+		isStub: boolean
+	}>(
 		`${API_BASE_URL}/api/payments/yookassa/confirm`,
 		{ paymentId },
 		{

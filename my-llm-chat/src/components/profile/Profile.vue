@@ -11,142 +11,141 @@
 					<button @click="userStore.logout" class="logout-btn profile-header-logout">Выйти из аккаунта</button>
 				</div>
 
-				<p
-					v-if="statusMessage"
-					:class="[
-						'profile-status',
-						{ error: statusMessage.startsWith('⚠️'), success: !statusMessage.startsWith('⚠️') },
-					]"
-				>
+				<p v-if="statusMessage" :class="['profile-status', statusKind]">
 					{{ statusMessage }}
 				</p>
+
 				<div class="profile-stats">
 					<div class="stat-card">
 						<span class="stat-label">Баланс</span>
-						<strong>{{ userStore.user.balance.toFixed(0) }} ₽</strong>
+						<strong>{{ formatMoney(userStore.user.balance) }} ₽</strong>
 					</div>
 
 					<div class="stat-card">
-						<span class="stat-label">Запросы</span>
-						<strong>{{ userStore.user.requestsLeft }}</strong>
+						<span class="stat-label">Остаток по подписке</span>
+						<strong>{{ userStore.billing?.usageSnapshot.remainingIncludedRequests || 0 }}</strong>
 					</div>
 				</div>
 			</div>
 
 			<div class="billing-card">
 				<div class="section-head">
-					<h3>💼 Тарифы и доступ к моделям</h3>
+					<h3>Тарифы и оплата</h3>
 					<p class="billing-subtitle">
-						Выбери стратегию: платить за каждый запрос или купить подписку под конкретный класс моделей.
+						Источник правды теперь backend: баланс, подписки, списания и история операций хранятся в базе и
+						используются во всех сценариях оплаты.
 					</p>
 				</div>
 
 				<div class="billing-summary">
 					<p>
-						Текущий режим: <b>{{ activeModeLabel }}</b>
+						Текущий режим:
+						<b>{{ activeModeLabel }}</b>
 					</p>
 
-					<p v-if="activeSubscription && !isSubscriptionExpired">
-						Подписка действует до: <b>{{ formatDate(activeSubscription.expiresAt) }}</b>
+					<p v-if="activeSubscription">
+						Подписка действует до:
+						<b>{{ formatDate(activeSubscription.expiresAt) }}</b>
 					</p>
 
-					<p v-else-if="activeSubscription && isSubscriptionExpired" class="warn-text">
-						Срок подписки истёк — автоматически включён режим pay-per-request.
+					<p v-if="activeSubscription">
+						Осталось включённых запросов:
+						<b>{{ activeSubscription.remainingRequests }}</b>
 					</p>
 
-					<p class="hint-text">Pay-per-request: дешёвые модели — 2 ₽/запрос, спец/обученные — 14 ₽/запрос.</p>
+					<p v-else class="hint-text">
+						Pay-per-request активен автоматически, когда нет действующей подписки.
+					</p>
+
+					<p class="hint-text">
+						Базовые модели: {{ userStore.billing?.paygPricing.basic || 2 }} ₽ за запрос. Премиальные:
+						{{ userStore.billing?.paygPricing.premium || 14 }} ₽ за запрос.
+					</p>
 				</div>
 
 				<div class="plans-grid">
 					<div
+						v-for="plan in plans"
+						:key="plan.id"
 						:class="[
 							'plan-item',
-							'cheap-plan',
-							{ active: activeSubscription?.mode === 'weekly-cheap' && !isSubscriptionExpired },
+							plan.accessTier === 'premium' ? 'pro-plan featured-plan' : 'cheap-plan',
+							{ active: activeSubscription?.plan?.code === plan.code },
 						]"
 					>
-						<div class="plan-badge">База</div>
-						<h4>🟢 Дешёвая подписка</h4>
-						<p class="plan-period">7 дней</p>
-						<p class="plan-price">349 ₽</p>
+						<div class="plan-badge">
+							{{ plan.accessTier === 'premium' ? 'Премиум' : 'База' }}
+						</div>
+						<h4>{{ plan.name }}</h4>
+						<p class="plan-period">{{ plan.intervalDays }} дней</p>
+						<p class="plan-price">{{ formatMoney(plan.price) }} ₽</p>
 
 						<ul>
-							<li>Доступ ко всем базовым моделям</li>
-							<li>До 700 запросов/неделю без доплат</li>
-							<li>Оптимально для регулярных задач и тестов</li>
+							<li>{{ plan.includedRequests }} включённых запросов на период</li>
+							<li>{{ plan.accessTier === 'premium' ? 'Доступ ко всем моделям' : 'Доступ к базовым моделям' }}</li>
+							<li>{{ planDescription(plan.code) }}</li>
 						</ul>
 
-						<button @click="buyPlan('weekly-cheap')" :disabled="!canBuyWeekly">
-							{{ canBuyWeekly ? 'Купить подписку' : 'Недостаточно средств' }}
+						<button
+							@click="buyPlan(plan.code)"
+							:disabled="isBusy || !canBuyPlan(plan) || activeSubscription?.plan?.code === plan.code"
+						>
+							{{ planButtonLabel(plan) }}
 						</button>
 					</div>
 
-					<div
-						:class="[
-							'plan-item',
-							'pro-plan',
-							'featured-plan',
-							{ active: activeSubscription?.mode === 'monthly-pro' && !isSubscriptionExpired },
-						]"
-					>
-						<div class="plan-badge">Премиум</div>
-						<h4>🟣 Спец-модели</h4>
-						<p class="plan-period">30 дней</p>
-						<p class="plan-price">1 990 ₽</p>
-
-						<ul>
-							<li>Доступ к обученным/нишевым моделям</li>
-							<li>Включены и дешёвые, и дорогие модели</li>
-							<li>До 2 500 запросов/месяц без доплат</li>
-						</ul>
-
-						<button @click="buyPlan('monthly-pro')" :disabled="!canBuyMonthly">
-							{{ canBuyMonthly ? 'Купить подписку' : 'Недостаточно средств' }}
-						</button>
-					</div>
-
-					<div :class="['plan-item', 'payg-plan', { active: activeMode === 'payg' && !activeSubscription }]">
+					<div :class="['plan-item', 'payg-plan', { active: !activeSubscription }]">
 						<div class="plan-badge">Гибко</div>
-						<h4>⚪ Pay-per-request</h4>
+						<h4>Pay-per-request</h4>
 						<p class="plan-period">Без абонплаты</p>
 						<p class="plan-price">По факту использования</p>
 
 						<ul>
-							<li>Платишь только за реальные запросы</li>
-							<li>Подходит при нерегулярном использовании</li>
-							<li>Дорогие модели доступны по повышенной ставке</li>
+							<li>Баланс списывается из кошелька в базе</li>
+							<li>Сценарий включается автоматически, когда нет активной подписки</li>
+							<li>Подходит как резервный продакшен-режим даже без подключённого эквайринга</li>
 						</ul>
 
-						<button @click="activatePayg">Включить режим</button>
+						<button disabled>
+							{{ activeSubscription ? 'Включится после подписки' : 'Сейчас активен' }}
+						</button>
 					</div>
 				</div>
 			</div>
 
 			<div class="models-section">
 				<div class="models-column cheap-column">
-					<h4>🧩 Базовые модели</h4>
+					<h4>Последние операции</h4>
 					<ul>
-						<li v-for="model in cheapModels" :key="model.id">
-							<b>{{ model.name }}</b>
-							<span>{{ model.description }}</span>
+						<li v-if="!recentLedger.length">
+							<b>Пока пусто</b>
+							<span>После пополнения, покупки тарифа или списания за запросы операции появятся здесь.</span>
+						</li>
+						<li v-for="entry in recentLedger" :key="entry.id">
+							<b>{{ ledgerTitle(entry.reason) }}</b>
+							<span>{{ ledgerAmount(entry) }} · {{ formatDate(entry.createdAt) }}</span>
 						</li>
 					</ul>
 				</div>
 
 				<div class="models-column pro-column">
-					<h4>🎯 Обученные / дорогие модели</h4>
+					<h4>Платежи</h4>
 					<ul>
-						<li v-for="model in proModels" :key="model.id">
-							<b>{{ model.name }}</b>
-							<span>{{ model.description }}</span>
+						<li v-if="!recentPayments.length">
+							<b>Пока нет платежей</b>
+							<span>После первого пополнения здесь появится история созданных и подтверждённых платежей.</span>
+						</li>
+						<li v-for="payment in recentPayments" :key="payment.id">
+							<b>{{ payment.status === 'succeeded' ? 'Пополнение подтверждено' : 'Платёж создан' }}</b>
+							<span>{{ formatMoney(payment.amount) }} ₽ · {{ formatDate(payment.createdAt) }}</span>
 						</li>
 					</ul>
 				</div>
 			</div>
 
 			<div class="profile-actions">
-				<button @click="showRechargeModal = true" class="recharge-btn">Пополнить</button>
-				<button @click="userStore.logout" class="logout-btn">Выйти</button>
+				<button @click="showRechargeModal = true" class="recharge-btn" :disabled="isBusy">Пополнить</button>
+				<button @click="reloadBilling" class="logout-btn" :disabled="isBusy">Обновить</button>
 			</div>
 		</template>
 
@@ -159,176 +158,111 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+
+import type { BillingLedgerEntry, BillingPayment, BillingPlan } from '../../types'
 import { useUserStore } from '../../stores/user'
 import RechargeModal from './RechargeModal.vue'
-
-type BillingMode = 'payg' | 'weekly-cheap' | 'monthly-pro'
-
-interface SubscriptionState {
-	mode: Exclude<BillingMode, 'payg'>
-	expiresAt: number
-}
-
-interface ModelInfo {
-	id: string
-	name: string
-	description: string
-}
-
-const WEEKLY_CHEAP_PRICE = 349
-const MONTHLY_PRO_PRICE = 1990
-
-const cheapModels: ModelInfo[] = [
-	{ id: 'gpt-4o-mini', name: 'GPT-4o mini', description: 'Быстрая универсальная модель для рутины и FAQ.' },
-	{ id: 'llama-3.1-8b', name: 'Llama 3.1 8B', description: 'Экономичная модель для коротких диалогов.' },
-	{ id: 'qwen-2.5-7b', name: 'Qwen 2.5 7B', description: 'Хороший баланс качества и цены.' },
-	{ id: 'mistral-small', name: 'Mistral Small', description: 'Подходит для массовых обращений пользователей.' },
-]
-
-const proModels: ModelInfo[] = [
-	{
-		id: 'my-marketing-v1',
-		name: 'Маркетинг (обученная)',
-		description: 'Генерация стратегий, офферов и рекламных гипотез.',
-	},
-	{ id: 'my-legal-v2', name: 'Юрист РФ (обученная)', description: 'Подготовка юридически-структурированных ответов.' },
-	{ id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', description: 'Сложные reasoning-задачи и длинный контекст.' },
-	{ id: 'gpt-4.1', name: 'GPT-4.1', description: 'Премиум-качество для важного пользовательского контента.' },
-]
 
 const userStore = useUserStore()
 const showRechargeModal = ref(false)
 const statusMessage = ref('')
-const activeMode = ref<BillingMode>('payg')
-const activeSubscription = ref<SubscriptionState | null>(null)
+const statusKind = ref<'success' | 'error'>('success')
+const isBusy = ref(false)
 
 const avatarUrl = computed(() => userStore.user?.photo_200 || 'https://via.placeholder.com/200?text=Avatar')
-
-const canBuyWeekly = computed(() => (userStore.user?.balance || 0) >= WEEKLY_CHEAP_PRICE)
-const canBuyMonthly = computed(() => (userStore.user?.balance || 0) >= MONTHLY_PRO_PRICE)
-const isSubscriptionExpired = computed(
-	() => !!activeSubscription.value && Date.now() > activeSubscription.value.expiresAt,
-)
+const activeSubscription = computed(() => userStore.activeSubscription)
+const plans = computed(() => userStore.billing?.plans || [])
+const recentLedger = computed(() => (userStore.billing?.recentLedger || []).slice(0, 6))
+const recentPayments = computed(() => (userStore.billing?.recentPayments || []).slice(0, 6))
 
 const activeModeLabel = computed(() => {
-	if (activeSubscription.value && !isSubscriptionExpired.value) {
-		return activeSubscription.value.mode === 'weekly-cheap' ? 'Недельная дешёвая подписка' : 'Месячная премиум-подписка'
-	}
-
-	return 'Pay-per-request'
+	if (!activeSubscription.value?.plan) return 'Pay-per-request'
+	return `${activeSubscription.value.plan.name} до ${formatDate(activeSubscription.value.expiresAt)}`
 })
 
-const getStorageKey = () => `billing_state_${userStore.user?.vkId || 'anonymous'}`
-
-const saveBillingState = () => {
-	localStorage.setItem(
-		getStorageKey(),
-		JSON.stringify({
-			activeMode: activeMode.value,
-			activeSubscription: activeSubscription.value,
-		}),
-	)
-}
-
-const loadBillingState = () => {
-	const raw = localStorage.getItem(getStorageKey())
-	if (!raw) return
-
-	try {
-		const parsed = JSON.parse(raw) as {
-			activeMode?: BillingMode
-			activeSubscription?: SubscriptionState | null
-		}
-
-		if (parsed.activeMode) activeMode.value = parsed.activeMode
-		if (parsed.activeSubscription) activeSubscription.value = parsed.activeSubscription
-	} catch (e) {
-		console.error('Не удалось загрузить billing state', e)
-	}
-}
-
 const clearStatusLater = () => {
-	setTimeout(() => {
+	window.setTimeout(() => {
 		statusMessage.value = ''
 	}, 5000)
 }
 
 const setSuccess = (message: string) => {
+	statusKind.value = 'success'
 	statusMessage.value = message
 	clearStatusLater()
 }
 
 const setError = (message: string) => {
-	statusMessage.value = `⚠️ ${message}`
+	statusKind.value = 'error'
+	statusMessage.value = message
 	clearStatusLater()
 }
 
-const chargeBalance = (amount: number) => {
-	if (!userStore.user) return false
-	if (userStore.user.balance < amount) return false
+const formatMoney = (value: number) => Number(value || 0).toFixed(0)
+const formatDate = (value: string) => new Date(value).toLocaleString()
 
-	userStore.user.balance -= amount
-	return true
+const planDescription = (planCode: string) => {
+	if (planCode === 'monthly-premium') return 'Подходит для тяжёлых и специализированных сценариев'
+	return 'Подходит для массовых базовых сценариев'
 }
 
-const buyPlan = (plan: Exclude<BillingMode, 'payg'>) => {
-	if (!userStore.user) return
+const canBuyPlan = (plan: BillingPlan) => (userStore.user?.balance || 0) >= plan.price
 
-	const isWeekly = plan === 'weekly-cheap'
-	const price = isWeekly ? WEEKLY_CHEAP_PRICE : MONTHLY_PRO_PRICE
-	const durationDays = isWeekly ? 7 : 30
-
-	if (!chargeBalance(price)) {
-		setError('Недостаточно средств на балансе. Пополните счёт и повторите покупку.')
-		return
-	}
-
-	activeSubscription.value = {
-		mode: plan,
-		expiresAt: Date.now() + durationDays * 24 * 60 * 60 * 1000,
-	}
-	activeMode.value = plan
-	saveBillingState()
-
-	setSuccess(
-		isWeekly
-			? 'Недельная подписка на базовые модели активирована.'
-			: 'Месячная подписка на специализированные модели активирована.',
-	)
+const planButtonLabel = (plan: BillingPlan) => {
+	if (activeSubscription.value?.plan?.code === plan.code) return 'Уже активна'
+	return canBuyPlan(plan) ? 'Купить подписку' : 'Недостаточно средств'
 }
 
-const activatePayg = () => {
-	activeMode.value = 'payg'
-	if (isSubscriptionExpired.value) {
-		activeSubscription.value = null
+const ledgerTitle = (reason: BillingLedgerEntry['reason']) => {
+	switch (reason) {
+		case 'payment_topup':
+			return 'Пополнение баланса'
+		case 'subscription_purchase':
+			return 'Покупка подписки'
+		case 'usage_charge':
+			return 'Списание за запрос'
+		default:
+			return 'Операция'
 	}
-	saveBillingState()
-	setSuccess('Режим Pay-per-request активирован.')
 }
 
-const formatDate = (timestamp: number) => new Date(timestamp).toLocaleString()
+const ledgerAmount = (entry: BillingLedgerEntry) => `${entry.type === 'debit' ? '-' : '+'}${formatMoney(entry.amount)} ₽`
+
+const reloadBilling = async () => {
+	if (isBusy.value) return
+	try {
+		isBusy.value = true
+		await userStore.syncProfileFromServer()
+		setSuccess('Данные по биллингу обновлены.')
+	} catch (error) {
+		setError((error as Error).message || 'Не удалось обновить биллинг.')
+	} finally {
+		isBusy.value = false
+	}
+}
+
+const buyPlan = async (planCode: string) => {
+	if (isBusy.value) return
+
+	try {
+		isBusy.value = true
+		await userStore.purchasePlan(planCode)
+		setSuccess('Подписка активирована и сохранена в базе.')
+	} catch (error) {
+		setError((error as Error).message || 'Не удалось купить подписку.')
+	} finally {
+		isBusy.value = false
+	}
+}
 
 const handleRecharge = (amount: number) => {
-	setSuccess(`Оплата подтверждена. Баланс пополнен на ${amount} ₽`)
+	setSuccess(`Платёж подтверждён. Баланс пополнен на ${formatMoney(amount)} ₽.`)
 }
 
-watch(
-	() => userStore.user?.vkId,
-	newVkId => {
-		if (!newVkId) return
-		loadBillingState()
-	},
-	{ immediate: true },
-)
-
-watch([activeMode, activeSubscription], saveBillingState, { deep: true })
-
-watch(isSubscriptionExpired, expired => {
-	if (!expired) return
-	activeMode.value = 'payg'
-	activeSubscription.value = null
-	saveBillingState()
-	setError('Срок подписки закончился. Переключили на оплату за запрос.')
+onMounted(() => {
+	void userStore.syncProfileFromServer().catch(error => {
+		setError((error as Error).message || 'Не удалось загрузить биллинг.')
+	})
 })
 </script>

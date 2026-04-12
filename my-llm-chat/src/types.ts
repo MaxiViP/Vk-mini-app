@@ -1,11 +1,10 @@
-// src/types.ts
-
 export interface Model {
 	id: string
 	name: string
 	provider: 'openai' | 'groq' | 'openrouter' | 'cloudflare' | 'local'
 	model: string
-	baseUrl?: string // для локальных моделей
+	baseUrl?: string
+	billingTier?: 'basic' | 'premium'
 }
 
 export interface MessageSource {
@@ -43,6 +42,8 @@ export interface User {
 	firstName: string
 	lastName: string
 	photo_200?: string
+	photo_100?: string
+	avatarUrl?: string
 	balance: number
 	requestsLeft: number
 	phoneE164?: string
@@ -54,13 +55,80 @@ export interface ChatHistoryItem {
 	content: string
 }
 
+export interface BillingPlan {
+	id: string
+	code: string
+	name: string
+	priceMinor: number
+	price: number
+	intervalDays: number
+	includedRequests: number
+	accessTier: 'basic' | 'premium'
+	isActive: boolean
+}
+
+export interface BillingSubscription {
+	id: string
+	status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'expired'
+	startedAt: string
+	expiresAt: string
+	cancelAtPeriodEnd: boolean
+	includedRequests: number
+	usedRequests: number
+	remainingRequests: number
+	plan: BillingPlan | null
+}
+
+export interface BillingLedgerEntry {
+	id: string
+	type: 'credit' | 'debit' | 'hold' | 'release' | 'refund'
+	reason: 'payment_topup' | 'usage_charge' | 'admin_adjust' | 'subscription_purchase'
+	amountMinor: number
+	amount: number
+	referenceType?: string | null
+	referenceId?: string | null
+	createdAt: string
+}
+
+export interface BillingPayment {
+	id: string
+	provider: 'yookassa'
+	status: 'pending' | 'succeeded' | 'failed' | 'canceled'
+	amountMinor: number
+	amount: number
+	createdAt: string
+	updatedAt: string
+}
+
+export interface BillingSummary {
+	wallet: {
+		balanceMinor: number
+		balance: number
+		currency: string
+	}
+	activeSubscription: BillingSubscription | null
+	plans: BillingPlan[]
+	paygPricing: {
+		basicMinor: number
+		basic: number
+		premiumMinor: number
+		premium: number
+	}
+	usageSnapshot: {
+		remainingIncludedRequests: number
+		mode: string
+	}
+	recentLedger: BillingLedgerEntry[]
+	recentPayments: BillingPayment[]
+}
+
 export interface YooKassaPaymentSession {
 	paymentId: string
 	amount: number
-	status: 'pending' | 'succeeded'
+	status: 'pending' | 'succeeded' | 'failed' | 'canceled'
 	confirmationUrl: string
 	qrCodeDataUrl: string
 	qrPayload: string
 	isStub: boolean
-	provider?: 'yookassa-stub' | 'yookassa'
+	provider?: 'yookassa'
 }

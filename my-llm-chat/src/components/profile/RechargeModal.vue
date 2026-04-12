@@ -3,17 +3,17 @@
 		<Transition name="modal">
 			<div v-if="visible" class="modal-overlay" @click.self="close">
 				<div class="modal-container modal-container--recharge">
-					<button class="modal-close" @click="close">✕</button>
+					<button class="modal-close" @click="close">×</button>
 
 					<div class="modal-content" v-if="step === 'form'">
-						<h3>💰 Пополнение баланса</h3>
-						<p>Минимальная сумма: 50 ₽</p>
+						<h3>Пополнение баланса</h3>
+						<p>Можно создать stub-платёж на любую сумму до подключения реальной оплаты.</p>
 
 						<input
 							v-model.number="amount"
 							type="number"
-							min="50"
-							step="10"
+							min="1"
+							step="1"
 							placeholder="Введите сумму"
 							class="amount-input"
 							@keyup.enter="submit"
@@ -28,10 +28,14 @@
 
 						<p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 					</div>
+
 					<div class="modal-content" v-else>
-						<h3>💳 YooKassa (заглушка)</h3>
+						<h3>YooKassa stub</h3>
 						<p>Сумма: {{ amount }} ₽</p>
-						<p class="stub-note">Сейчас подключена тестовая интеграция. ID магазина/секрет внесём позже.</p>
+						<p class="stub-note">
+							Backend уже создаёт запись платежа в базе. После подключения официального провайдера здесь останется
+							тот же сценарий подтверждения, поменяется только реальный checkout.
+						</p>
 
 						<img
 							v-if="paymentSession"
@@ -39,7 +43,7 @@
 							alt="QR для пополнения"
 							class="qr-code-image"
 						/>
-						<p class="qr-caption">Отсканируйте QR-код для оплаты</p>
+						<p class="qr-caption">ID платежа: {{ paymentSession?.paymentId }}</p>
 
 						<a
 							v-if="paymentSession"
@@ -48,12 +52,12 @@
 							rel="noopener noreferrer"
 							class="payment-link"
 						>
-							Открыть страницу оплаты YooKassa
+							Открыть страницу оплаты
 						</a>
 
 						<div class="modal-buttons">
 							<button @click="confirmPayment" class="submit-btn" :disabled="isLoading">
-								{{ isLoading ? 'Проверяем...' : 'Я оплатил (проверить)' }}
+								{{ isLoading ? 'Проверяем...' : 'Я оплатил, проверить' }}
 							</button>
 							<button @click="resetToForm" class="cancel-btn">Назад</button>
 						</div>
@@ -68,8 +72,9 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+
+import type { YooKassaPaymentSession } from '../../types'
 import { useUserStore } from '../../stores/user'
-import type { YooKassaPaymentSession } from './../../types'
 
 const props = defineProps<{
 	visible: boolean
@@ -87,12 +92,7 @@ const isLoading = ref(false)
 const step = ref<'form' | 'payment'>('form')
 const paymentSession = ref<YooKassaPaymentSession | null>(null)
 
-const isValid = computed(() => amount.value >= 50 && !isNaN(amount.value))
-
-const close = () => {
-	emit('update:visible', false)
-	resetState()
-}
+const isValid = computed(() => amount.value > 0 && !Number.isNaN(amount.value))
 
 const resetState = () => {
 	amount.value = 100
@@ -102,8 +102,12 @@ const resetState = () => {
 	isLoading.value = false
 }
 
+const close = () => {
+	emit('update:visible', false)
+	resetState()
+}
 
- const resetToForm = () => {
+const resetToForm = () => {
 	errorMessage.value = ''
 	step.value = 'form'
 	paymentSession.value = null
@@ -111,17 +115,17 @@ const resetState = () => {
 
 const submit = async () => {
 	if (!isValid.value) {
-		errorMessage.value = 'Сумма должна быть не менее 50 ₽'
+		errorMessage.value = 'Сумма должна быть больше 0 ₽'
 		return
 	}
-try {
+
+	try {
 		errorMessage.value = ''
 		isLoading.value = true
 		paymentSession.value = await userStore.createYooKassaPayment(amount.value)
 		step.value = 'payment'
 	} catch (error) {
-		console.error(error)
-		errorMessage.value = 'Не удалось создать платёж. Попробуйте позже.'
+		errorMessage.value = (error as Error).message || 'Не удалось создать платёж.'
 	} finally {
 		isLoading.value = false
 	}
@@ -133,12 +137,11 @@ const confirmPayment = async () => {
 	try {
 		errorMessage.value = ''
 		isLoading.value = true
-		await userStore.confirmYooKassaPayment(paymentSession.value.paymentId, amount.value)
+		await userStore.confirmYooKassaPayment(paymentSession.value.paymentId)
 		emit('success', amount.value)
 		close()
 	} catch (error) {
-		console.error(error)
-		errorMessage.value = 'Оплата пока не подтверждена. Проверьте позже.'
+		errorMessage.value = (error as Error).message || 'Оплата пока не подтверждена.'
 	} finally {
 		isLoading.value = false
 	}
@@ -146,10 +149,8 @@ const confirmPayment = async () => {
 
 watch(
 	() => props.visible,
-	val => {
-		if (!val) {
-resetState()
-		}
+	value => {
+		if (!value) resetState()
 	},
 )
 </script>

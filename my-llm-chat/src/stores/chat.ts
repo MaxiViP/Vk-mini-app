@@ -434,11 +434,20 @@ export const useChatStore = defineStore('chat', () => {
 				throw new Error('Model is required')
 			}
 
+			if (!userStore.token || !isLikelyJwt(userStore.token)) {
+				throw new Error('Требуется авторизация')
+			}
+
 			abortController = new AbortController()
+			const requestId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
 
 			const response = await fetch(`${internalApiBaseUrl}/api/llm/chat`, {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${userStore.token}`,
+					'X-Request-Id': requestId,
+				},
 				body: JSON.stringify({
 					message: text,
 					modelId: model.id,
@@ -448,7 +457,16 @@ export const useChatStore = defineStore('chat', () => {
 			})
 
 			if (!response.ok) {
-				throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+				let errorMessage = `HTTP ${response.status}: ${response.statusText}`
+				try {
+					const payload = await response.json()
+					if (payload?.message) {
+						errorMessage = payload.message
+					}
+				} catch {
+					// ignore non-json error bodies
+				}
+				throw new Error(errorMessage)
 			}
 
 			const reader = response.body?.getReader()
@@ -485,6 +503,8 @@ export const useChatStore = defineStore('chat', () => {
 					}
 				}
 			}
+
+			await userStore.refreshBillingState()
 		} catch (err) {
 			if (!isExternalBackend.value && assistantIndex >= 0) {
 				messages.value.splice(assistantIndex, 1)

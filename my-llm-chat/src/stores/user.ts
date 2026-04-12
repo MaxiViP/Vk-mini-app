@@ -2,13 +2,15 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import bridge from '@vkontakte/vk-bridge'
 
-import type { User, YooKassaPaymentSession } from '../types'
+import type { BillingSummary, User, YooKassaPaymentSession } from '../types'
+import { billingApi } from '../api/billing'
 import { confirmYooKassaPaymentRequest, createYooKassaPaymentRequest } from '../api/payments'
 import { authApi, type OAuthProvider, type UserProfileResponse } from '../services/auth'
 
 const TOKEN_STORAGE_KEY = 'token'
 const REFRESH_TOKEN_STORAGE_KEY = 'refresh_token'
 const USER_STORAGE_KEY = 'user_profile'
+const BILLING_STORAGE_KEY = 'billing_summary'
 
 const FORCED_ADMIN_PHONES = ['+79057353580']
 
@@ -36,62 +38,73 @@ const isForcedAdminPhone = (value?: string | null) => {
 const resolveIsAdmin = (isAdmin: boolean | undefined, phoneE164?: string | null) =>
 	Boolean(isAdmin) || isForcedAdminPhone(phoneE164)
 
-const mapApiUserToUiUser = (apiUser: {
-	id: string
-	firstName: string | null
-	lastName: string | null
-	avatarUrl: string | null
-	phoneE164: string | null
-	isAdmin?: boolean
-	wallet?: { balanceMinor: number } | null
-}) => ({
-	vkId: apiUser.id,
-	firstName: apiUser.firstName || 'User',
-	lastName: apiUser.lastName || '',
-	photo_200: apiUser.avatarUrl || undefined,
-	balance: Number(apiUser.wallet?.balanceMinor || 0) / 100,
-	requestsLeft: 0,
-	phoneE164: apiUser.phoneE164 || undefined,
-	isAdmin: resolveIsAdmin(apiUser.isAdmin, apiUser.phoneE164),
-})
-
-const safeParseUser = (raw: string | null): User | null => {
+const safeParse = <T>(raw: string | null): T | null => {
 	if (!raw) return null
 	try {
-		return JSON.parse(raw) as User
+		return JSON.parse(raw) as T
 	} catch {
 		return null
 	}
 }
 
-const applyLocalTopup = (targetUser: User | null, amount: number) => {
-	if (!targetUser) return
-	targetUser.balance += amount
-	targetUser.requestsLeft += amount * 10
-}
+const mapApiUserToUiUser = (
+	apiUser: {
+		id: string
+		firstName: string | null
+		lastName: string | null
+		avatarUrl: string | null
+		phoneE164: string | null
+		isAdmin?: boolean
+		wallet?: { balanceMinor: number } | null
+	},
+	billing: BillingSummary | null,
+): User => ({
+	vkId: apiUser.id,
+	firstName: apiUser.firstName || 'User',
+	lastName: apiUser.lastName || '',
+	photo_200: apiUser.avatarUrl || undefined,
+	photo_100: apiUser.avatarUrl || undefined,
+	avatarUrl: apiUser.avatarUrl || undefined,
+	balance: billing ? billing.wallet.balance : Number(apiUser.wallet?.balanceMinor || 0) / 100,
+	requestsLeft: billing?.usageSnapshot.remainingIncludedRequests || 0,
+	phoneE164: apiUser.phoneE164 || undefined,
+	isAdmin: resolveIsAdmin(apiUser.isAdmin, apiUser.phoneE164),
+})
 
 export const useUserStore = defineStore('user', () => {
-	const user = ref<User | null>(safeParseUser(localStorage.getItem(USER_STORAGE_KEY)))
+	const user = ref<User | null>(safeParse<User>(localStorage.getItem(USER_STORAGE_KEY)))
+	const billing = ref<BillingSummary | null>(safeParse<BillingSummary>(localStorage.getItem(BILLING_STORAGE_KEY)))
 	const token = ref<string | null>(localStorage.getItem(TOKEN_STORAGE_KEY))
 	const refreshToken = ref<string | null>(localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY))
-	// const isTestMode = ref(true)
 	const isTestMode = ref(import.meta.env.DEV || String(import.meta.env.VITE_TEST_MODE || 'false') === 'true')
 	const pendingPhone = ref<string | null>(null)
 	const authPending = ref(false)
 	const phoneChallenge = ref<{ challengeId: string; expiresInSec: number; testCode: string | null } | null>(null)
 
 	const isAuthenticated = computed(() => Boolean(token.value && user.value))
+	const activeSubscription = computed(() => billing.value?.activeSubscription || null)
 
 	const persistAuthState = () => {
 		if (token.value) localStorage.setItem(TOKEN_STORAGE_KEY, token.value)
 		if (refreshToken.value) localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, refreshToken.value)
 		if (user.value) localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user.value))
+		if (billing.value) localStorage.setItem(BILLING_STORAGE_KEY, JSON.stringify(billing.value))
 	}
 
 	const clearAuthState = () => {
 		localStorage.removeItem(TOKEN_STORAGE_KEY)
 		localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY)
 		localStorage.removeItem(USER_STORAGE_KEY)
+		localStorage.removeItem(BILLING_STORAGE_KEY)
+	}
+
+	const applyBillingSummary = (summary: BillingSummary | null) => {
+		billing.value = summary
+		if (user.value && summary) {
+			user.value.balance = summary.wallet.balance
+			user.value.requestsLeft = summary.usageSnapshot.remainingIncludedRequests
+		}
+		persistAuthState()
 	}
 
 	const applyAuthResult = (result: {
@@ -109,28 +122,44 @@ export const useUserStore = defineStore('user', () => {
 	}) => {
 		token.value = result.accessToken
 		refreshToken.value = result.refreshToken
-		user.value = mapApiUserToUiUser(result.user)
+		user.value = mapApiUserToUiUser(result.user, billing.value)
 		persistAuthState()
 	}
 
 	const syncProfileFromServer = async () => {
 		if (!token.value) return
-		const profile: UserProfileResponse = await authApi.getMe(token.value)
-		const currentUser = user.value
-		user.value = {
-			...mapApiUserToUiUser(profile),
-			requestsLeft: currentUser?.requestsLeft || 0,
-		}
+
+		const [profile, summary]: [UserProfileResponse, BillingSummary] = await Promise.all([
+			authApi.getMe(token.value),
+			billingApi.getSummary(token.value),
+		])
+
+		billing.value = summary
+		user.value = mapApiUserToUiUser(profile, summary)
 		persistAuthState()
+
+		return { profile, summary }
+	}
+
+	const refreshBillingState = async () => {
+		if (!token.value) return null
+		const summary = await billingApi.getSummary(token.value)
+		applyBillingSummary(summary)
+		return summary
 	}
 
 	function hydrateAuth() {
 		token.value = localStorage.getItem(TOKEN_STORAGE_KEY)
 		refreshToken.value = localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)
-		user.value = safeParseUser(localStorage.getItem(USER_STORAGE_KEY))
+		user.value = safeParse<User>(localStorage.getItem(USER_STORAGE_KEY))
+		billing.value = safeParse<BillingSummary>(localStorage.getItem(BILLING_STORAGE_KEY))
 
 		if (user.value) {
 			user.value.isAdmin = resolveIsAdmin(user.value.isAdmin, user.value.phoneE164)
+			if (billing.value) {
+				user.value.balance = billing.value.wallet.balance
+				user.value.requestsLeft = billing.value.usageSnapshot.remainingIncludedRequests
+			}
 			persistAuthState()
 			void syncProfileFromServer()
 		}
@@ -178,8 +207,8 @@ export const useUserStore = defineStore('user', () => {
 			})
 			applyAuthResult(finalize)
 			await syncProfileFromServer()
-		} catch (err) {
-			console.error('VK init error', err)
+		} catch (error) {
+			console.error('VK init error', error)
 		} finally {
 			authPending.value = false
 		}
@@ -229,58 +258,27 @@ export const useUserStore = defineStore('user', () => {
 		return result
 	}
 
-	async function rechargeBalance(amount: number) {
-		if (!token.value) return
-
-		if (isTestMode.value) {
-			applyLocalTopup(user.value, amount)
-			persistAuthState()
-			return
-		}
-	}
-
 	async function createYooKassaPayment(amount: number): Promise<YooKassaPaymentSession> {
 		if (!token.value) {
 			throw new Error('Требуется авторизация')
 		}
 
-		try {
-			return await createYooKassaPaymentRequest(amount, token.value)
-		} catch (error) {
-			if (!isTestMode.value) throw error
-
-			const paymentId = `stub_${Date.now()}`
-			return {
-				paymentId,
-				amount,
-				status: 'pending',
-				confirmationUrl: `https://yookassa.ru/checkout/payments/v2/contract?paymentId=${paymentId}`,
-				qrCodeDataUrl:
-					'data:image/svg+xml;charset=UTF-8,' +
-					encodeURIComponent(
-						'<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220"><rect width="220" height="220" fill="white"/><rect x="10" y="10" width="200" height="200" fill="none" stroke="black" stroke-width="4"/><text x="110" y="110" text-anchor="middle" font-size="16" font-family="monospace">QR STUB</text></svg>',
-					),
-				qrPayload: `STUB://YOOKASSA/${paymentId}/AMOUNT/${amount}`,
-				isStub: true,
-			}
-		}
+		return createYooKassaPaymentRequest(amount, token.value)
 	}
 
-	async function confirmYooKassaPayment(paymentId: string, amount: number) {
+	async function confirmYooKassaPayment(paymentId: string) {
 		if (!token.value) throw new Error('Требуется авторизация')
+		const response = await confirmYooKassaPaymentRequest(paymentId, token.value)
+		await syncProfileFromServer()
+		return response
+	}
 
-		try {
-			const response = await confirmYooKassaPaymentRequest(paymentId, token.value)
-			await syncProfileFromServer()
-			return response
-		} catch (error) {
-			const status = (error as { response?: { status?: number } })?.response?.status
-			const canUseStubFlow = isTestMode.value || status === 404
-			if (!canUseStubFlow) throw error
-			applyLocalTopup(user.value, amount)
-			persistAuthState()
-			return { paymentId, status: 'succeeded' as const, isStub: true, amount }
-		}
+	async function purchasePlan(planCode: string) {
+		if (!token.value) throw new Error('Требуется авторизация')
+		const idempotencyKey = crypto.randomUUID()
+		const response = await billingApi.purchaseSubscription(planCode, token.value, idempotencyKey)
+		await syncProfileFromServer()
+		return response
 	}
 
 	async function logout() {
@@ -292,6 +290,7 @@ export const useUserStore = defineStore('user', () => {
 			console.warn('logout api failed:', error)
 		} finally {
 			user.value = null
+			billing.value = null
 			token.value = null
 			refreshToken.value = null
 			pendingPhone.value = null
@@ -326,6 +325,8 @@ export const useUserStore = defineStore('user', () => {
 
 	return {
 		user,
+		billing,
+		activeSubscription,
 		token,
 		refreshToken,
 		isTestMode,
@@ -339,11 +340,12 @@ export const useUserStore = defineStore('user', () => {
 		sendPhoneCode,
 		loginByPhone,
 		refreshAuth,
-		rechargeBalance,
 		createYooKassaPayment,
 		confirmYooKassaPayment,
+		purchasePlan,
 		finalizeOAuthCallbackFromLocation,
 		syncProfileFromServer,
+		refreshBillingState,
 		logout,
 	}
 })

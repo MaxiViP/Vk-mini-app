@@ -17,9 +17,7 @@
 			</div>
 
 			<div v-if="chat.contextFiles.length" class="context-chips">
-				<span v-for="file in chat.contextFiles" :key="file" class="context-chip">
-					Файл: {{ file }}
-				</span>
+				<span v-for="file in chat.contextFiles" :key="file" class="context-chip">Файл: {{ file }}</span>
 			</div>
 
 			<div v-if="chat.voiceRecords.length" class="context-chips">
@@ -59,9 +57,10 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+
+import type { Model } from '../../types'
 import { useChatStore } from '../../stores/chat'
 import { useModelsStore } from '../../stores/models'
-import type { Model } from '../../types'
 import Message from './Message.vue'
 import ChatInput from './ChatInput.vue'
 import ChatContextPanel from './ChatContextPanel.vue'
@@ -112,6 +111,11 @@ const handleToggleChatContext = (event: Event) => {
 	showContextPanel.value = !showContextPanel.value
 }
 
+const isBillingOrAccessError = (message: string) => {
+	const normalized = message.toLowerCase()
+	return normalized.includes('insufficient balance') || normalized.includes('forbidden') || normalized.includes('auth')
+}
+
 function stopGeneration() {
 	chat.abortRequest()
 }
@@ -140,10 +144,10 @@ async function sendWithFallback(messageText: string) {
 	if (!currentModel) return
 
 	const allModels = modelsStore.models
-	const startIndex = allModels.findIndex(m => m.id === currentModel.id)
+	const startIndex = allModels.findIndex(model => model.id === currentModel.id)
 	const orderedModels = [...allModels.slice(startIndex), ...allModels.slice(0, startIndex)]
 
-	const baseHistory = chat.messages.map(m => ({ role: m.role, content: m.content }))
+	const baseHistory = chat.messages.map(message => ({ role: message.role, content: message.content }))
 	chat.addUserMessage(messageText)
 
 	let lastError: Error | null = null
@@ -161,6 +165,11 @@ async function sendWithFallback(messageText: string) {
 
 			if (typedError.name === 'AbortError') {
 				chat.addSystemMessage('Генерация остановлена пользователем')
+				return
+			}
+
+			if (isBillingOrAccessError(typedError.message)) {
+				chat.addSystemMessage(typedError.message)
 				return
 			}
 
