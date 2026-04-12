@@ -12,6 +12,7 @@ const pendingStates = new Map()
 const STATE_TTL_MS = 10 * 60 * 1000
 const OAUTH_STATE_TTL_SEC = 10 * 60
 const OAUTH_STATE_SECRET = process.env.OAUTH_STATE_SECRET || process.env.JWT_SECRET || 'change_me_in_prod'
+const ALLOW_OAUTH_FALLBACK = process.env.OAUTH_ALLOW_FALLBACK === 'true'
 
 const providerConfigs = {
 	vk: {
@@ -108,11 +109,31 @@ const resolveStatePayload = ({ provider, state }) => {
 	}
 }
 
-const exchangeOAuthCode = async ({ provider, code, redirectUri, codeVerifier }) => {
+const isProviderConfigPresent = provider => {
 	const config = providerConfigs[provider]
-	if (!config?.clientId || !config?.clientSecret) {
+	return Boolean(config?.clientId && config?.clientSecret)
+}
+
+const shouldUseFallback = provider => !isProviderConfigPresent(provider)
+
+const toProviderErrorDetails = error => ({
+	code: error?.code || null,
+	status: error?.response?.status || null,
+	providerMessage: error?.response?.data?.error_description || error?.response?.data?.error || null,
+})
+
+const exchangeOAuthCode = async ({ provider, code, redirectUri, codeVerifier }) => {
+	if (shouldUseFallback(provider)) {
 		return fallbackProfileFromCode({ provider, code })
 	}
+	if (!redirectUri) {
+		throw new AppError('OAuth redirectUri is not configured', 500, {
+			provider,
+			hint: 'Set VK_REDIRECT_URI for vk-bridge flow and ensure redirectUri is passed for web OAuth.',
+		})
+	}
+
+	const config = providerConfigs[provider]
 
 	try {
 		const tokenRes = await axios.post(
@@ -132,7 +153,14 @@ const exchangeOAuthCode = async ({ provider, code, redirectUri, codeVerifier }) 
 		)
 
 		const accessToken = tokenRes.data?.access_token
-		if (!accessToken || !config.profileUrl) {
+		if (!accessToken) {
+			throw new AppError('OAuth provider did not return access_token', 502, {
+				provider,
+				response: tokenRes.data || null,
+			})
+		}
+
+		if (!config.profileUrl) {
 			return fallbackProfileFromCode({ provider, code })
 		}
 
@@ -153,8 +181,18 @@ const exchangeOAuthCode = async ({ provider, code, redirectUri, codeVerifier }) 
 				avatarUrl: profile.picture || profile.default_avatar_id || null,
 			},
 		}
-	} catch {
-		return fallbackProfileFromCode({ provider, code })
+	} catch (error) {
+		if (ALLOW_OAUTH_FALLBACK) {
+			return fallbackProfileFromCode({ provider, code })
+		}
+
+		if (error instanceof AppError) throw error
+
+		throw new AppError('OAuth code exchange failed', 502, {
+			provider,
+			redirectUri,
+			...toProviderErrorDetails(error),
+		})
 	}
 }
 
