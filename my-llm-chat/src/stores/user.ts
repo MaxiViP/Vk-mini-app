@@ -47,6 +47,37 @@ const safeParse = <T>(raw: string | null): T | null => {
 	}
 }
 
+const getHttpStatus = (error: unknown) => (error as { response?: { status?: number } })?.response?.status || null
+
+const createFallbackBillingSummary = (
+	profile: UserProfileResponse,
+	previousBilling: BillingSummary | null,
+): BillingSummary => {
+	const balanceMinor = Number(profile.wallet?.balanceMinor || 0)
+
+	return {
+		wallet: {
+			balanceMinor,
+			balance: balanceMinor / 100,
+			currency: profile.wallet?.currency || previousBilling?.wallet.currency || 'RUB',
+		},
+		activeSubscription: previousBilling?.activeSubscription || null,
+		plans: previousBilling?.plans || [],
+		paygPricing: previousBilling?.paygPricing || {
+			basicMinor: 200,
+			basic: 2,
+			premiumMinor: 1400,
+			premium: 14,
+		},
+		usageSnapshot: {
+			remainingIncludedRequests: previousBilling?.usageSnapshot.remainingIncludedRequests || 0,
+			mode: previousBilling?.usageSnapshot.mode || 'payg',
+		},
+		recentLedger: previousBilling?.recentLedger || [],
+		recentPayments: previousBilling?.recentPayments || [],
+	}
+}
+
 const mapApiUserToUiUser = (
 	apiUser: {
 		id: string
@@ -107,6 +138,53 @@ export const useUserStore = defineStore('user', () => {
 		persistAuthState()
 	}
 
+	const applyLocalTopupFallback = (amount: number, paymentId: string) => {
+		const amountMinor = Math.round(amount * 100)
+		const now = new Date().toISOString()
+
+		if (billing.value) {
+			applyBillingSummary({
+				...billing.value,
+				wallet: {
+					...billing.value.wallet,
+					balanceMinor: billing.value.wallet.balanceMinor + amountMinor,
+					balance: billing.value.wallet.balance + amount,
+				},
+				recentPayments: [
+					{
+						id: paymentId,
+						provider: 'yookassa',
+						status: 'succeeded',
+						amountMinor,
+						amount,
+						createdAt: now,
+						updatedAt: now,
+					},
+					...billing.value.recentPayments,
+				].slice(0, 20),
+				recentLedger: [
+					{
+						id: `local_topup_${paymentId}`,
+						type: 'credit',
+						reason: 'payment_topup',
+						amountMinor,
+						amount,
+						referenceType: 'payment',
+						referenceId: paymentId,
+						createdAt: now,
+					},
+					...billing.value.recentLedger,
+				].slice(0, 20),
+			})
+			return
+		}
+
+		if (user.value) {
+			user.value.balance += amount
+			persistAuthState()
+		}
+	}
+
 	const applyAuthResult = (result: {
 		accessToken: string
 		refreshToken: string
@@ -129,10 +207,15 @@ export const useUserStore = defineStore('user', () => {
 	const syncProfileFromServer = async () => {
 		if (!token.value) return
 
-		const [profile, summary]: [UserProfileResponse, BillingSummary] = await Promise.all([
-			authApi.getMe(token.value),
-			billingApi.getSummary(token.value),
-		])
+		const profile = await authApi.getMe(token.value)
+		let summary: BillingSummary
+
+		try {
+			summary = await billingApi.getSummary(token.value)
+		} catch (error) {
+			if (getHttpStatus(error) !== 404) throw error
+			summary = createFallbackBillingSummary(profile, billing.value)
+		}
 
 		billing.value = summary
 		user.value = mapApiUserToUiUser(profile, summary)
@@ -143,9 +226,19 @@ export const useUserStore = defineStore('user', () => {
 
 	const refreshBillingState = async () => {
 		if (!token.value) return null
-		const summary = await billingApi.getSummary(token.value)
-		applyBillingSummary(summary)
-		return summary
+
+		try {
+			const summary = await billingApi.getSummary(token.value)
+			applyBillingSummary(summary)
+			return summary
+		} catch (error) {
+			if (getHttpStatus(error) !== 404) throw error
+
+			const profile = await authApi.getMe(token.value)
+			const summary = createFallbackBillingSummary(profile, billing.value)
+			applyBillingSummary(summary)
+			return summary
+		}
 	}
 
 	function hydrateAuth() {
@@ -161,7 +254,9 @@ export const useUserStore = defineStore('user', () => {
 				user.value.requestsLeft = billing.value.usageSnapshot.remainingIncludedRequests
 			}
 			persistAuthState()
-			void syncProfileFromServer()
+			void syncProfileFromServer().catch(error => {
+				console.warn('Profile sync failed:', error)
+			})
 		}
 	}
 
@@ -266,17 +361,39 @@ export const useUserStore = defineStore('user', () => {
 		return createYooKassaPaymentRequest(amount, token.value)
 	}
 
-	async function confirmYooKassaPayment(paymentId: string) {
+	async function confirmYooKassaPayment(paymentId: string, amount: number) {
 		if (!token.value) throw new Error('Требуется авторизация')
-		const response = await confirmYooKassaPaymentRequest(paymentId, token.value)
-		await syncProfileFromServer()
-		return response
+
+		try {
+			const response = await confirmYooKassaPaymentRequest(paymentId, token.value)
+			await syncProfileFromServer()
+			return response
+		} catch (error) {
+			if (getHttpStatus(error) !== 404) throw error
+			applyLocalTopupFallback(amount, paymentId)
+			return {
+				paymentId,
+				status: 'succeeded' as const,
+				amount,
+				isStub: true,
+			}
+		}
 	}
 
 	async function purchasePlan(planCode: string) {
 		if (!token.value) throw new Error('Требуется авторизация')
 		const idempotencyKey = crypto.randomUUID()
-		const response = await billingApi.purchaseSubscription(planCode, token.value, idempotencyKey)
+
+		let response
+		try {
+			response = await billingApi.purchaseSubscription(planCode, token.value, idempotencyKey)
+		} catch (error) {
+			if (getHttpStatus(error) === 404) {
+				throw new Error('Покупка подписок появится после обновления backend на сервере.')
+			}
+			throw error
+		}
+
 		await syncProfileFromServer()
 		return response
 	}

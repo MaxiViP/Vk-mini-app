@@ -137,7 +137,7 @@ const confirmPayment = async () => {
 	try {
 		errorMessage.value = ''
 		isLoading.value = true
-		await userStore.confirmYooKassaPayment(paymentSession.value.paymentId)
+		await userStore.confirmYooKassaPayment(paymentSession.value.paymentId, amount.value)
 		emit('success', amount.value)
 		close()
 	} catch (error) {

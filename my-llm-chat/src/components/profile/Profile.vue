@@ -169,8 +169,13 @@ const showRechargeModal = ref(false)
 const statusMessage = ref('')
 const statusKind = ref<'success' | 'error'>('success')
 const isBusy = ref(false)
+const fallbackAvatar =
+	'data:image/svg+xml;charset=UTF-8,' +
+	encodeURIComponent(
+		'<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="200" height="200" rx="100" fill="#1f2937"/><text x="100" y="112" text-anchor="middle" font-size="64" font-family="Arial" fill="#ffffff">U</text></svg>',
+	)
 
-const avatarUrl = computed(() => userStore.user?.photo_200 || 'https://via.placeholder.com/200?text=Avatar')
+const avatarUrl = computed(() => userStore.user?.photo_200 || fallbackAvatar)
 const activeSubscription = computed(() => userStore.activeSubscription)
 const plans = computed(() => userStore.billing?.plans || [])
 const recentLedger = computed(() => (userStore.billing?.recentLedger || []).slice(0, 6))
