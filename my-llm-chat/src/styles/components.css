@@ -20,6 +20,13 @@
 	background: var(--overlay-light);
 }
 
+.pill-btn--active {
+	background: rgba(16, 163, 127, 0.18);
+	border-color: var(--color-primary);
+	color: #b7ffed;
+	box-shadow: 0 0 0 1px rgba(16, 163, 127, 0.18);
+}
+
 select {
 	margin: 12px auto 0;
 	background: var(--color-surface);
@@ -199,7 +206,7 @@ select {
 @media (max-width: 420px) {
 	.pill-btn {
 		padding-inline: 12px;
-		font-size: 14px;
+		font-size: 10px;
 	}
 
 	.model-selector {

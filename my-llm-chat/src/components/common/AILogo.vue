@@ -37,7 +37,7 @@
 	stroke-linecap: round;
 	stroke-linejoin: round;
 	font-family: 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue', Arial, sans-serif;
-	font-size: 100px;
+	font-size: 128px;
 	font-weight: 200;
 	letter-spacing: 6px;
 
@@ -63,5 +63,17 @@
 		stroke-dashoffset: 0;
 		opacity: 1;
 	}
+}
+
+@media (max-width: 420px) {
+.ai-logo svg {
+	width: 240px;
+	height: 44px;
+	display: block;
+	overflow: visible;
+	margin-top: 5px;
+ 
+}
+
 }
 </style>

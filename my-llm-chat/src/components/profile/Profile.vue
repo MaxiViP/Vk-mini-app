@@ -8,7 +8,7 @@
 						<h2>{{ userStore.user.firstName }} {{ userStore.user.lastName }}</h2>
 						<p class="profile-id">Личный кабинет</p>
 					</div>
-					<button @click="userStore.logout" class="logout-btn profile-header-logout">Выйти</button>
+					<button @click="userStore.logout" class="logout-btn profile-header-logout">Выйти из аккаунта</button>
 				</div>
 
 				<p
@@ -27,7 +27,7 @@
 					</div>
 
 					<div class="stat-card">
-						<span class="stat-label">Осталось запросов</span>
+						<span class="stat-label">Запросы</span>
 						<strong>{{ userStore.user.requestsLeft }}</strong>
 					</div>
 				</div>

@@ -1,13 +1,13 @@
 <template>
 	<div class="app-container">
 		<div class="top-bar">
+			<AILogo />
+			<button v-if="userStore.user?.isAdmin" class="pill-btn" @click="showAdmin = true">Админка</button>
+			<!-- <button class="pill-btn" @click="showProfile = true">
+				<span class="btn-text">{{ fullName }}</span>
+			</button> -->
+			<ProfileTrigger @click="showProfile = true" />
 			<div class="top-bar-left">
-				<button class="pill-btn" @click="showProfile = true">
-					<span class="btn-text">{{ fullName }}</span>
-				</button>
-
-				<button v-if="userStore.user?.isAdmin" class="pill-btn" @click="showAdmin = true">Админка</button>
-
 				<button
 					v-if="!isVkAiBackend"
 					:class="['pill-btn', { 'pill-btn--active': isModelSelectorOpen }]"
@@ -15,13 +15,12 @@
 				>
 					Модели
 				</button>
-
-				<button :class="['pill-btn', { 'pill-btn--active': isChatContextOpen }]" @click="toggleChatContext">Контекст</button>
+				<button :class="['pill-btn', { 'pill-btn--active': isChatContextOpen }]" @click="toggleChatContext">
+					Контекст
+				</button>
+				<button class="pill-btn" @click="showNotes = true">Заметки</button>
 			</div>
-
-			<AILogo />
-
-			<button class="pill-btn" @click="showNotes = true">Заметки</button>
+			<!-- <div class="top-bar-right"></div> -->
 		</div>
 
 		<ModelSelector v-if="!isVkAiBackend && isModelSelectorOpen" />
@@ -61,7 +60,7 @@ import { isVkAiBackend } from './config/chatBackend'
 import { initVK } from './vk/bridge'
 import { useModelsStore } from './stores/models'
 import { useUserStore } from './stores/user'
-
+import ProfileTrigger from './components/profile/ProfileTrigger.vue'
 import ModelSelector from './components/chat/ModelSelector.vue'
 import Chat from './components/chat/Chat.vue'
 import Profile from './components/profile/Profile.vue'
@@ -72,11 +71,6 @@ import AdminPanel from './components/admin/AdminPanel.vue'
 
 const modelsStore = useModelsStore()
 const userStore = useUserStore()
-
-const fullName = computed(() => {
-	if (!userStore.user) return 'Профиль'
-	return `${userStore.user.firstName} ${userStore.user.lastName || ''}`.trim()
-})
 
 type NotesPanelExposed = {
 	setNewNoteText: (text: string) => void
@@ -232,11 +226,4 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped>
-.pill-btn--active {
-	background: rgba(16, 163, 127, 0.18);
-	border-color: var(--color-primary);
-	color: #b7ffed;
-	box-shadow: 0 0 0 1px rgba(16, 163, 127, 0.18);
-}
-</style>
+<style scoped></style>

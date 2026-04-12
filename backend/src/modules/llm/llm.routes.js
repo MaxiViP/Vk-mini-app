@@ -22,7 +22,7 @@ router.get('/models', async (_req, res, next) => {
 router.post('/chat', async (req, res, next) => {
 	try {
 		requireFields(req.body, ['message', 'modelId'])
-		const stream = await llmService.chat(req.body)
+		const stream = await llmService.chat({ ...req.body, stream: true })
 
 		res.setHeader('Content-Type', 'text/event-stream')
 		res.setHeader('Cache-Control', 'no-cache')
