@@ -213,7 +213,7 @@ export const useUserStore = defineStore('user', () => {
 		try {
 			summary = await billingApi.getSummary(token.value)
 		} catch (error) {
-			if (getHttpStatus(error) !== 404) throw error
+			console.warn('Billing summary fallback activated:', error)
 			summary = createFallbackBillingSummary(profile, billing.value)
 		}
 
@@ -232,7 +232,7 @@ export const useUserStore = defineStore('user', () => {
 			applyBillingSummary(summary)
 			return summary
 		} catch (error) {
-			if (getHttpStatus(error) !== 404) throw error
+			console.warn('Billing refresh fallback activated:', error)
 
 			const profile = await authApi.getMe(token.value)
 			const summary = createFallbackBillingSummary(profile, billing.value)
