@@ -98,8 +98,8 @@ model User {
 
 model UserWorkspace {
   userId       String   @id @map("user_id")
-  chatHistory  Json?
-  notesPayload Json?
+chatHistory  Json?    @map("chat_history_json")
+  notesPayload Json?    @map("notes_payload_json")
   updatedAt    DateTime @updatedAt @map("updated_at")
   createdAt    DateTime @default(now()) @map("created_at")
 
@@ -113,7 +113,7 @@ model AuthIdentity {
   userId          String       @map("user_id")
   provider        AuthProvider
   providerUserId  String       @map("provider_user_id")
-  providerPayload Json?
+   providerPayload Json?        @map("provider_payload_json")
   createdAt       DateTime     @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -279,8 +279,8 @@ model AuditLog {
   entityType  String   @map("entity_type")
   entityId    String   @map("entity_id")
   action      String
-  beforeJson  Json?
-  afterJson   Json?
+   beforeJson  Json?    @map("before_json")
+  afterJson   Json?    @map("after_json")
   ip          String?
   userAgent   String?
   createdAt   DateTime @default(now()) @map("created_at")
