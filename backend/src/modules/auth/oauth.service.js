@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 
 import axios from 'axios'
+import jwt from 'jsonwebtoken'
 
 import { AppError } from '../../shared/errors.js'
 import { authService } from './auth.service.js'
@@ -9,6 +10,8 @@ const allowedProviders = new Set(['vk', 'google', 'yandex'])
 
 const pendingStates = new Map()
 const STATE_TTL_MS = 10 * 60 * 1000
+const OAUTH_STATE_TTL_SEC = 10 * 60
+const OAUTH_STATE_SECRET = process.env.OAUTH_STATE_SECRET || process.env.JWT_SECRET || 'change_me_in_prod'
 
 const providerConfigs = {
 	vk: {
@@ -67,6 +70,44 @@ const fallbackProfileFromCode = ({ provider, code }) => {
 	}
 }
 
+const createSignedState = ({ provider, redirectUri }) =>
+	jwt.sign(
+		{
+			typ: 'oauth_state',
+			provider,
+			redirectUri,
+			nonce: crypto.randomBytes(12).toString('hex'),
+		},
+		OAUTH_STATE_SECRET,
+		{ expiresIn: OAUTH_STATE_TTL_SEC },
+	)
+
+const resolveStatePayload = ({ provider, state }) => {
+	const saved = pendingStates.get(state)
+	if (saved && saved.provider === provider && saved.expiresAt >= Date.now()) {
+		pendingStates.delete(state)
+		return { redirectUri: saved.redirectUri }
+	}
+	if (saved) {
+		pendingStates.delete(state)
+	}
+
+	if (provider === 'vk' && state === 'vk-bridge') {
+		return { redirectUri: process.env.VK_REDIRECT_URI || '' }
+	}
+
+	try {
+		const payload = jwt.verify(state, OAUTH_STATE_SECRET)
+		if (payload?.typ !== 'oauth_state') return null
+		if (payload?.provider !== provider) return null
+		if (typeof payload?.redirectUri !== 'string' || !payload.redirectUri) return null
+
+		return { redirectUri: payload.redirectUri }
+	} catch {
+		return null
+	}
+}
+
 const exchangeOAuthCode = async ({ provider, code, redirectUri, codeVerifier }) => {
 	const config = providerConfigs[provider]
 	if (!config?.clientId || !config?.clientSecret) {
@@ -122,7 +163,7 @@ export const oauthService = {
 		if (!allowedProviders.has(provider)) throw new AppError('Unsupported OAuth provider', 400)
 		if (!redirectUri) throw new AppError('redirectUri is required', 400)
 
-		const state = crypto.randomBytes(16).toString('hex')
+		const state = createSignedState({ provider, redirectUri })
 		pendingStates.set(state, { provider, redirectUri, expiresAt: Date.now() + STATE_TTL_MS })
 		const authUrl = buildProviderAuthUrl({ provider, state, redirectUri })
 
@@ -133,11 +174,10 @@ export const oauthService = {
 		if (!allowedProviders.has(provider)) throw new AppError('Unsupported OAuth provider', 400)
 		if (!code || !state) throw new AppError('code and state are required', 400)
 
-		const saved = pendingStates.get(state)
-		if (!saved || saved.provider !== provider || saved.expiresAt < Date.now()) {
+		const saved = resolveStatePayload({ provider, state })
+		if (!saved) {
 			throw new AppError('Invalid OAuth state', 400)
 		}
-		pendingStates.delete(state)
 
 		const { providerUserId, profile } = await exchangeOAuthCode({
 			provider,

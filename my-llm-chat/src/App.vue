@@ -3,9 +3,7 @@
 		<div class="top-bar">
 			<AILogo />
 			<button v-if="userStore.user?.isAdmin" class="pill-btn" @click="showAdmin = true">Админка</button>
-			<!-- <button class="pill-btn" @click="showProfile = true">
-				<span class="btn-text">{{ fullName }}</span>
-			</button> -->
+ 
 			<ProfileTrigger @click="showProfile = true" />
 			<div class="top-bar-left">
 				<button
@@ -225,4 +223,6 @@ onUnmounted(() => {
 })
 </script>
 
-<style scoped></style>
+<style scoped>
+
+</style>

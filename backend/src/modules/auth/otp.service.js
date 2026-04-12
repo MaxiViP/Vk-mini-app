@@ -26,10 +26,21 @@ const createMemoryChallengeId = () => `mem_${crypto.randomUUID()}`
 const createDevUserId = phoneE164 =>
 	`dev-phone-${crypto.createHash('sha1').update(phoneE164).digest('hex').slice(0, 12)}`
 const isAdminPhone = phoneE164 => normalizePhone(phoneE164) === normalizePhone('+79057353580')
+const shouldExposeDebugOtp = process.env.NODE_ENV !== 'production' || process.env.ALLOW_DEBUG_OTP === 'true'
 
-const isDatabaseUnavailable = error => {
+const isOtpStorageUnavailable = error => {
 	const message = String(error?.message || '').toLowerCase()
-	return message.includes("can't reach database server") || error?.code === 'P1001'
+	return (
+		error?.code === 'P1001' ||
+		error?.code === 'P2021' ||
+		error?.code === 'P2022' ||
+		message.includes("can't reach database server") ||
+		message.includes('connection refused') ||
+		message.includes('econnrefused') ||
+		message.includes('otp_codes') ||
+		message.includes('otpcode') ||
+		message.includes('prisma client is not initialized')
+	)
 }
 
 const validateOtpRecord = otpRecord => {
@@ -52,9 +63,21 @@ const issueDevPhoneAuthResult = phoneE164 => {
 	}
 
 	return {
-		accessToken: jwt.sign({ sub: user.id, status: user.status }, env.jwtSecret, {
-			expiresIn: '15m',
-		}),
+		accessToken: jwt.sign(
+			{
+				sub: user.id,
+				status: user.status,
+				phoneE164: user.phoneE164,
+				firstName: user.firstName,
+				lastName: user.lastName,
+				avatarUrl: user.avatarUrl,
+				isAdmin: user.isAdmin,
+			},
+			env.jwtSecret,
+			{
+				expiresIn: '15m',
+			},
+		),
 		refreshToken: `dev-refresh-${crypto.randomUUID()}`,
 		refreshTokenExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
 		user,
@@ -86,14 +109,22 @@ export const otpService = {
 			})
 
 			phoneSendTimestamps.set(phoneE164, now)
+			memoryChallenges.set(challenge.id, {
+				id: challenge.id,
+				phoneE164,
+				codeHash,
+				expiresAt,
+				attempts: 0,
+				consumedAt: null,
+			})
 
 			return {
 				challengeId: challenge.id,
 				expiresInSec: OTP_TTL_SECONDS,
-				debugCode: process.env.NODE_ENV === 'production' ? undefined : code,
+				debugCode: shouldExposeDebugOtp ? code : undefined,
 			}
 		} catch (error) {
-			if (!isDatabaseUnavailable(error)) throw error
+			if (!isOtpStorageUnavailable(error)) throw error
 
 			const challengeId = createMemoryChallengeId()
 			memoryChallenges.set(challengeId, {
@@ -109,7 +140,7 @@ export const otpService = {
 			return {
 				challengeId,
 				expiresInSec: OTP_TTL_SECONDS,
-				debugCode: process.env.NODE_ENV === 'production' ? undefined : code,
+				debugCode: shouldExposeDebugOtp ? code : undefined,
 			}
 		}
 	},
@@ -135,33 +166,49 @@ export const otpService = {
 				const user = await authService.upsertPhoneUser({ phoneE164: otpRecord.phoneE164 })
 				return await authService.issueTokens({ user, userAgent, ip })
 			} catch (error) {
-				if (!isDatabaseUnavailable(error)) throw error
+				if (!isOtpStorageUnavailable(error)) throw error
 				return issueDevPhoneAuthResult(otpRecord.phoneE164)
 			}
 		}
 
-		const otpRecord = await prisma.otpCode.findUnique({ where: { id: challengeId } })
+		let otpRecord = null
+		try {
+			otpRecord = await prisma.otpCode.findUnique({ where: { id: challengeId } })
+		} catch (error) {
+			if (!isOtpStorageUnavailable(error)) throw error
+			otpRecord = memoryChallenges.get(challengeId) || null
+		}
 		validateOtpRecord(otpRecord)
 
 		const isValid = hashOtp(code) === otpRecord.codeHash
 		if (!isValid) {
-			await prisma.otpCode.update({
-				where: { id: otpRecord.id },
-				data: { attempts: { increment: 1 } },
-			})
+			if (String(otpRecord.id).startsWith('mem_') || memoryChallenges.has(otpRecord.id)) {
+				otpRecord.attempts += 1
+				memoryChallenges.set(otpRecord.id, otpRecord)
+			} else {
+				await prisma.otpCode.update({
+					where: { id: otpRecord.id },
+					data: { attempts: { increment: 1 } },
+				})
+			}
 			throw new AppError('Invalid OTP code', 400)
 		}
 
-		await prisma.otpCode.update({
-			where: { id: otpRecord.id },
-			data: { consumedAt: new Date() },
-		})
+		if (String(otpRecord.id).startsWith('mem_') || memoryChallenges.has(otpRecord.id)) {
+			otpRecord.consumedAt = new Date()
+			memoryChallenges.set(otpRecord.id, otpRecord)
+		} else {
+			await prisma.otpCode.update({
+				where: { id: otpRecord.id },
+				data: { consumedAt: new Date() },
+			})
+		}
 
 		try {
 			const user = await authService.upsertPhoneUser({ phoneE164: otpRecord.phoneE164 })
 			return await authService.issueTokens({ user, userAgent, ip })
 		} catch (error) {
-			if (!isDatabaseUnavailable(error)) throw error
+			if (!isOtpStorageUnavailable(error)) throw error
 			return issueDevPhoneAuthResult(otpRecord.phoneE164)
 		}
 	},

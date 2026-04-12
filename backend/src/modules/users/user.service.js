@@ -2,21 +2,79 @@ import prisma from '../../db/prisma.js'
 import { AppError } from '../../shared/errors.js'
 import { logAuditChange, logBusinessEvent } from '../../shared/observability.js'
 
-export const userService = {
-	async getProfile(userId) {
-		const user = await prisma.user.findUnique({
-			where: { id: userId },
-			include: {
-				wallet: true,
-				subscriptions: {
-					where: { status: 'active' },
-					include: { plan: true },
-				},
-			},
-		})
+const isUserStorageUnavailable = error => {
+	const message = String(error?.message || '').toLowerCase()
+	return (
+		error?.code === 'P1001' ||
+		error?.code === 'P2021' ||
+		error?.code === 'P2022' ||
+		message.includes("can't reach database server") ||
+		message.includes('connection refused') ||
+		message.includes('econnrefused') ||
+		message.includes('prisma client is not initialized')
+	)
+}
 
-		if (!user) throw new AppError('User not found', 404)
-		return user
+const buildDevProfile = authContext => ({
+	id: authContext.id,
+	email: null,
+	phoneE164: authContext.phoneE164 || null,
+	firstName: authContext.firstName || 'User',
+	lastName: authContext.lastName || 'Phone',
+	avatarUrl: authContext.avatarUrl || null,
+	status: authContext.status || 'active',
+	isAdmin: Boolean(authContext.isAdmin),
+	wallet: {
+		balanceMinor: 0,
+		currency: 'RUB',
+	},
+	subscriptions: [],
+})
+
+export const userService = {
+	async getProfile(userOrContext) {
+		const authContext =
+			typeof userOrContext === 'string'
+				? { id: userOrContext }
+				: {
+						id: userOrContext?.id,
+						status: userOrContext?.status,
+						phoneE164: userOrContext?.phoneE164,
+						firstName: userOrContext?.firstName,
+						lastName: userOrContext?.lastName,
+						avatarUrl: userOrContext?.avatarUrl,
+						isAdmin: userOrContext?.isAdmin,
+					}
+
+		try {
+			const user = await prisma.user.findUnique({
+				where: { id: authContext.id },
+				include: {
+					wallet: true,
+					subscriptions: {
+						where: { status: 'active' },
+						include: { plan: true },
+					},
+				},
+			})
+
+			if (!user) {
+				if (String(authContext.id || '').startsWith('dev-phone-')) {
+					return buildDevProfile(authContext)
+				}
+				throw new AppError('User not found', 404)
+			}
+
+			return {
+				...user,
+				isAdmin: Boolean(authContext.isAdmin),
+			}
+		} catch (error) {
+			if (String(authContext.id || '').startsWith('dev-phone-') && isUserStorageUnavailable(error)) {
+				return buildDevProfile(authContext)
+			}
+			throw error
+		}
 	},
 
 	async trackActivity(userId, payload = {}, actor = {}) {

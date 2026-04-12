@@ -22,6 +22,11 @@ export const authMiddleware = (req, _res, next) => {
 		req.user = {
 			id: payload.sub,
 			status: payload.status,
+			phoneE164: payload.phoneE164 || null,
+			firstName: payload.firstName || null,
+			lastName: payload.lastName || null,
+			avatarUrl: payload.avatarUrl || null,
+			isAdmin: Boolean(payload.isAdmin),
 		}
 		next()
 	} catch (error) {

@@ -13,10 +13,14 @@ const getDefaultWorkspacePayload = () => ({
 
 const isWorkspaceStorageUnavailable = error => {
 	if (!error) return false
-	if (error.code === 'P2021') return true
+	if (error.code === 'P2021' || error.code === 'P2022' || error.code === 'P1001') return true
 	const message = String(error.message || '').toLowerCase()
 	return (
-		message.includes('user_workspaces') && (message.includes('does not exist') || message.includes("doesn't exist"))
+		(message.includes('user_workspaces') && (message.includes('does not exist') || message.includes("doesn't exist"))) ||
+		message.includes("can't reach database server") ||
+		message.includes('connection refused') ||
+		message.includes('econnrefused') ||
+		message.includes('prisma client is not initialized')
 	)
 }
 

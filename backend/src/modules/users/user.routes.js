@@ -11,7 +11,7 @@ router.get(
 	'/me',
 	authMiddleware,
 	asyncHandler(async (req, res) => {
-		const profile = await userService.getProfile(req.user.id)
+		const profile = await userService.getProfile(req.user)
 		res.json(profile)
 	}),
 )
