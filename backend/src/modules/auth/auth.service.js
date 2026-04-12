@@ -21,6 +21,15 @@ const signAccessToken = user =>
 
 const createRefreshToken = () => crypto.randomBytes(48).toString('hex')
 
+const isProviderPayloadSchemaError = error => {
+	const message = String(error?.message || '')
+	return (
+		message.includes('provider_payload') ||
+		message.includes('provider_payload_json') ||
+		message.includes('providerPayload')
+	)
+}
+
 const createSession = async ({ userId, userAgent, ip }) => {
 	const refreshToken = createRefreshToken()
 	const refreshTokenHash = hashValue(refreshToken)
@@ -153,25 +162,47 @@ export const authService = {
 
 		if (email) {
 			const existingUserByEmail = await prisma.user.findUnique({ where: { email } })
+
 			if (existingUserByEmail) {
-				await prisma.authIdentity.upsert({
-					where: {
-						provider_providerUserId: {
+				try {
+					await prisma.authIdentity.upsert({
+						where: {
+							provider_providerUserId: {
+								provider,
+								providerUserId,
+							},
+						},
+						update: {
+							userId: existingUserByEmail.id,
+							providerPayload: profile,
+						},
+						create: {
+							userId: existingUserByEmail.id,
+							provider,
+							providerUserId,
+							providerPayload: profile,
+						},
+					})
+				} catch (error) {
+					if (!isProviderPayloadSchemaError(error)) throw error
+
+					await prisma.authIdentity.upsert({
+						where: {
+							provider_providerUserId: {
+								provider,
+								providerUserId,
+							},
+						},
+						update: {
+							userId: existingUserByEmail.id,
+						},
+						create: {
+							userId: existingUserByEmail.id,
 							provider,
 							providerUserId,
 						},
-					},
-					update: {
-						userId: existingUserByEmail.id,
-						providerPayload: profile,
-					},
-					create: {
-						userId: existingUserByEmail.id,
-						provider,
-						providerUserId,
-						providerPayload: profile,
-					},
-				})
+					})
+				}
 
 				return prisma.user.update({
 					where: { id: existingUserByEmail.id },
@@ -185,23 +216,44 @@ export const authService = {
 			}
 		}
 
-		return prisma.user.create({
-			data: {
-				email,
-				firstName,
-				lastName,
-				avatarUrl,
-				status: 'active',
-				authIdentities: {
-					create: {
-						provider,
-						providerUserId,
-						providerPayload: profile,
+		try {
+			return await prisma.user.create({
+				data: {
+					email,
+					firstName,
+					lastName,
+					avatarUrl,
+					status: 'active',
+					authIdentities: {
+						create: {
+							provider,
+							providerUserId,
+							providerPayload: profile,
+						},
 					},
 				},
-			},
-		})
+			})
+		} catch (error) {
+			if (!isProviderPayloadSchemaError(error)) throw error
+
+			return prisma.user.create({
+				data: {
+					email,
+					firstName,
+					lastName,
+					avatarUrl,
+					status: 'active',
+					authIdentities: {
+						create: {
+							provider,
+							providerUserId,
+						},
+					},
+				},
+			})
+		}
 	},
+
 	async upsertPhoneUser({ phoneE164 }) {
 		const normalizedPhone = normalizePhone(phoneE164)
 		if (!normalizedPhone) throw new AppError('phone is required', 400)
@@ -219,21 +271,41 @@ export const authService = {
 		}
 
 		const providerUserId = hashValue(normalizedPhone)
-		await prisma.authIdentity.upsert({
-			where: {
-				provider_providerUserId: {
+
+		try {
+			await prisma.authIdentity.upsert({
+				where: {
+					provider_providerUserId: {
+						provider: 'phone',
+						providerUserId,
+					},
+				},
+				update: { userId: user.id },
+				create: {
+					userId: user.id,
+					provider: 'phone',
+					providerUserId,
+					providerPayload: { phoneE164: normalizedPhone },
+				},
+			})
+		} catch (error) {
+			if (!isProviderPayloadSchemaError(error)) throw error
+
+			await prisma.authIdentity.upsert({
+				where: {
+					provider_providerUserId: {
+						provider: 'phone',
+						providerUserId,
+					},
+				},
+				update: { userId: user.id },
+				create: {
+					userId: user.id,
 					provider: 'phone',
 					providerUserId,
 				},
-			},
-			update: { userId: user.id },
-			create: {
-				userId: user.id,
-				provider: 'phone',
-				providerUserId,
-				providerPayload: { phoneE164: normalizedPhone },
-			},
-		})
+			})
+		}
 
 		return user
 	},
