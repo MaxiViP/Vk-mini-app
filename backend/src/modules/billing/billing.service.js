@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 
 import prisma from '../../db/prisma.js'
+import { isLegacyBillingSchemaError, prismaCompat } from '../../db/prisma-compat.js'
 import { AppError } from '../../shared/errors.js'
 import { logBusinessEvent } from '../../shared/observability.js'
 import { isAdminUser } from '../../shared/access.js'
@@ -21,6 +22,8 @@ const createStubQrCode = payload =>
 	encodeURIComponent(
 		`<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220"><rect width="220" height="220" fill="white"/><rect x="10" y="10" width="200" height="200" fill="none" stroke="black" stroke-width="4"/><text x="110" y="100" text-anchor="middle" font-size="14" font-family="monospace">YOOKASSA</text><text x="110" y="124" text-anchor="middle" font-size="12" font-family="monospace">${payload}</text></svg>`,
 	)
+
+const billingV2Available = prismaCompat.hasPlanBillingFields && prismaCompat.hasSubscriptionBillingFields
 
 const serializePlan = plan => ({
 	id: plan.id,
@@ -70,6 +73,60 @@ const serializePayment = payment => ({
 	updatedAt: payment.updatedAt,
 })
 
+const buildLegacyPlans = () =>
+	PLAN_CATALOG.map(plan => ({
+		id: plan.code,
+		code: plan.code,
+		name: plan.name,
+		priceMinor: plan.priceMinor,
+		price: formatMoneyMinor(plan.priceMinor),
+		intervalDays: plan.intervalDays,
+		includedRequests: plan.includedRequests,
+		accessTier: plan.accessTier,
+		isActive: true,
+	}))
+
+const getLegacySummary = async ({ userId, historyLimit = 20 }) => {
+	await ensureWalletExists(prisma, userId)
+
+	const [wallet, ledger, payments] = await Promise.all([
+		prisma.wallet.findUnique({ where: { userId } }),
+		prisma.walletLedger.findMany({
+			where: { userId },
+			take: Math.min(Number(historyLimit) || 20, 100),
+			orderBy: { createdAt: 'desc' },
+		}),
+		prisma.payment.findMany({
+			where: { userId },
+			take: Math.min(Number(historyLimit) || 20, 100),
+			orderBy: { createdAt: 'desc' },
+		}),
+	])
+
+	return {
+		wallet: {
+			balanceMinor: wallet?.balanceMinor || 0,
+			balance: formatMoneyMinor(wallet?.balanceMinor || 0),
+			currency: wallet?.currency || DEFAULT_CURRENCY,
+		},
+		activeSubscription: null,
+		plans: buildLegacyPlans(),
+		paygPricing: {
+			basicMinor: PAYG_PRICING_MINOR.basic,
+			basic: formatMoneyMinor(PAYG_PRICING_MINOR.basic),
+			premiumMinor: PAYG_PRICING_MINOR.premium,
+			premium: formatMoneyMinor(PAYG_PRICING_MINOR.premium),
+		},
+		usageSnapshot: {
+			remainingIncludedRequests: 0,
+			mode: 'payg',
+		},
+		recentLedger: ledger.map(serializeLedgerEntry),
+		recentPayments: payments.map(serializePayment),
+		legacyBillingMode: true,
+	}
+}
+
 export const ensureWalletExists = async (db, userId) =>
 	db.wallet.upsert({
 		where: { userId },
@@ -78,6 +135,8 @@ export const ensureWalletExists = async (db, userId) =>
 	})
 
 export const ensurePlanCatalogSeeded = async () => {
+	if (!billingV2Available) return
+
 	await Promise.all(
 		PLAN_CATALOG.map(plan =>
 			prisma.plan.upsert({
@@ -97,6 +156,8 @@ export const ensurePlanCatalogSeeded = async () => {
 }
 
 export const expireElapsedSubscriptions = async (db, userId = null) => {
+	if (!billingV2Available) return
+
 	const now = new Date()
 	const where = {
 		status: { in: ['active', 'trialing', 'past_due'] },
@@ -114,18 +175,29 @@ export const expireElapsedSubscriptions = async (db, userId = null) => {
 }
 
 export const getActiveSubscriptionWithPlan = async (db, userId) =>
-	db.subscription.findFirst({
-		where: {
-			userId,
-			status: { in: ['active', 'trialing', 'past_due'] },
-			periodEnd: { gt: new Date() },
-		},
-		orderBy: { periodEnd: 'desc' },
-		include: { plan: true },
-	})
+	!billingV2Available
+		? null
+		: db.subscription.findFirst({
+				where: {
+					userId,
+					status: { in: ['active', 'trialing', 'past_due'] },
+					periodEnd: { gt: new Date() },
+				},
+				orderBy: { periodEnd: 'desc' },
+				include: { plan: true },
+			})
 
 export const resolveUsageBillingContext = async ({ db = prisma, userId, modelTier }) => {
 	await ensureWalletExists(db, userId)
+	if (!billingV2Available) {
+		return {
+			wallet: await db.wallet.findUnique({ where: { userId } }),
+			subscription: null,
+			billingSource: 'payg',
+			costMinor: 0,
+		}
+	}
+
 	await expireElapsedSubscriptions(db, userId)
 
 	const [wallet, subscription] = await Promise.all([
@@ -321,6 +393,10 @@ export const billingService = {
 	},
 
 	async purchaseSubscription({ userId, planCode, idempotencyKey }) {
+		if (!billingV2Available) {
+			throw new AppError('Subscription billing requires billing migration on the server', 503)
+		}
+
 		await ensurePlanCatalogSeeded()
 
 		const safeIdempotencyKey = idempotencyKey || crypto.randomUUID()
@@ -438,48 +514,57 @@ export const billingService = {
 	},
 
 	async getSummary({ userId, historyLimit = 20 }) {
-		await ensurePlanCatalogSeeded()
-		await ensureWalletExists(prisma, userId)
-		await expireElapsedSubscriptions(prisma, userId)
+		if (!billingV2Available) {
+			return getLegacySummary({ userId, historyLimit })
+		}
 
-		const [wallet, activeSubscription, plans, ledger, payments] = await Promise.all([
-			prisma.wallet.findUnique({ where: { userId } }),
-			getActiveSubscriptionWithPlan(prisma, userId),
-			prisma.plan.findMany({ where: { isActive: true }, orderBy: [{ priceMinor: 'asc' }] }),
-			prisma.walletLedger.findMany({
-				where: { userId },
-				take: Math.min(Number(historyLimit) || 20, 100),
-				orderBy: { createdAt: 'desc' },
-			}),
-			prisma.payment.findMany({
-				where: { userId },
-				take: Math.min(Number(historyLimit) || 20, 100),
-				orderBy: { createdAt: 'desc' },
-			}),
-		])
+		try {
+			await ensurePlanCatalogSeeded()
+			await ensureWalletExists(prisma, userId)
+			await expireElapsedSubscriptions(prisma, userId)
 
-		return {
-			wallet: {
-				balanceMinor: wallet?.balanceMinor || 0,
-				balance: formatMoneyMinor(wallet?.balanceMinor || 0),
-				currency: wallet?.currency || DEFAULT_CURRENCY,
-			},
-			activeSubscription: serializeSubscription(activeSubscription),
-			plans: plans.map(serializePlan),
-			paygPricing: {
-				basicMinor: PAYG_PRICING_MINOR.basic,
-				basic: formatMoneyMinor(PAYG_PRICING_MINOR.basic),
-				premiumMinor: PAYG_PRICING_MINOR.premium,
-				premium: formatMoneyMinor(PAYG_PRICING_MINOR.premium),
-			},
-			usageSnapshot: {
-				remainingIncludedRequests: activeSubscription
-					? Math.max(activeSubscription.includedRequests - activeSubscription.usedRequests, 0)
-					: 0,
-				mode: activeSubscription ? activeSubscription.plan.code : 'payg',
-			},
-			recentLedger: ledger.map(serializeLedgerEntry),
-			recentPayments: payments.map(serializePayment),
+			const [wallet, activeSubscription, plans, ledger, payments] = await Promise.all([
+				prisma.wallet.findUnique({ where: { userId } }),
+				getActiveSubscriptionWithPlan(prisma, userId),
+				prisma.plan.findMany({ where: { isActive: true }, orderBy: [{ priceMinor: 'asc' }] }),
+				prisma.walletLedger.findMany({
+					where: { userId },
+					take: Math.min(Number(historyLimit) || 20, 100),
+					orderBy: { createdAt: 'desc' },
+				}),
+				prisma.payment.findMany({
+					where: { userId },
+					take: Math.min(Number(historyLimit) || 20, 100),
+					orderBy: { createdAt: 'desc' },
+				}),
+			])
+
+			return {
+				wallet: {
+					balanceMinor: wallet?.balanceMinor || 0,
+					balance: formatMoneyMinor(wallet?.balanceMinor || 0),
+					currency: wallet?.currency || DEFAULT_CURRENCY,
+				},
+				activeSubscription: serializeSubscription(activeSubscription),
+				plans: plans.map(serializePlan),
+				paygPricing: {
+					basicMinor: PAYG_PRICING_MINOR.basic,
+					basic: formatMoneyMinor(PAYG_PRICING_MINOR.basic),
+					premiumMinor: PAYG_PRICING_MINOR.premium,
+					premium: formatMoneyMinor(PAYG_PRICING_MINOR.premium),
+				},
+				usageSnapshot: {
+					remainingIncludedRequests: activeSubscription
+						? Math.max(activeSubscription.includedRequests - activeSubscription.usedRequests, 0)
+						: 0,
+					mode: activeSubscription ? activeSubscription.plan.code : 'payg',
+				},
+				recentLedger: ledger.map(serializeLedgerEntry),
+				recentPayments: payments.map(serializePayment),
+			}
+		} catch (error) {
+			if (!isLegacyBillingSchemaError(error)) throw error
+			return getLegacySummary({ userId, historyLimit })
 		}
 	},
 

@@ -1,11 +1,13 @@
 import crypto from 'node:crypto'
 
 import prisma from '../../db/prisma.js'
+import { isLegacyBillingSchemaError, prismaCompat } from '../../db/prisma-compat.js'
 import { AppError } from '../../shared/errors.js'
 import { logBusinessEvent } from '../../shared/observability.js'
 import { ensureWalletExists, resolveUsageBillingContext } from '../billing/billing.service.js'
 
 const STALE_PENDING_MS = 10 * 60 * 1000
+const usageBillingV2Available = prismaCompat.hasUsageBillingFields
 
 const rollbackPendingUsageEvent = async (tx, event) => {
 	if (!event || event.status !== 'pending') return event
@@ -50,8 +52,64 @@ const rollbackPendingUsageEvent = async (tx, event) => {
 	})
 }
 
+const buildLegacyEventView = ({ event, modelTier = 'basic', replayed = false }) => ({
+	...event,
+	status:
+		event?.status ||
+		(event?.inputTokens || event?.outputTokens || replayed ? 'completed' : 'pending'),
+	billingTier: event?.billingTier || modelTier,
+	billingSource: event?.billingSource || 'payg',
+	subscriptionId: event?.subscriptionId || null,
+	costMinor: Number(event?.costMinor || 0),
+})
+
+const beginLegacyCharge = async ({ userId, modelProvider, modelName, modelTier = 'basic', requestId }) => {
+	const normalizedRequestId = requestId || crypto.randomUUID()
+	const existingEvent = await prisma.usageEvent.findFirst({ where: { requestId: normalizedRequestId } })
+	if (existingEvent) {
+		return {
+			event: buildLegacyEventView({ event: existingEvent, modelTier, replayed: true }),
+			requestId: normalizedRequestId,
+			replayed: true,
+		}
+	}
+
+	const event = await prisma.usageEvent.create({
+		data: {
+			userId,
+			modelProvider,
+			modelName,
+			costMinor: 0,
+			requestId: normalizedRequestId,
+		},
+	})
+
+	return {
+		event: buildLegacyEventView({ event, modelTier }),
+		requestId: normalizedRequestId,
+		replayed: false,
+	}
+}
+
+const finalizeLegacyCharge = async ({ requestId, inputTokens = 0, outputTokens = 0 }) => {
+	const usageEvent = await prisma.usageEvent.findFirst({ where: { requestId } })
+	if (!usageEvent) throw new AppError('Usage event not found', 404)
+
+	return prisma.usageEvent.update({
+		where: { id: usageEvent.id },
+		data: {
+			inputTokens,
+			outputTokens,
+		},
+	})
+}
+
+const rollbackLegacyCharge = async ({ requestId }) => prisma.usageEvent.findFirst({ where: { requestId } })
+
 export const usageService = {
 	async cleanupStalePending(userId = null) {
+		if (!prismaCompat.hasUsageStatus) return 0
+
 		const staleEvents = await prisma.usageEvent.findMany({
 			where: {
 				status: 'pending',
@@ -68,195 +126,262 @@ export const usageService = {
 	},
 
 	async getUsage(userId) {
-		await this.cleanupStalePending(userId)
+		try {
+			await this.cleanupStalePending(userId)
 
-		const events = await prisma.usageEvent.findMany({
-			where: {
-				userId,
-				status: 'completed',
-			},
-			orderBy: { createdAt: 'desc' },
-			take: 50,
-			include: {
-				subscription: {
-					include: { plan: true },
+			const events = await prisma.usageEvent.findMany({
+				where: prismaCompat.hasUsageStatus
+					? {
+							userId,
+							status: 'completed',
+						}
+					: { userId },
+				orderBy: { createdAt: 'desc' },
+				take: 50,
+				include: prismaCompat.hasUsageBillingFields
+					? {
+							subscription: {
+								include: { plan: true },
+							},
+						}
+					: undefined,
+			})
+
+			const summary = events.reduce(
+				(acc, item) => {
+					acc.requests += 1
+					acc.inputTokens += item.inputTokens
+					acc.outputTokens += item.outputTokens
+					acc.costMinor += item.costMinor
+					if (item.billingSource === 'subscription_included') {
+						acc.subscriptionRequests += 1
+					} else {
+						acc.paygRequests += 1
+					}
+					return acc
 				},
-			},
-		})
+				{
+					requests: 0,
+					inputTokens: 0,
+					outputTokens: 0,
+					costMinor: 0,
+					subscriptionRequests: 0,
+					paygRequests: 0,
+				},
+			)
 
-		const summary = events.reduce(
-			(acc, item) => {
-				acc.requests += 1
-				acc.inputTokens += item.inputTokens
-				acc.outputTokens += item.outputTokens
-				acc.costMinor += item.costMinor
-				if (item.billingSource === 'subscription_included') {
-					acc.subscriptionRequests += 1
-				} else {
+			return { userId, summary, events }
+		} catch (error) {
+			if (!isLegacyBillingSchemaError(error)) throw error
+
+			const events = await prisma.usageEvent.findMany({
+				where: { userId },
+				orderBy: { createdAt: 'desc' },
+				take: 50,
+			})
+			const summary = events.reduce(
+				(acc, item) => {
+					acc.requests += 1
+					acc.inputTokens += Number(item.inputTokens || 0)
+					acc.outputTokens += Number(item.outputTokens || 0)
+					acc.costMinor += Number(item.costMinor || 0)
 					acc.paygRequests += 1
-				}
-				return acc
-			},
-			{ requests: 0, inputTokens: 0, outputTokens: 0, costMinor: 0, subscriptionRequests: 0, paygRequests: 0 },
-		)
+					return acc
+				},
+				{
+					requests: 0,
+					inputTokens: 0,
+					outputTokens: 0,
+					costMinor: 0,
+					subscriptionRequests: 0,
+					paygRequests: 0,
+				},
+			)
 
-		return { userId, summary, events }
+			return { userId, summary, events }
+		}
 	},
 
 	async beginCharge({ userId, modelProvider, modelName, modelTier = 'basic', requestId }) {
 		if (!modelProvider || !modelName) throw new AppError('modelProvider and modelName are required', 400)
-
-		await this.cleanupStalePending(userId)
-
-		const normalizedRequestId = requestId || crypto.randomUUID()
-		const existingEvent = await prisma.usageEvent.findUnique({ where: { requestId: normalizedRequestId } })
-		if (existingEvent) {
-			return {
-				event: existingEvent,
-				requestId: normalizedRequestId,
-				replayed: true,
-			}
+		if (!usageBillingV2Available) {
+			return beginLegacyCharge({ userId, modelProvider, modelName, modelTier, requestId })
 		}
 
-		const event = await prisma.$transaction(async tx => {
-			const decision = await resolveUsageBillingContext({
-				db: tx,
-				userId,
-				modelTier,
-			})
+		try {
+			await this.cleanupStalePending(userId)
 
-			const usageEvent = await tx.usageEvent.create({
-				data: {
-					userId,
-					modelProvider,
-					modelName,
-					billingTier: modelTier,
-					billingSource: decision.billingSource,
-					status: 'pending',
-					subscriptionId: decision.subscription?.id || null,
-					costMinor: decision.costMinor,
+			const normalizedRequestId = requestId || crypto.randomUUID()
+			const existingEvent = await prisma.usageEvent.findUnique({ where: { requestId: normalizedRequestId } })
+			if (existingEvent) {
+				return {
+					event: existingEvent,
 					requestId: normalizedRequestId,
-				},
-			})
+					replayed: true,
+				}
+			}
 
-			if (decision.billingSource === 'payg') {
-				if ((decision.wallet?.balanceMinor || 0) < decision.costMinor) {
-					throw new AppError('Insufficient balance', 402)
+			const event = await prisma.$transaction(async tx => {
+				const decision = await resolveUsageBillingContext({
+					db: tx,
+					userId,
+					modelTier,
+				})
+
+				const usageEvent = await tx.usageEvent.create({
+					data: {
+						userId,
+						modelProvider,
+						modelName,
+						billingTier: modelTier,
+						billingSource: decision.billingSource,
+						status: 'pending',
+						subscriptionId: decision.subscription?.id || null,
+						costMinor: decision.costMinor,
+						requestId: normalizedRequestId,
+					},
+				})
+
+				if (decision.billingSource === 'payg') {
+					if ((decision.wallet?.balanceMinor || 0) < decision.costMinor) {
+						throw new AppError('Insufficient balance', 402)
+					}
+
+					await tx.wallet.update({
+						where: { userId },
+						data: { balanceMinor: { decrement: decision.costMinor } },
+					})
+					await tx.walletLedger.create({
+						data: {
+							userId,
+							type: 'debit',
+							amountMinor: decision.costMinor,
+							reason: 'usage_charge',
+							referenceType: 'usage_event',
+							referenceId: usageEvent.id,
+							idempotencyKey: `usage_charge_${normalizedRequestId}`,
+						},
+					})
 				}
 
-				await tx.wallet.update({
-					where: { userId },
-					data: { balanceMinor: { decrement: decision.costMinor } },
-				})
-				await tx.walletLedger.create({
-					data: {
-					userId,
-					type: 'debit',
-					amountMinor: decision.costMinor,
-					reason: 'usage_charge',
-					referenceType: 'usage_event',
-					referenceId: usageEvent.id,
-					idempotencyKey: `usage_charge_${normalizedRequestId}`,
-				},
+				if (decision.billingSource === 'subscription_included' && decision.subscription?.id) {
+					await tx.subscription.update({
+						where: { id: decision.subscription.id },
+						data: { usedRequests: { increment: 1 } },
+					})
+				}
+
+				return usageEvent
 			})
+
+			return {
+				event,
+				requestId: normalizedRequestId,
+				replayed: false,
 			}
-
-			if (decision.billingSource === 'subscription_included' && decision.subscription?.id) {
-				await tx.subscription.update({
-					where: { id: decision.subscription.id },
-					data: { usedRequests: { increment: 1 } },
-				})
-			}
-
-			return usageEvent
-		})
-
-		return {
-			event,
-			requestId: normalizedRequestId,
-			replayed: false,
+		} catch (error) {
+			if (!isLegacyBillingSchemaError(error)) throw error
+			return beginLegacyCharge({ userId, modelProvider, modelName, modelTier, requestId })
 		}
 	},
 
 	async finalizeCharge({ requestId, inputTokens = 0, outputTokens = 0 }) {
-		const usageEvent = await prisma.usageEvent.findUnique({
-			where: { requestId },
-			include: {
-				subscription: {
-					include: { plan: true },
-				},
-			},
-		})
-
-		if (!usageEvent) throw new AppError('Usage event not found', 404)
-		if (usageEvent.status === 'completed') {
-			return usageEvent
-		}
-		if (usageEvent.status === 'reversed') {
-			throw new AppError('Usage event was reversed', 409)
+		if (!usageBillingV2Available) {
+			return finalizeLegacyCharge({ requestId, inputTokens, outputTokens })
 		}
 
-		const updated = await prisma.usageEvent.update({
-			where: { id: usageEvent.id },
-			data: {
-				status: 'completed',
-				inputTokens,
-				outputTokens,
-			},
-			include: {
-				subscription: {
-					include: { plan: true },
+		try {
+			const usageEvent = await prisma.usageEvent.findUnique({
+				where: { requestId },
+				include: {
+					subscription: {
+						include: { plan: true },
+					},
 				},
-			},
-		})
-
-		await logBusinessEvent({
-			eventType: 'usage.charge',
-			actorUserId: updated.userId,
-			entityType: 'usage_event',
-			entityId: updated.id,
-			payload: {
-				requestId,
-				costMinor: updated.costMinor,
-				billingSource: updated.billingSource,
-				billingTier: updated.billingTier,
-			},
-		})
-
-		if (updated.costMinor > 0) {
-			await logBusinessEvent({
-				eventType: 'balance.changed',
-				actorUserId: updated.userId,
-				entityType: 'wallet',
-				entityId: updated.userId,
-				payload: { deltaMinor: -updated.costMinor, reason: 'usage_charge' },
 			})
-		}
 
-		return updated
+			if (!usageEvent) throw new AppError('Usage event not found', 404)
+			if (usageEvent.status === 'completed') {
+				return usageEvent
+			}
+			if (usageEvent.status === 'reversed') {
+				throw new AppError('Usage event was reversed', 409)
+			}
+
+			const updated = await prisma.usageEvent.update({
+				where: { id: usageEvent.id },
+				data: {
+					status: 'completed',
+					inputTokens,
+					outputTokens,
+				},
+				include: {
+					subscription: {
+						include: { plan: true },
+					},
+				},
+			})
+
+			await logBusinessEvent({
+				eventType: 'usage.charge',
+				actorUserId: updated.userId,
+				entityType: 'usage_event',
+				entityId: updated.id,
+				payload: {
+					requestId,
+					costMinor: updated.costMinor,
+					billingSource: updated.billingSource,
+					billingTier: updated.billingTier,
+				},
+			})
+
+			if (updated.costMinor > 0) {
+				await logBusinessEvent({
+					eventType: 'balance.changed',
+					actorUserId: updated.userId,
+					entityType: 'wallet',
+					entityId: updated.userId,
+					payload: { deltaMinor: -updated.costMinor, reason: 'usage_charge' },
+				})
+			}
+
+			return updated
+		} catch (error) {
+			if (!isLegacyBillingSchemaError(error)) throw error
+			return finalizeLegacyCharge({ requestId, inputTokens, outputTokens })
+		}
 	},
 
 	async rollbackCharge({ requestId }) {
-		const usageEvent = await prisma.usageEvent.findUnique({ where: { requestId } })
-		if (!usageEvent) return null
-		if (usageEvent.status === 'reversed') return usageEvent
-		if (usageEvent.status === 'completed') {
-			throw new AppError('Cannot rollback completed usage event', 409)
+		if (!usageBillingV2Available) {
+			return rollbackLegacyCharge({ requestId })
 		}
 
-		const updated = await prisma.$transaction(tx => rollbackPendingUsageEvent(tx, usageEvent))
+		try {
+			const usageEvent = await prisma.usageEvent.findUnique({ where: { requestId } })
+			if (!usageEvent) return null
+			if (usageEvent.status === 'reversed') return usageEvent
+			if (usageEvent.status === 'completed') {
+				throw new AppError('Cannot rollback completed usage event', 409)
+			}
 
-		if (usageEvent.costMinor > 0) {
-			await logBusinessEvent({
-				eventType: 'balance.changed',
-				actorUserId: usageEvent.userId,
-				entityType: 'wallet',
-				entityId: usageEvent.userId,
-				payload: { deltaMinor: usageEvent.costMinor, reason: 'usage_charge_refund' },
-			})
+			const updated = await prisma.$transaction(tx => rollbackPendingUsageEvent(tx, usageEvent))
+
+			if (usageEvent.costMinor > 0) {
+				await logBusinessEvent({
+					eventType: 'balance.changed',
+					actorUserId: usageEvent.userId,
+					entityType: 'wallet',
+					entityId: usageEvent.userId,
+					payload: { deltaMinor: usageEvent.costMinor, reason: 'usage_charge_refund' },
+				})
+			}
+
+			return updated
+		} catch (error) {
+			if (!isLegacyBillingSchemaError(error)) throw error
+			return rollbackLegacyCharge({ requestId })
 		}
-
-		return updated
 	},
 
 	async charge({ userId, modelProvider, modelName, modelTier = 'basic', inputTokens = 0, outputTokens = 0, requestId }) {
