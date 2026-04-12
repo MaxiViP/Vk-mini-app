@@ -56,7 +56,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
-import { isVkAiBackend } from './config/chatBackend'
+import { internalApiBaseUrl, isVkAiBackend } from './config/chatBackend'
 import { initVK } from './vk/bridge'
 import { useModelsStore } from './stores/models'
 import { useUserStore } from './stores/user'
@@ -84,7 +84,6 @@ const isChatContextOpen = ref(false)
 const isModelSelectorOpen = ref(false)
 const notesPanelRef = ref<NotesPanelExposed | null>(null)
 
-const API_BASE_URL = ''
 const ACTIVITY_INTERVAL_SEC = 30
 const sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
 let activityTimer: number | null = null
@@ -98,7 +97,7 @@ const sendActivityHeartbeat = async () => {
 	if (!userStore.token || !isLikelyJwt(userStore.token) || document.hidden) return
 
 	try {
-		await fetch(`${API_BASE_URL}/api/users/me/activity`, {
+		await fetch(`${internalApiBaseUrl}/api/users/me/activity`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',

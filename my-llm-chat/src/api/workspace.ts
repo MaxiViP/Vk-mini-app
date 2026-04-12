@@ -1,4 +1,6 @@
-const API_BASE_URL = ''
+import { internalApiBaseUrl } from '../config/chatBackend'
+
+const API_BASE_URL = internalApiBaseUrl
 
 export interface WorkspaceMessage {
 	role: 'user' | 'assistant'

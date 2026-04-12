@@ -1,5 +1,3 @@
-import fetch from 'node-fetch'
-
 const sanitizeEnv = value => (typeof value === 'string' ? value.trim().replace(/^['"]|['"]$/g, '') : '')
 
 const GITHUB_TOKEN = sanitizeEnv(process.env.GITHUB_MODELS_TOKEN)
@@ -17,6 +15,10 @@ export const githubModelsClient = {
 			async create({ model, messages, temperature = 0.7, max_tokens = 1000 }) {
 				if (!GITHUB_TOKEN) {
 					throw new Error('GitHub Models is not configured: set GITHUB_MODELS_TOKEN')
+				}
+
+				if (typeof fetch !== 'function') {
+					throw new Error('Global fetch is not available in this Node.js runtime')
 				}
 
 				const response = await fetch(BASE_URL, {

@@ -88,7 +88,7 @@ const backendStatusLabel = computed(() => {
 	}
 })
 
-const typingLabel = computed(() => (chat.isExternalBackend ? 'Ищем ответ в VK AI' : 'Печатает'))
+const typingLabel = computed(() => (chat.isExternalBackend ? 'Модель думает' : 'Модель думает'))
 
 const emitChatContextState = () => {
 	window.dispatchEvent(
@@ -113,7 +113,18 @@ const handleToggleChatContext = (event: Event) => {
 
 const isBillingOrAccessError = (message: string) => {
 	const normalized = message.toLowerCase()
-	return normalized.includes('insufficient balance') || normalized.includes('forbidden') || normalized.includes('auth')
+	return (
+		normalized.includes('insufficient balance') ||
+		normalized.includes('forbidden') ||
+		normalized.includes('auth') ||
+		normalized.includes('unauthorized') ||
+		normalized.includes('invalid token') ||
+		normalized.includes('expired') ||
+		normalized.includes('database is unavailable') ||
+		normalized.includes('database unavailable') ||
+		normalized.includes('база данных') ||
+		normalized.includes('сессия')
+	)
 }
 
 function stopGeneration() {
@@ -131,7 +142,7 @@ async function sendWithFallback(messageText: string) {
 			const typedError = error as Error
 
 			if (typedError.name === 'AbortError') {
-				chat.addSystemMessage('Генерация остановлена пользователем')
+				console.info('Генерация остановлена пользователем')
 				return
 			}
 
@@ -164,7 +175,7 @@ async function sendWithFallback(messageText: string) {
 			const typedError = error as Error
 
 			if (typedError.name === 'AbortError') {
-				chat.addSystemMessage('Генерация остановлена пользователем')
+				console.info('Генерация остановлена пользователем')
 				return
 			}
 
@@ -175,11 +186,10 @@ async function sendWithFallback(messageText: string) {
 
 			console.warn(`Модель ${model.name} не ответила:`, error)
 			lastError = typedError
-			chat.addSystemMessage(`Модель "${model.name}" не ответила, пробуем другую...`)
 		}
 	}
 
-	chat.addSystemMessage(`Ни одна модель не ответила. Последняя ошибка: ${lastError?.message}`)
+	chat.addSystemMessage(`Не удалось получить ответ. Последняя ошибка: ${lastError?.message}`)
 }
 
 async function uploadFile(file: File) {

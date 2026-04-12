@@ -440,21 +440,34 @@ export const useChatStore = defineStore('chat', () => {
 
 			abortController = new AbortController()
 			const requestId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
-
-			const response = await fetch(`${internalApiBaseUrl}/api/llm/chat`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${userStore.token}`,
-					'X-Request-Id': requestId,
-				},
-				body: JSON.stringify({
-					message: text,
-					modelId: model.id,
-					history: history ?? messages.value.map(toHistoryItem),
-				}),
-				signal: abortController.signal,
+			const requestBody = JSON.stringify({
+				message: text,
+				modelId: model.id,
+				history: history ?? messages.value.map(toHistoryItem),
 			})
+			const executeChatRequest = () =>
+				fetch(`${internalApiBaseUrl}/api/llm/chat`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${userStore.token}`,
+						'X-Request-Id': requestId,
+					},
+					body: requestBody,
+					signal: abortController.signal,
+				})
+
+			let response = await executeChatRequest()
+
+			if (response.status === 401 && userStore.refreshToken) {
+				try {
+					await userStore.refreshAuth()
+					response = await executeChatRequest()
+				} catch (refreshError) {
+					console.warn('Token refresh before chat retry failed', refreshError)
+					throw new Error('Сессия истекла или backend не смог обновить токен. Проверьте авторизацию и БД.')
+				}
+			}
 
 			if (!response.ok) {
 				let errorMessage = `HTTP ${response.status}: ${response.statusText}`
@@ -466,12 +479,16 @@ export const useChatStore = defineStore('chat', () => {
 				} catch {
 					// ignore non-json error bodies
 				}
+				if (response.status === 401) {
+					errorMessage = 'Сессия истекла или токен невалиден. Войдите заново.'
+				}
 				throw new Error(errorMessage)
 			}
 
 			const reader = response.body?.getReader()
 			const decoder = new TextDecoder()
 			let assistantMessage = ''
+			let streamBuffer = ''
 
 			messages.value.push({
 				role: 'assistant',
@@ -487,16 +504,45 @@ export const useChatStore = defineStore('chat', () => {
 				const { done, value } = await reader.read()
 				if (done) break
 
-				const chunk = decoder.decode(value)
-				const lines = chunk.split('\n')
+				streamBuffer += decoder.decode(value, { stream: true })
+				const lines = streamBuffer.split('\n')
+				streamBuffer = lines.pop() || ''
 
 				for (const line of lines) {
 					if (!line.startsWith('data: ')) continue
 					const data = line.slice(6)
 					if (data === '[DONE]') continue
 
-					assistantMessage += data
+					let nextChunk = data
+					try {
+						const parsed = JSON.parse(data) as { content?: string }
+						nextChunk = typeof parsed.content === 'string' ? parsed.content : data
+					} catch {
+						// backward-compatible with legacy plain-text SSE chunks
+					}
 
+					assistantMessage += nextChunk
+
+					const lastMsg = messages.value[messages.value.length - 1]
+					if (lastMsg && lastMsg.role === 'assistant') {
+						lastMsg.content = assistantMessage
+					}
+				}
+			}
+
+			const tail = streamBuffer.trim()
+			if (tail.startsWith('data: ')) {
+				const data = tail.slice(6)
+				if (data && data !== '[DONE]') {
+					let nextChunk = data
+					try {
+						const parsed = JSON.parse(data) as { content?: string }
+						nextChunk = typeof parsed.content === 'string' ? parsed.content : data
+					} catch {
+						// backward-compatible with legacy plain-text SSE chunks
+					}
+
+					assistantMessage += nextChunk
 					const lastMsg = messages.value[messages.value.length - 1]
 					if (lastMsg && lastMsg.role === 'assistant') {
 						lastMsg.content = assistantMessage

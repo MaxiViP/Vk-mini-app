@@ -3,14 +3,20 @@ import { computed, ref } from 'vue'
 import bridge from '@vkontakte/vk-bridge'
 
 import type { BillingSummary, User, YooKassaPaymentSession } from '../types'
+import { internalApiBaseUrl } from '../config/chatBackend'
 import { billingApi } from '../api/billing'
 import { confirmYooKassaPaymentRequest, createYooKassaPaymentRequest } from '../api/payments'
 import { authApi, type OAuthProvider, type UserProfileResponse } from '../services/auth'
 
-const TOKEN_STORAGE_KEY = 'token'
-const REFRESH_TOKEN_STORAGE_KEY = 'refresh_token'
-const USER_STORAGE_KEY = 'user_profile'
-const BILLING_STORAGE_KEY = 'billing_summary'
+const backendStorageScope = String(internalApiBaseUrl || 'same-origin')
+	.trim()
+	.toLowerCase()
+	.replace(/[^a-z0-9]+/g, '_')
+const TOKEN_STORAGE_KEY = `token:${backendStorageScope}`
+const REFRESH_TOKEN_STORAGE_KEY = `refresh_token:${backendStorageScope}`
+const USER_STORAGE_KEY = `user_profile:${backendStorageScope}`
+const BILLING_STORAGE_KEY = `billing_summary:${backendStorageScope}`
+const LEGACY_STORAGE_KEYS = ['token', 'refresh_token', 'user_profile', 'billing_summary']
 
 const FORCED_ADMIN_PHONES = ['+79057353580']
 
@@ -48,6 +54,7 @@ const safeParse = <T>(raw: string | null): T | null => {
 }
 
 const getHttpStatus = (error: unknown) => (error as { response?: { status?: number } })?.response?.status || null
+const isUnauthorizedError = (error: unknown) => getHttpStatus(error) === 401
 
 const DEFAULT_FALLBACK_PLANS = [
 	{
@@ -147,11 +154,27 @@ export const useUserStore = defineStore('user', () => {
 		if (billing.value) localStorage.setItem(BILLING_STORAGE_KEY, JSON.stringify(billing.value))
 	}
 
+	const clearLegacyAuthState = () => {
+		for (const key of LEGACY_STORAGE_KEYS) {
+			localStorage.removeItem(key)
+		}
+	}
+
 	const clearAuthState = () => {
 		localStorage.removeItem(TOKEN_STORAGE_KEY)
 		localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY)
 		localStorage.removeItem(USER_STORAGE_KEY)
 		localStorage.removeItem(BILLING_STORAGE_KEY)
+	}
+
+	const dropLocalSession = () => {
+		user.value = null
+		billing.value = null
+		token.value = null
+		refreshToken.value = null
+		pendingPhone.value = null
+		phoneChallenge.value = null
+		clearAuthState()
 	}
 
 	const applyBillingSummary = (summary: BillingSummary | null) => {
@@ -232,12 +255,24 @@ export const useUserStore = defineStore('user', () => {
 	const syncProfileFromServer = async () => {
 		if (!token.value) return
 
-		const profile = await authApi.getMe(token.value)
+		let profile: UserProfileResponse
+		try {
+			profile = await authApi.getMe(token.value)
+		} catch (error) {
+			if (isUnauthorizedError(error)) {
+				dropLocalSession()
+			}
+			throw error
+		}
 		let summary: BillingSummary
 
 		try {
 			summary = await billingApi.getSummary(token.value)
 		} catch (error) {
+			if (isUnauthorizedError(error)) {
+				dropLocalSession()
+				throw error
+			}
 			console.warn('Billing summary fallback activated:', error)
 			summary = createFallbackBillingSummary(profile, billing.value)
 		}
@@ -249,6 +284,18 @@ export const useUserStore = defineStore('user', () => {
 		return { profile, summary }
 	}
 
+	const syncProfileAfterAuth = async () => {
+		try {
+			return await syncProfileFromServer()
+		} catch (error) {
+			if (isUnauthorizedError(error)) {
+				throw error
+			}
+			console.warn('Post-auth profile sync skipped:', error)
+			return null
+		}
+	}
+
 	const refreshBillingState = async () => {
 		if (!token.value) return null
 
@@ -257,9 +304,21 @@ export const useUserStore = defineStore('user', () => {
 			applyBillingSummary(summary)
 			return summary
 		} catch (error) {
+			if (isUnauthorizedError(error)) {
+				dropLocalSession()
+				throw error
+			}
 			console.warn('Billing refresh fallback activated:', error)
 
-			const profile = await authApi.getMe(token.value)
+			let profile: UserProfileResponse
+			try {
+				profile = await authApi.getMe(token.value)
+			} catch (error) {
+				if (isUnauthorizedError(error)) {
+					dropLocalSession()
+				}
+				throw error
+			}
 			const summary = createFallbackBillingSummary(profile, billing.value)
 			applyBillingSummary(summary)
 			return summary
@@ -267,6 +326,10 @@ export const useUserStore = defineStore('user', () => {
 	}
 
 	function hydrateAuth() {
+		if (!localStorage.getItem(TOKEN_STORAGE_KEY) && !localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)) {
+			clearLegacyAuthState()
+		}
+
 		token.value = localStorage.getItem(TOKEN_STORAGE_KEY)
 		refreshToken.value = localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)
 		user.value = safeParse<User>(localStorage.getItem(USER_STORAGE_KEY))
@@ -298,7 +361,7 @@ export const useUserStore = defineStore('user', () => {
 					state: start.state,
 				})
 				applyAuthResult(finalize)
-				await syncProfileFromServer()
+				await syncProfileAfterAuth()
 				return finalize
 			}
 
@@ -326,7 +389,7 @@ export const useUserStore = defineStore('user', () => {
 				state: 'vk-bridge',
 			})
 			applyAuthResult(finalize)
-			await syncProfileFromServer()
+			await syncProfileAfterAuth()
 		} catch (error) {
 			console.error('VK init error', error)
 		} finally {
@@ -362,7 +425,7 @@ export const useUserStore = defineStore('user', () => {
 				code,
 			})
 			applyAuthResult(result)
-			await syncProfileFromServer()
+			await syncProfileAfterAuth()
 			phoneChallenge.value = null
 			return result
 		} finally {
@@ -372,7 +435,15 @@ export const useUserStore = defineStore('user', () => {
 
 	async function refreshAuth() {
 		if (!refreshToken.value) throw new Error('Нет refresh token')
-		const result = await authApi.refresh(refreshToken.value)
+		let result
+		try {
+			result = await authApi.refresh(refreshToken.value)
+		} catch (error) {
+			if (isUnauthorizedError(error)) {
+				dropLocalSession()
+			}
+			throw error
+		}
 		applyAuthResult(result)
 		await syncProfileFromServer()
 		return result
@@ -431,13 +502,7 @@ export const useUserStore = defineStore('user', () => {
 		} catch (error) {
 			console.warn('logout api failed:', error)
 		} finally {
-			user.value = null
-			billing.value = null
-			token.value = null
-			refreshToken.value = null
-			pendingPhone.value = null
-			phoneChallenge.value = null
-			clearAuthState()
+			dropLocalSession()
 		}
 	}
 
@@ -457,7 +522,7 @@ export const useUserStore = defineStore('user', () => {
 		try {
 			const result = await authApi.finalizeOAuth({ provider, code, state })
 			applyAuthResult(result)
-			await syncProfileFromServer()
+			await syncProfileAfterAuth()
 			window.history.replaceState({}, document.title, '/')
 			return true
 		} finally {

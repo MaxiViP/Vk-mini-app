@@ -1,7 +1,7 @@
 export interface Model {
 	id: string
 	name: string
-	provider: 'openai' | 'groq' | 'openrouter' | 'cloudflare' | 'local'
+	provider: 'openai' | 'groq' | 'openrouter' | 'cloudflare' | 'local' | 'cerebras' | 'vercel' | 'mistral' | 'github'
 	model: string
 	baseUrl?: string
 	billingTier?: 'basic' | 'premium'
