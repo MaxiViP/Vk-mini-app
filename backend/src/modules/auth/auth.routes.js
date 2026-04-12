@@ -88,7 +88,7 @@ router.post('/phone/request', async (req, res, next) => {
 		await logBusinessEvent({
 			eventType: 'auth.otp.request.failed',
 			entityType: 'phone',
-			entityId: req.body.phone || 'unknown',
+			entityId: req.body?.phone || 'unknown',
 			payload: { message: error.message },
 			ip: req.ip,
 			userAgent: req.headers['user-agent'] || null,
@@ -119,7 +119,7 @@ router.post('/phone/verify', async (req, res, next) => {
 		await logBusinessEvent({
 			eventType: 'auth.otp.verify.failed',
 			entityType: 'challenge',
-			entityId: req.body.challengeId || 'unknown',
+			entityId: req.body?.challengeId || 'unknown',
 			payload: { message: error.message },
 			ip: req.ip,
 			userAgent: req.headers['user-agent'] || null,
