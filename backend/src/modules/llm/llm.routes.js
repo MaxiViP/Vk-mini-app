@@ -23,11 +23,14 @@ const extractTextContent = messageContent => {
 }
 
 const chunkText = (text, size = 160) => {
+	const normalized = typeof text === 'string' ? text : ''
 	const chunks = []
-	for (let index = 0; index < text.length; index += size) {
-		chunks.push(text.slice(index, index + size))
+
+	for (let index = 0; index < normalized.length; index += size) {
+		chunks.push(normalized.slice(index, index + size))
 	}
-	return chunks
+
+	return chunks.length ? chunks : ['']
 }
 
 router.get('/models', async (_req, res, next) => {
@@ -70,9 +73,9 @@ router.post('/chat', authMiddleware, async (req, res, next) => {
 			maxTokens: req.body.maxTokens || 1000,
 		})
 
-		const content = extractTextContent(completion.choices?.[0]?.message?.content || '')
-		const inputTokens = Number(completion.usage?.prompt_tokens || 0)
-		const outputTokens = Number(completion.usage?.completion_tokens || 0)
+		const content = extractTextContent(completion?.choices?.[0]?.message?.content || '')
+		const inputTokens = Number(completion?.usage?.prompt_tokens || 0)
+		const outputTokens = Number(completion?.usage?.completion_tokens || 0)
 
 		await usageService.finalizeCharge({
 			requestId,
@@ -80,12 +83,16 @@ router.post('/chat', authMiddleware, async (req, res, next) => {
 			outputTokens,
 		})
 
-		res.setHeader('Content-Type', 'text/event-stream')
-		res.setHeader('Cache-Control', 'no-cache')
+		res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+		res.setHeader('Cache-Control', 'no-cache, no-transform')
 		res.setHeader('Connection', 'keep-alive')
 
+		if (typeof res.flushHeaders === 'function') {
+			res.flushHeaders()
+		}
+
 		for (const chunk of chunkText(content)) {
-			res.write(`data: ${chunk}\n\n`)
+			res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`)
 		}
 
 		res.write('data: [DONE]\n\n')
@@ -106,6 +113,7 @@ router.post('/chat', authMiddleware, async (req, res, next) => {
 			statusCode: error.statusCode || null,
 			requestId,
 		})
+
 		next(error)
 	}
 })
