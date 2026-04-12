@@ -162,7 +162,6 @@ export const authService = {
 
 		if (email) {
 			const existingUserByEmail = await prisma.user.findUnique({ where: { email } })
-
 			if (existingUserByEmail) {
 				try {
 					await prisma.authIdentity.upsert({
@@ -185,7 +184,6 @@ export const authService = {
 					})
 				} catch (error) {
 					if (!isProviderPayloadSchemaError(error)) throw error
-
 					await prisma.authIdentity.upsert({
 						where: {
 							provider_providerUserId: {
@@ -235,7 +233,6 @@ export const authService = {
 			})
 		} catch (error) {
 			if (!isProviderPayloadSchemaError(error)) throw error
-
 			return prisma.user.create({
 				data: {
 					email,
@@ -271,7 +268,6 @@ export const authService = {
 		}
 
 		const providerUserId = hashValue(normalizedPhone)
-
 		try {
 			await prisma.authIdentity.upsert({
 				where: {
@@ -290,7 +286,6 @@ export const authService = {
 			})
 		} catch (error) {
 			if (!isProviderPayloadSchemaError(error)) throw error
-
 			await prisma.authIdentity.upsert({
 				where: {
 					provider_providerUserId: {
