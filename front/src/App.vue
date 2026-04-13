@@ -86,6 +86,42 @@ const ACTIVITY_INTERVAL_SEC = 30
 const sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
 let activityTimer: number | null = null
 const isLikelyJwt = (token?: string | null) => Boolean(token && token.split('.').length === 3)
+const OAUTH_CALLBACK_HANDLED_KEY = 'oauth_callback_handled'
+let oauthCallbackInFlightKey: string | null = null
+let oauthCallbackInFlightPromise: Promise<boolean> | null = null
+
+const getOAuthCallbackKeyFromLocation = () => {
+	const callbackMatch = window.location.pathname.match(/^\/oauth\/(vk|google|yandex)\/callback$/)
+	if (!callbackMatch) return null
+
+	const provider = callbackMatch[1]
+	const params = new URLSearchParams(window.location.search)
+	const code = params.get('code')
+	const state = params.get('state')
+
+	if (!code || !state) return null
+	return `${provider}:${state}:${code}`
+}
+
+const readHandledOAuthCallbackKey = () => {
+	try {
+		return sessionStorage.getItem(OAUTH_CALLBACK_HANDLED_KEY)
+	} catch {
+		return null
+	}
+}
+
+const writeHandledOAuthCallbackKey = (value: string) => {
+	try {
+		sessionStorage.setItem(OAUTH_CALLBACK_HANDLED_KEY, value)
+	} catch {
+		// ignore sessionStorage failures
+	}
+}
+
+const clearOAuthCallbackFromLocation = () => {
+	window.history.replaceState({}, document.title, '/')
+}
 
 const syncViewportHeight = () => {
 	document.documentElement.style.setProperty('--viewport-height', `${window.innerHeight}px`)
@@ -190,8 +226,32 @@ onMounted(async () => {
 
 	userStore.hydrateAuth()
 	try {
-		await userStore.finalizeOAuthCallbackFromLocation()
+		const oauthCallbackKey = getOAuthCallbackKeyFromLocation()
+		if (oauthCallbackKey) {
+			if (readHandledOAuthCallbackKey() === oauthCallbackKey) {
+				clearOAuthCallbackFromLocation()
+				showAuthModal.value = false
+			} else if (oauthCallbackInFlightKey === oauthCallbackKey && oauthCallbackInFlightPromise) {
+				const oauthCallbackHandled = await oauthCallbackInFlightPromise
+				if (oauthCallbackHandled) {
+					showAuthModal.value = false
+				}
+			} else {
+				oauthCallbackInFlightKey = oauthCallbackKey
+				oauthCallbackInFlightPromise = userStore.finalizeOAuthCallbackFromLocation()
+				const oauthCallbackHandled = await oauthCallbackInFlightPromise
+				if (oauthCallbackHandled) {
+					writeHandledOAuthCallbackKey(oauthCallbackKey)
+					clearOAuthCallbackFromLocation()
+					showAuthModal.value = false
+				}
+				oauthCallbackInFlightKey = null
+				oauthCallbackInFlightPromise = null
+			}
+		}
 	} catch (error) {
+		oauthCallbackInFlightKey = null
+		oauthCallbackInFlightPromise = null
 		console.error('OAuth callback finalize error', error)
 	}
 
