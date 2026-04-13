@@ -1,5 +1,5 @@
 import { internalApiBaseUrl } from '../config/chatBackend'
-import type { AiAccessResponse } from '../types'
+import type { AiAccessPlan, AiAccessResponse } from '../types'
 
 export interface VkAiSource {
 	type: string
@@ -114,6 +114,14 @@ export const getVkAiErrorCode = (error: unknown) =>
 	null
 
 export const vkAiApi = {
+	async getPlans(accessToken: string) {
+		const response = await fetch(`${apiBaseUrl}/api/ai/plans`, {
+			headers: createHeaders(accessToken),
+		})
+		await ensureOk(response)
+		return response.json() as Promise<AiAccessPlan[]>
+	},
+
 	async getAccess(accessToken: string) {
 		const response = await fetch(`${apiBaseUrl}/api/ai/access`, {
 			headers: createHeaders(accessToken),

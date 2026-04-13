@@ -51,6 +51,15 @@ const getFileFromForm = (formData, key) => {
 	return value
 }
 
+router.get('/plans', async (_req, res, next) => {
+	try {
+		const result = await aiService.getPlans()
+		res.json(result)
+	} catch (error) {
+		next(error)
+	}
+})
+
 router.get('/access', async (req, res, next) => {
 	try {
 		const result = await aiService.getAccess({ userId: req.user.id })

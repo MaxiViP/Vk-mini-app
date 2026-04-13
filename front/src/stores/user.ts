@@ -2,8 +2,9 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import bridge from '@vkontakte/vk-bridge'
 
-import type { BillingSummary, User, YooKassaPaymentSession } from '../types'
+import type { AiAccessPlan, AiAccessResponse, BillingSummary, User, YooKassaPaymentSession } from '../types'
 import { internalApiBaseUrl } from '../config/chatBackend'
+import { getVkAiErrorCode, vkAiApi } from '../api/vkAi'
 import { billingApi } from '../api/billing'
 import { confirmYooKassaPaymentRequest, createYooKassaPaymentRequest } from '../api/payments'
 import { authApi, type OAuthProvider, type UserProfileResponse } from '../services/auth'
@@ -55,6 +56,38 @@ const safeParse = <T>(raw: string | null): T | null => {
 
 const getHttpStatus = (error: unknown) => (error as { response?: { status?: number } })?.response?.status || null
 const isUnauthorizedError = (error: unknown) => getHttpStatus(error) === 401
+
+const emptyAiCounters = () => ({
+	chat: 0,
+	voice: 0,
+	fileUpload: 0,
+})
+
+const emptyAiCapabilities = () => ({
+	chat: false,
+	voice: false,
+	fileUpload: false,
+})
+
+const createEmptyAiAccess = (
+	status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'expired' | null = null,
+): AiAccessResponse => ({
+	hasAccess: false,
+	subscription: status
+		? {
+				id: '',
+				status,
+				startedAt: '',
+				expiresAt: '',
+				cancelAtPeriodEnd: false,
+			}
+		: null,
+	plan: null,
+	limits: emptyAiCounters(),
+	usage: emptyAiCounters(),
+	remaining: emptyAiCounters(),
+	capabilities: emptyAiCapabilities(),
+})
 
 const DEFAULT_FALLBACK_PLANS = [
 	{
@@ -137,6 +170,8 @@ const mapApiUserToUiUser = (
 export const useUserStore = defineStore('user', () => {
 	const user = ref<User | null>(safeParse<User>(localStorage.getItem(USER_STORAGE_KEY)))
 	const billing = ref<BillingSummary | null>(safeParse<BillingSummary>(localStorage.getItem(BILLING_STORAGE_KEY)))
+	const aiAccess = ref<AiAccessResponse | null>(null)
+	const aiPlans = ref<AiAccessPlan[]>([])
 	const token = ref<string | null>(localStorage.getItem(TOKEN_STORAGE_KEY))
 	const refreshToken = ref<string | null>(localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY))
 	const isTestMode = ref(import.meta.env.DEV || String(import.meta.env.VITE_TEST_MODE || 'false') === 'true')
@@ -170,6 +205,8 @@ export const useUserStore = defineStore('user', () => {
 	const dropLocalSession = () => {
 		user.value = null
 		billing.value = null
+		aiAccess.value = null
+		aiPlans.value = []
 		token.value = null
 		refreshToken.value = null
 		pendingPhone.value = null
@@ -449,6 +486,57 @@ export const useUserStore = defineStore('user', () => {
 		return result
 	}
 
+	async function loadAiAccess() {
+		if (!token.value) {
+			aiAccess.value = null
+			return null
+		}
+
+		try {
+			const access = await vkAiApi.getAccess(token.value)
+			aiAccess.value = access
+			return access
+		} catch (error) {
+			if (isUnauthorizedError(error)) {
+				dropLocalSession()
+				throw error
+			}
+
+			const code = getVkAiErrorCode(error)
+			if (code === 'AI_SUBSCRIPTION_REQUIRED') {
+				const fallback = createEmptyAiAccess()
+				aiAccess.value = fallback
+				return fallback
+			}
+
+			if (code === 'AI_SUBSCRIPTION_EXPIRED') {
+				const fallback = createEmptyAiAccess('expired')
+				aiAccess.value = fallback
+				return fallback
+			}
+
+			throw error
+		}
+	}
+
+	async function loadAiPlans() {
+		if (!token.value) {
+			aiPlans.value = []
+			return []
+		}
+
+		try {
+			const plans = await vkAiApi.getPlans(token.value)
+			aiPlans.value = plans
+			return plans
+		} catch (error) {
+			if (isUnauthorizedError(error)) {
+				dropLocalSession()
+			}
+			throw error
+		}
+	}
+
 	async function createYooKassaPayment(amount: number): Promise<YooKassaPaymentSession> {
 		if (!token.value) {
 			throw new Error('Требуется авторизация')
@@ -533,6 +621,8 @@ export const useUserStore = defineStore('user', () => {
 	return {
 		user,
 		billing,
+		aiAccess,
+		aiPlans,
 		activeSubscription,
 		token,
 		refreshToken,
@@ -547,6 +637,8 @@ export const useUserStore = defineStore('user', () => {
 		sendPhoneCode,
 		loginByPhone,
 		refreshAuth,
+		loadAiAccess,
+		loadAiPlans,
 		createYooKassaPayment,
 		confirmYooKassaPayment,
 		purchasePlan,

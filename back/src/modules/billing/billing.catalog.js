@@ -26,33 +26,32 @@ export const PLAN_CATALOG = [
 	},
 ]
 
-// TODO: Replace placeholder AI pricing/limits with approved business values before enabling these plans in UI/production.
 export const AI_PLAN_CATALOG = [
 	{
-		code: 'ai-starter-placeholder',
-		name: 'AI Starter Placeholder',
+		code: 'ai-start',
+		name: 'AI Start',
 		productType: 'ai',
-		priceMinor: 99000,
+		priceMinor: 29900,
 		intervalDays: 30,
 		includedRequests: 0,
 		accessTier: 'basic',
-		aiChatLimit: 100,
-		aiVoiceLimit: 25,
-		aiFileUploadLimit: 10,
-		isActive: false,
+		aiChatLimit: 300,
+		aiVoiceLimit: 30,
+		aiFileUploadLimit: 20,
+		isActive: true,
 	},
 	{
-		code: 'ai-pro-placeholder',
-		name: 'AI Pro Placeholder',
+		code: 'ai-pro',
+		name: 'AI Pro',
 		productType: 'ai',
-		priceMinor: 199000,
+		priceMinor: 79900,
 		intervalDays: 30,
 		includedRequests: 0,
 		accessTier: 'premium',
-		aiChatLimit: 500,
-		aiVoiceLimit: 100,
-		aiFileUploadLimit: 50,
-		isActive: false,
+		aiChatLimit: 1500,
+		aiVoiceLimit: 150,
+		aiFileUploadLimit: 100,
+		isActive: true,
 	},
 ]
 

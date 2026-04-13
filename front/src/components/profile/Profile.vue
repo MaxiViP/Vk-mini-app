@@ -112,6 +112,97 @@
 				</div>
 			</div>
 
+			<div class="billing-card">
+				<div class="section-head">
+					<h3>AI подписка</h3>
+					<p class="billing-subtitle">Отдельный тариф для AI-чата, голосовых сообщений и файлового контекста.</p>
+				</div>
+
+				<div class="billing-summary">
+					<p>
+						Статус AI:
+						<b>{{ aiStatusLabel }}</b>
+					</p>
+
+					<p v-if="aiAccess?.hasAccess && aiAccess?.plan">
+						Активный AI-тариф:
+						<b>{{ aiAccess.plan.name }}</b>
+					</p>
+
+					<p v-if="aiAccess?.hasAccess && aiAccess?.subscription">
+						Действует до:
+						<b>{{ formatDate(aiAccess.subscription.expiresAt) }}</b>
+					</p>
+
+					<p v-else-if="aiAccess?.subscription?.status === 'expired'" class="hint-text">
+						AI-подписка истекла. Ниже можно купить новый AI-тариф.
+					</p>
+
+					<p v-else class="hint-text">
+						AI-подписка не активна. Для AI-чата нужна отдельная подписка.
+					</p>
+				</div>
+
+				<div class="profile-stats">
+					<div class="stat-card">
+						<span class="stat-label">Лимиты</span>
+						<strong>
+							чат {{ formatAiCounter(aiAccess?.limits.chat) }} /
+							voice {{ formatAiCounter(aiAccess?.limits.voice) }} /
+							files {{ formatAiCounter(aiAccess?.limits.fileUpload) }}
+						</strong>
+					</div>
+
+					<div class="stat-card">
+						<span class="stat-label">Использовано</span>
+						<strong>
+							чат {{ formatAiCounter(aiAccess?.usage.chat) }} /
+							voice {{ formatAiCounter(aiAccess?.usage.voice) }} /
+							files {{ formatAiCounter(aiAccess?.usage.fileUpload) }}
+						</strong>
+					</div>
+
+					<div class="stat-card">
+						<span class="stat-label">Осталось</span>
+						<strong>
+							чат {{ formatAiCounter(aiAccess?.remaining.chat) }} /
+							voice {{ formatAiCounter(aiAccess?.remaining.voice) }} /
+							files {{ formatAiCounter(aiAccess?.remaining.fileUpload) }}
+						</strong>
+					</div>
+				</div>
+
+				<div class="plans-grid">
+					<div
+						v-for="plan in aiPlans"
+						:key="plan.id"
+						:class="['plan-item', 'cheap-plan', { active: aiAccess?.hasAccess && aiAccess?.plan?.code === plan.code }]"
+					>
+						<div class="plan-badge">AI</div>
+						<h4>{{ plan.name }}</h4>
+						<p class="plan-period">{{ plan.intervalDays }} дней</p>
+						<p class="plan-price">{{ formatMoney((plan.priceMinor || 0) / 100) }} ₽</p>
+
+						<ul>
+							<li>Чат: {{ formatAiCounter(plan.aiChatLimit) }}</li>
+							<li>Voice: {{ formatAiCounter(plan.aiVoiceLimit) }}</li>
+							<li>Файлы: {{ formatAiCounter(plan.aiFileUploadLimit) }}</li>
+						</ul>
+
+						<button @click="buyAiPlan(plan.code)" :disabled="isBusy || !canBuyAiPlan(plan)">
+							{{ aiPlanButtonLabel(plan) }}
+						</button>
+					</div>
+
+					<div v-if="!aiPlans.length" :class="['plan-item', 'payg-plan']">
+						<div class="plan-badge">AI</div>
+						<h4>AI-тарифы загружаются</h4>
+						<p class="plan-period">Список появится после загрузки профиля</p>
+						<p class="plan-price">—</p>
+					</div>
+				</div>
+			</div>
+
 			<div class="models-section">
 				<div class="models-column cheap-column">
 					<h4>Последние операции</h4>
@@ -159,7 +250,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
-import type { BillingLedgerEntry, BillingPayment, BillingPlan } from '../../types'
+import type { AiAccessPlan, BillingLedgerEntry, BillingPayment, BillingPlan } from '../../types'
 import { useUserStore } from '../../stores/user'
 import RechargeModal from './RechargeModal.vue'
 
@@ -177,12 +268,26 @@ const fallbackAvatar =
 const avatarUrl = computed(() => userStore.user?.photo_200 || fallbackAvatar)
 const activeSubscription = computed(() => userStore.activeSubscription)
 const plans = computed(() => userStore.billing?.plans || [])
+const aiAccess = computed(() => userStore.aiAccess)
+const aiPlans = computed(() => userStore.aiPlans || [])
 const recentLedger = computed(() => (userStore.billing?.recentLedger || []).slice(0, 6))
 const recentPayments = computed(() => (userStore.billing?.recentPayments || []).slice(0, 6))
 
 const activeModeLabel = computed(() => {
 	if (!activeSubscription.value?.plan) return 'Pay-per-request'
 	return `${activeSubscription.value.plan.name} до ${formatDate(activeSubscription.value.expiresAt)}`
+})
+
+const aiStatusLabel = computed(() => {
+	if (aiAccess.value?.hasAccess && aiAccess.value.plan && aiAccess.value.subscription) {
+		return `${aiAccess.value.plan.name} до ${formatDate(aiAccess.value.subscription.expiresAt)}`
+	}
+
+	if (aiAccess.value?.subscription?.status === 'expired') {
+		return 'AI-подписка истекла'
+	}
+
+	return 'AI-подписка не активна'
 })
 
 const clearStatusLater = () => {
@@ -206,16 +311,29 @@ const setError = (message: string) => {
 const formatMoney = (value: number) => Number(value || 0).toFixed(0)
 const formatDate = (value: string) => new Date(value).toLocaleString()
 
+const formatAiCounter = (value?: number | null) => Number(value ?? 0)
+
 const planDescription = (planCode: string) => {
 	if (planCode === 'monthly-premium') return 'Подходит для тяжёлых и специализированных сценариев'
 	return 'Подходит для массовых базовых сценариев'
 }
 
 const canBuyPlan = (plan: BillingPlan) => (userStore.user?.balance || 0) >= plan.price
+const canBuyAiPlan = (plan: AiAccessPlan) => {
+	if (aiAccess.value?.hasAccess && aiAccess.value.plan?.code === plan.code) return false
+	if (!plan.isActive) return false
+	return (userStore.user?.balance || 0) >= Number(plan.priceMinor || 0) / 100
+}
 
 const planButtonLabel = (plan: BillingPlan) => {
 	if (activeSubscription.value?.plan?.code === plan.code) return 'Уже активна'
 	return canBuyPlan(plan) ? 'Купить подписку' : 'Недостаточно средств'
+}
+
+const aiPlanButtonLabel = (plan: AiAccessPlan) => {
+	if (aiAccess.value?.hasAccess && aiAccess.value.plan?.code === plan.code) return 'Уже активна'
+	if (!plan.isActive) return 'Скоро'
+	return canBuyAiPlan(plan) ? 'Купить AI-подписку' : 'Недостаточно средств'
 }
 
 const ledgerTitle = (reason: BillingLedgerEntry['reason']) => {
@@ -260,6 +378,22 @@ const buyPlan = async (planCode: string) => {
 	}
 }
 
+const buyAiPlan = async (planCode: string) => {
+	if (isBusy.value) return
+
+	try {
+		isBusy.value = true
+		await userStore.purchasePlan(planCode)
+		await userStore.loadAiAccess()
+		await userStore.loadAiPlans()
+		setSuccess('AI-подписка активирована.')
+	} catch (error) {
+		setError((error as Error).message || 'Не удалось купить AI-подписку.')
+	} finally {
+		isBusy.value = false
+	}
+}
+
 const handleRecharge = (amount: number) => {
 	setSuccess(`Платёж подтверждён. Баланс пополнен на ${formatMoney(amount)} ₽.`)
 }
@@ -268,5 +402,8 @@ onMounted(() => {
 	void userStore.syncProfileFromServer().catch(error => {
 		setError((error as Error).message || 'Не удалось загрузить биллинг.')
 	})
+})
+onMounted(() => {
+	void Promise.allSettled([userStore.loadAiAccess(), userStore.loadAiPlans()])
 })
 </script>

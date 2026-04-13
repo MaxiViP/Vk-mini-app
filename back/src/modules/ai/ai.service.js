@@ -2,7 +2,7 @@ import crypto from 'node:crypto'
 
 import prisma from '../../db/prisma.js'
 import { AppError } from '../../shared/errors.js'
-import { expireElapsedSubscriptions, getActiveSubscriptionWithPlan } from '../billing/billing.service.js'
+import { ensurePlanCatalogSeeded, expireElapsedSubscriptions, getActiveSubscriptionWithPlan } from '../billing/billing.service.js'
 import { aiClient } from './ai.client.js'
 
 const AI_PRODUCT_TYPE = 'ai'
@@ -186,6 +186,17 @@ const createUsageEvent = ({ userId, subscription, modelName }) =>
 const toExternalUserId = userId => String(userId)
 
 export const aiService = {
+	async getPlans() {
+		await ensurePlanCatalogSeeded()
+
+		const plans = await prisma.plan.findMany({
+			where: { productType: AI_PRODUCT_TYPE },
+			orderBy: [{ isActive: 'desc' }, { priceMinor: 'asc' }],
+		})
+
+		return plans.map(serializePlan)
+	},
+
 	async getAccess({ userId }) {
 		const access = await resolveAccessState(userId)
 
