@@ -98,7 +98,7 @@ model User {
 
 model UserWorkspace {
   userId       String   @id @map("user_id")
-chatHistory  Json?    @map("chat_history_json")
+  chatHistory  Json?    @map("chat_history_json")
   notesPayload Json?    @map("notes_payload_json")
   updatedAt    DateTime @updatedAt @map("updated_at")
   createdAt    DateTime @default(now()) @map("created_at")
@@ -113,7 +113,7 @@ model AuthIdentity {
   userId          String       @map("user_id")
   provider        AuthProvider
   providerUserId  String       @map("provider_user_id")
-   providerPayload Json?        @map("provider_payload_json")
+  providerPayload Json?        @map("provider_payload_json")
   createdAt       DateTime     @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -182,16 +182,16 @@ model WalletLedger {
 }
 
 model Plan {
-  id                String   @id @default(uuid())
-  code              String   @unique
-  name              String
-  priceMinor        Int      @map("price_minor")
-  intervalDays      Int      @map("interval_days")
-  includedRequests  Int      @map("included_requests")
-  accessTier        ModelTier @default(basic) @map("access_tier")
-  isActive          Boolean  @default(true) @map("is_active")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  id               String    @id @default(uuid())
+  code             String    @unique
+  name             String
+  priceMinor       Int       @map("price_minor")
+  intervalDays     Int       @map("interval_days")
+  includedRequests Int       @map("included_requests")
+  accessTier       ModelTier @default(basic) @map("access_tier")
+  isActive         Boolean   @default(true) @map("is_active")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
 
   subscriptions Subscription[]
 
@@ -252,19 +252,19 @@ model PaymentEvent {
 }
 
 model UsageEvent {
-  id            String   @id @default(uuid())
-  userId        String   @map("user_id")
-  modelProvider String   @map("model_provider")
-  modelName     String   @map("model_name")
-  billingTier   ModelTier @map("billing_tier")
-  billingSource UsageBillingSource @default(payg) @map("billing_source")
-  status        UsageStatus @default(completed)
-  subscriptionId String?  @map("subscription_id")
-  inputTokens   Int      @default(0) @map("input_tokens")
-  outputTokens  Int      @default(0) @map("output_tokens")
-  costMinor     Int      @default(0) @map("cost_minor")
-  requestId     String   @unique @map("request_id")
-  createdAt     DateTime @default(now()) @map("created_at")
+  id             String             @id @default(uuid())
+  userId         String             @map("user_id")
+  modelProvider  String             @map("model_provider")
+  modelName      String             @map("model_name")
+  billingTier    ModelTier          @map("billing_tier")
+  billingSource  UsageBillingSource @default(payg) @map("billing_source")
+  status         UsageStatus        @default(completed)
+  subscriptionId String?            @map("subscription_id")
+  inputTokens    Int                @default(0) @map("input_tokens")
+  outputTokens   Int                @default(0) @map("output_tokens")
+  costMinor      Int                @default(0) @map("cost_minor")
+  requestId      String             @unique @map("request_id")
+  createdAt      DateTime           @default(now()) @map("created_at")
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
@@ -279,10 +279,10 @@ model AuditLog {
   entityType  String   @map("entity_type")
   entityId    String   @map("entity_id")
   action      String
-   beforeJson  Json?    @map("before_json")
+  beforeJson  Json?    @map("before_json")
   afterJson   Json?    @map("after_json")
   ip          String?
-  userAgent   String?
+  userAgent   String?  @map("user_agent")
   createdAt   DateTime @default(now()) @map("created_at")
 
   actorUser User? @relation("ActorUserAuditLog", fields: [actorUserId], references: [id], onDelete: SetNull)
