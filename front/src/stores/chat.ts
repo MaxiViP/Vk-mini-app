@@ -3,12 +3,20 @@ import { computed, ref, watch } from 'vue'
 
 import type { Message, Model, ChatHistoryItem, MessageMeta, SourceHistoryItem } from '../types'
 import { fetchWorkspace, saveChatHistory, type WorkspaceMessage } from '../api/workspace'
-import { vkAiApi } from '../api/vkAi'
-import { internalApiBaseUrl, isVkAiBackend, vkAiApiBaseUrl } from '../config/chatBackend'
+import { getVkAiErrorCode, vkAiApi } from '../api/vkAi'
+import { internalApiBaseUrl, isVkAiBackend } from '../config/chatBackend'
 import { useUserStore } from './user'
 
 const STORAGE_KEY_PREFIX = 'chat_history'
 const CONVERSATION_STORAGE_KEY = 'vk_ai_conversation_id'
+
+const EXTERNAL_AI_BUSINESS_CODES = new Set([
+	'AI_SUBSCRIPTION_REQUIRED',
+	'AI_SUBSCRIPTION_EXPIRED',
+	'AI_LIMIT_REACHED',
+	'AI_FEATURE_DISABLED',
+	'AI_BACKEND_UNAVAILABLE',
+])
 
 const toHistoryItem = (message: Message): ChatHistoryItem => ({ role: message.role, content: message.content })
 const toWorkspaceMessage = (message: Message): WorkspaceMessage => ({
@@ -60,6 +68,33 @@ const createConversationId = (userId?: string) => {
 	return `vk-dialog-${safeUserId}`
 }
 
+const toExternalAiError = (error: unknown) => {
+	const code = getVkAiErrorCode(error)
+	const status = (error as { status?: number })?.status || null
+	const message = (error as Error)?.message || 'VK AI backend недоступен'
+
+	switch (code) {
+		case 'AI_SUBSCRIPTION_REQUIRED':
+			return new Error('Для AI-чата нужна активная AI-подписка.')
+		case 'AI_SUBSCRIPTION_EXPIRED':
+			return new Error('AI-подписка истекла.')
+		case 'AI_LIMIT_REACHED':
+			return new Error('Лимит AI-запросов исчерпан.')
+		case 'AI_FEATURE_DISABLED':
+			return new Error('Эта AI-функция недоступна на текущем тарифе.')
+		case 'AI_BACKEND_UNAVAILABLE':
+			return new Error('VK AI backend временно недоступен.')
+		default:
+			if (status === 401) return new Error('Требуется авторизация.')
+			return new Error(message)
+	}
+}
+
+const shouldKeepExternalBackendOnline = (error: unknown) => {
+	const code = getVkAiErrorCode(error)
+	return code ? EXTERNAL_AI_BUSINESS_CODES.has(code) && code !== 'AI_BACKEND_UNAVAILABLE' : false
+}
+
 export const useChatStore = defineStore('chat', () => {
 	const userStore = useUserStore()
 	const messages = ref<Message[]>([])
@@ -76,7 +111,14 @@ export const useChatStore = defineStore('chat', () => {
 
 	const isExternalBackend = computed(() => isVkAiBackend)
 	const backendLabel = computed(() => (isExternalBackend.value ? 'VK AI backend' : 'Internal LLM backend'))
-	const backendBaseUrl = computed(() => (isExternalBackend.value ? vkAiApiBaseUrl : internalApiBaseUrl))
+	const backendBaseUrl = computed(() => internalApiBaseUrl || window.location.origin)
+
+	const getExternalAccessToken = () => {
+		if (!userStore.token || !isLikelyJwt(userStore.token)) {
+			throw new Error('Требуется авторизация.')
+		}
+		return userStore.token
+	}
 
 	const setConversationId = (userId?: string) => {
 		const nextId = createConversationId(userId)
@@ -126,15 +168,27 @@ export const useChatStore = defineStore('chat', () => {
 	const refreshExternalHealth = async () => {
 		if (!isExternalBackend.value) {
 			backendStatus.value = 'idle'
-			return
+			return null
+		}
+
+		if (!userStore.token || !isLikelyJwt(userStore.token)) {
+			backendStatus.value = 'idle'
+			return null
 		}
 
 		try {
-			await vkAiApi.health()
+			const access = await vkAiApi.getAccess(getExternalAccessToken())
 			backendStatus.value = 'online'
+			return access
 		} catch (error) {
-			console.warn('[chat] vk-ai health failed', error)
+			if (shouldKeepExternalBackendOnline(error)) {
+				backendStatus.value = 'online'
+				return null
+			}
+
+			console.warn('[chat] vk-ai access failed', error)
 			backendStatus.value = 'offline'
+			return null
 		}
 	}
 
@@ -143,10 +197,17 @@ export const useChatStore = defineStore('chat', () => {
 		setConversationId(userId)
 		isHydrating.value = true
 
+		if (!userStore.token || !isLikelyJwt(userStore.token)) {
+			hydrateFromLocalStorage(userId)
+			backendStatus.value = 'idle'
+			isHydrating.value = false
+			return
+		}
+
 		try {
 			await refreshExternalHealth()
 			const conversation = await vkAiApi.getConversation({
-				userId,
+				accessToken: getExternalAccessToken(),
 				conversationId: conversationId.value,
 			})
 
@@ -162,7 +223,7 @@ export const useChatStore = defineStore('chat', () => {
 		} catch (error) {
 			console.warn('[chat] hydrateExternalConversation:fallback_to_local', error)
 			hydrateFromLocalStorage(userId)
-			backendStatus.value = 'offline'
+			backendStatus.value = shouldKeepExternalBackendOnline(error) ? 'online' : 'offline'
 		} finally {
 			isHydrating.value = false
 		}
@@ -319,12 +380,11 @@ export const useChatStore = defineStore('chat', () => {
 			throw new Error('File context upload is available only for VK AI backend mode')
 		}
 
-		const userId = userStore.user?.vkId || 'guest'
 		isUploadingFile.value = true
 
 		try {
 			const result = await vkAiApi.uploadFile({
-				userId,
+				accessToken: getExternalAccessToken(),
 				conversationId: conversationId.value,
 				file,
 			})
@@ -335,8 +395,8 @@ export const useChatStore = defineStore('chat', () => {
 			})
 			backendStatus.value = 'online'
 		} catch (error) {
-			backendStatus.value = 'offline'
-			throw error
+			backendStatus.value = shouldKeepExternalBackendOnline(error) ? 'online' : 'offline'
+			throw toExternalAiError(error)
 		} finally {
 			isUploadingFile.value = false
 		}
@@ -346,11 +406,16 @@ export const useChatStore = defineStore('chat', () => {
 		const userId = userStore.user?.vkId || 'guest'
 
 		if (isExternalBackend.value) {
-			await vkAiApi.resetConversation({
-				userId,
-				conversationId: conversationId.value,
-			})
-			backendStatus.value = 'online'
+			try {
+				await vkAiApi.resetConversation({
+					accessToken: getExternalAccessToken(),
+					conversationId: conversationId.value,
+				})
+				backendStatus.value = 'online'
+			} catch (error) {
+				backendStatus.value = shouldKeepExternalBackendOnline(error) ? 'online' : 'offline'
+				throw toExternalAiError(error)
+			}
 		}
 
 		messages.value = []
@@ -365,12 +430,11 @@ export const useChatStore = defineStore('chat', () => {
 			throw new Error('Voice is available only for VK AI backend mode')
 		}
 
-		const userId = userStore.user?.vkId || 'guest'
 		isLoading.value = true
 
 		try {
 			const response = await vkAiApi.sendVoice({
-				userId,
+				accessToken: getExternalAccessToken(),
 				conversationId: conversationId.value,
 				audio,
 			})
@@ -394,8 +458,8 @@ export const useChatStore = defineStore('chat', () => {
 			})
 			backendStatus.value = 'online'
 		} catch (error) {
-			backendStatus.value = 'offline'
-			throw error
+			backendStatus.value = shouldKeepExternalBackendOnline(error) ? 'online' : 'offline'
+			throw toExternalAiError(error)
 		} finally {
 			isLoading.value = false
 		}
@@ -407,9 +471,8 @@ export const useChatStore = defineStore('chat', () => {
 
 		try {
 			if (isExternalBackend.value) {
-				const userId = userStore.user?.vkId || 'guest'
 				const response = await vkAiApi.chat({
-					userId,
+					accessToken: getExternalAccessToken(),
 					conversationId: conversationId.value,
 					message: text,
 				})
@@ -558,6 +621,10 @@ export const useChatStore = defineStore('chat', () => {
 
 			if ((err as Error).name === 'AbortError') {
 				throw err
+			}
+
+			if (isExternalBackend.value) {
+				throw toExternalAiError(err)
 			}
 
 			console.error('LLM error:', err)

@@ -7,20 +7,56 @@ export const PLAN_CATALOG = [
 	{
 		code: 'weekly-basic',
 		name: 'Базовая подписка',
+		productType: 'core',
 		priceMinor: 34900,
 		intervalDays: 7,
 		includedRequests: 700,
 		accessTier: 'basic',
+		isActive: true,
 	},
 	{
 		code: 'monthly-premium',
 		name: 'Премиум подписка',
+		productType: 'core',
 		priceMinor: 199000,
 		intervalDays: 30,
 		includedRequests: 2500,
 		accessTier: 'premium',
+		isActive: true,
 	},
 ]
+
+// TODO: Replace placeholder AI pricing/limits with approved business values before enabling these plans in UI/production.
+export const AI_PLAN_CATALOG = [
+	{
+		code: 'ai-starter-placeholder',
+		name: 'AI Starter Placeholder',
+		productType: 'ai',
+		priceMinor: 99000,
+		intervalDays: 30,
+		includedRequests: 0,
+		accessTier: 'basic',
+		aiChatLimit: 100,
+		aiVoiceLimit: 25,
+		aiFileUploadLimit: 10,
+		isActive: false,
+	},
+	{
+		code: 'ai-pro-placeholder',
+		name: 'AI Pro Placeholder',
+		productType: 'ai',
+		priceMinor: 199000,
+		intervalDays: 30,
+		includedRequests: 0,
+		accessTier: 'premium',
+		aiChatLimit: 500,
+		aiVoiceLimit: 100,
+		aiFileUploadLimit: 50,
+		isActive: false,
+	},
+]
+
+export const ALL_PLAN_CATALOG = [...PLAN_CATALOG, ...AI_PLAN_CATALOG]
 
 const BASIC_MODEL_MATCHERS = [
 	'gpt-4o-mini',

@@ -19,6 +19,9 @@ const env = {
 	databaseUrl: process.env.DATABASE_URL || '',
 	jwtSecret: process.env.JWT_SECRET || 'change_me_in_prod',
 	openaiApiKey: process.env.OPENAI_API_KEY || '',
+	vkAiBackendUrl: process.env.VK_AI_BACKEND_URL || '',
+	vkAiBackendApiKey: process.env.VK_AI_BACKEND_API_KEY || '',
+	vkAiBackendTimeoutMs: toInt(process.env.VK_AI_BACKEND_TIMEOUT_MS, 30000),
 	logLevel: process.env.LOG_LEVEL || 'info',
 }
 

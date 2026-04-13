@@ -5,7 +5,7 @@ import { isLegacyBillingSchemaError, prismaCompat } from '../../db/prisma-compat
 import { AppError } from '../../shared/errors.js'
 import { logBusinessEvent } from '../../shared/observability.js'
 import { isAdminUser } from '../../shared/access.js'
-import { PLAN_CATALOG, PAYG_PRICING_MINOR, formatMoneyMinor } from './billing.catalog.js'
+import { ALL_PLAN_CATALOG, PLAN_CATALOG, PAYG_PRICING_MINOR, formatMoneyMinor } from './billing.catalog.js'
 
 const DEFAULT_CURRENCY = 'RUB'
 
@@ -24,16 +24,21 @@ const createStubQrCode = payload =>
 	)
 
 const billingV2Available = prismaCompat.hasPlanBillingFields && prismaCompat.hasSubscriptionBillingFields
+const CORE_PRODUCT_TYPE = 'core'
 
 const serializePlan = plan => ({
 	id: plan.id,
 	code: plan.code,
 	name: plan.name,
+	productType: plan.productType || CORE_PRODUCT_TYPE,
 	priceMinor: plan.priceMinor,
 	price: formatMoneyMinor(plan.priceMinor),
 	intervalDays: plan.intervalDays,
 	includedRequests: plan.includedRequests,
 	accessTier: plan.accessTier,
+	aiChatLimit: plan.aiChatLimit ?? null,
+	aiVoiceLimit: plan.aiVoiceLimit ?? null,
+	aiFileUploadLimit: plan.aiFileUploadLimit ?? null,
 	isActive: plan.isActive,
 })
 
@@ -78,11 +83,15 @@ const buildLegacyPlans = () =>
 		id: plan.code,
 		code: plan.code,
 		name: plan.name,
+		productType: plan.productType || CORE_PRODUCT_TYPE,
 		priceMinor: plan.priceMinor,
 		price: formatMoneyMinor(plan.priceMinor),
 		intervalDays: plan.intervalDays,
 		includedRequests: plan.includedRequests,
 		accessTier: plan.accessTier,
+		aiChatLimit: plan.aiChatLimit ?? null,
+		aiVoiceLimit: plan.aiVoiceLimit ?? null,
+		aiFileUploadLimit: plan.aiFileUploadLimit ?? null,
 		isActive: true,
 	}))
 
@@ -138,16 +147,20 @@ export const ensurePlanCatalogSeeded = async () => {
 	if (!billingV2Available) return
 
 	await Promise.all(
-		PLAN_CATALOG.map(plan =>
+		ALL_PLAN_CATALOG.map(plan =>
 			prisma.plan.upsert({
 				where: { code: plan.code },
 				update: {
 					name: plan.name,
+					productType: plan.productType || CORE_PRODUCT_TYPE,
 					priceMinor: plan.priceMinor,
 					intervalDays: plan.intervalDays,
 					includedRequests: plan.includedRequests,
 					accessTier: plan.accessTier,
-					isActive: true,
+					aiChatLimit: plan.aiChatLimit ?? null,
+					aiVoiceLimit: plan.aiVoiceLimit ?? null,
+					aiFileUploadLimit: plan.aiFileUploadLimit ?? null,
+					isActive: plan.isActive ?? true,
 				},
 				create: plan,
 			}),
@@ -155,7 +168,7 @@ export const ensurePlanCatalogSeeded = async () => {
 	)
 }
 
-export const expireElapsedSubscriptions = async (db, userId = null) => {
+export const expireElapsedSubscriptions = async (db, userId = null, productType = null) => {
 	if (!billingV2Available) return
 
 	const now = new Date()
@@ -163,6 +176,7 @@ export const expireElapsedSubscriptions = async (db, userId = null) => {
 		status: { in: ['active', 'trialing', 'past_due'] },
 		periodEnd: { lt: now },
 		...(userId ? { userId } : {}),
+		...(productType ? { plan: { is: { productType } } } : {}),
 	}
 
 	await db.subscription.updateMany({
@@ -174,7 +188,7 @@ export const expireElapsedSubscriptions = async (db, userId = null) => {
 	})
 }
 
-export const getActiveSubscriptionWithPlan = async (db, userId) =>
+export const getActiveSubscriptionWithPlan = async (db, userId, options = {}) =>
 	!billingV2Available
 		? null
 		: db.subscription.findFirst({
@@ -182,6 +196,7 @@ export const getActiveSubscriptionWithPlan = async (db, userId) =>
 					userId,
 					status: { in: ['active', 'trialing', 'past_due'] },
 					periodEnd: { gt: new Date() },
+					plan: { is: { productType: options.productType || CORE_PRODUCT_TYPE } },
 				},
 				orderBy: { periodEnd: 'desc' },
 				include: { plan: true },
@@ -198,11 +213,11 @@ export const resolveUsageBillingContext = async ({ db = prisma, userId, modelTie
 		}
 	}
 
-	await expireElapsedSubscriptions(db, userId)
+	await expireElapsedSubscriptions(db, userId, CORE_PRODUCT_TYPE)
 
 	const [wallet, subscription] = await Promise.all([
 		db.wallet.findUnique({ where: { userId } }),
-		getActiveSubscriptionWithPlan(db, userId),
+		getActiveSubscriptionWithPlan(db, userId, { productType: CORE_PRODUCT_TYPE }),
 	])
 
 	const hasIncludedAccess =
@@ -437,6 +452,7 @@ export const billingService = {
 				where: {
 					userId,
 					status: { in: ['active', 'trialing', 'past_due'] },
+					plan: { is: { productType: plan.productType || CORE_PRODUCT_TYPE } },
 				},
 				data: {
 					status: 'canceled',
@@ -521,12 +537,15 @@ export const billingService = {
 		try {
 			await ensurePlanCatalogSeeded()
 			await ensureWalletExists(prisma, userId)
-			await expireElapsedSubscriptions(prisma, userId)
+			await expireElapsedSubscriptions(prisma, userId, CORE_PRODUCT_TYPE)
 
 			const [wallet, activeSubscription, plans, ledger, payments] = await Promise.all([
 				prisma.wallet.findUnique({ where: { userId } }),
-				getActiveSubscriptionWithPlan(prisma, userId),
-				prisma.plan.findMany({ where: { isActive: true }, orderBy: [{ priceMinor: 'asc' }] }),
+				getActiveSubscriptionWithPlan(prisma, userId, { productType: CORE_PRODUCT_TYPE }),
+				prisma.plan.findMany({
+					where: { isActive: true, productType: CORE_PRODUCT_TYPE },
+					orderBy: [{ priceMinor: 'asc' }],
+				}),
 				prisma.walletLedger.findMany({
 					where: { userId },
 					take: Math.min(Number(historyLimit) || 20, 100),

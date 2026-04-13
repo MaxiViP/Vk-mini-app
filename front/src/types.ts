@@ -122,6 +122,51 @@ export interface BillingSummary {
 	recentPayments: BillingPayment[]
 }
 
+export interface AiAccessSubscription {
+	id: string
+	status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'expired'
+	startedAt: string
+	expiresAt: string
+	cancelAtPeriodEnd: boolean
+}
+
+export interface AiAccessPlan {
+	id: string
+	code: string
+	name: string
+	productType: 'core' | 'ai'
+	priceMinor: number
+	intervalDays: number
+	includedRequests: number
+	accessTier: 'basic' | 'premium'
+	aiChatLimit: number | null
+	aiVoiceLimit: number | null
+	aiFileUploadLimit: number | null
+	isActive: boolean
+}
+
+export interface AiAccessCounters {
+	chat: number
+	voice: number
+	fileUpload: number
+}
+
+export interface AiAccessCapabilities {
+	chat: boolean
+	voice: boolean
+	fileUpload: boolean
+}
+
+export interface AiAccessResponse {
+	hasAccess: boolean
+	subscription: AiAccessSubscription | null
+	plan: AiAccessPlan | null
+	limits: AiAccessCounters
+	usage: AiAccessCounters
+	remaining: AiAccessCounters
+	capabilities: AiAccessCapabilities
+}
+
 export interface YooKassaPaymentSession {
 	paymentId: string
 	amount: number

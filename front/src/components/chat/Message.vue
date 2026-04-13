@@ -35,7 +35,6 @@ import hljs from 'highlight.js'
 import 'highlight.js/styles/github-dark.css'
 
 import type { Message } from '../../types'
-import { resolveVkAiMediaUrl } from '../../config/chatBackend'
 
 const props = defineProps<{
 	message: Message
@@ -70,7 +69,7 @@ const metaSummary = computed(() => {
 	return result
 })
 
-const resolvedAudioReplyUrl = computed(() => resolveVkAiMediaUrl(props.message.meta?.audioReplyUrl))
+const resolvedAudioReplyUrl = computed(() => props.message.meta?.audioReplyUrl || '')
 
 watch(
 	resolvedAudioReplyUrl,

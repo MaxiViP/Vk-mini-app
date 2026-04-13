@@ -1,4 +1,5 @@
-import { resolveVkAiMediaUrl, vkAiApiBaseUrl, vkAiApiKey } from '../config/chatBackend'
+import { internalApiBaseUrl } from '../config/chatBackend'
+import type { AiAccessResponse } from '../types'
 
 export interface VkAiSource {
 	type: string
@@ -42,102 +43,140 @@ export interface VkAiUploadResponse {
 	extracted_chars?: number
 }
 
-const createHeaders = (headers: Record<string, string> = {}) => ({
-	'X-API-Key': vkAiApiKey,
-	...headers,
-})
+type VkAiError = Error & {
+	status?: number
+	code?: string | null
+	details?: unknown
+}
 
-const getDetail = async (response: Response) => {
-	try {
-		const payload = await response.json()
-		return payload?.detail || payload?.message || `HTTP ${response.status}`
-	} catch {
-		return `HTTP ${response.status}`
+const apiBaseUrl = internalApiBaseUrl || ''
+
+const createHeaders = (accessToken: string, headers: Record<string, string> = {}) => {
+	if (!accessToken) {
+		throw new Error('Требуется авторизация')
+	}
+
+	return {
+		Authorization: `Bearer ${accessToken}`,
+		...headers,
 	}
 }
 
+const createVkAiError = (message: string, options: { status?: number; code?: string | null; details?: unknown } = {}) =>
+	Object.assign(new Error(message), options) as VkAiError
+
+const readErrorPayload = async (response: Response) => {
+	try {
+		return await response.json()
+	} catch {
+		return null
+	}
+}
+
+const getErrorCode = (payload: Record<string, unknown> | null) => {
+	const details = payload?.details
+	if (details && typeof details === 'object' && typeof (details as Record<string, unknown>).code === 'string') {
+		return String((details as Record<string, unknown>).code)
+	}
+
+	if (typeof payload?.code === 'string') return payload.code
+	return null
+}
+
+const getErrorMessage = (payload: Record<string, unknown> | null, status: number) => {
+	if (typeof payload?.message === 'string' && payload.message.trim()) return payload.message
+
+	const details = payload?.details
+	if (details && typeof details === 'object') {
+		const detailsRecord = details as Record<string, unknown>
+		if (typeof detailsRecord.upstreamMessage === 'string' && detailsRecord.upstreamMessage.trim()) {
+			return detailsRecord.upstreamMessage
+		}
+	}
+
+	return `HTTP ${status}`
+}
+
+const ensureOk = async (response: Response) => {
+	if (response.ok) return response
+
+	const payload = (await readErrorPayload(response)) as Record<string, unknown> | null
+	throw createVkAiError(getErrorMessage(payload, response.status), {
+		status: response.status,
+		code: getErrorCode(payload),
+		details: payload?.details || null,
+	})
+}
+
+export const getVkAiErrorCode = (error: unknown) =>
+	(error as { code?: string | null; details?: { code?: string | null } | null })?.code ||
+	(error as { details?: { code?: string | null } | null })?.details?.code ||
+	null
+
 export const vkAiApi = {
-	async health() {
-		const response = await fetch(`${vkAiApiBaseUrl}/api/health`, {
-			headers: createHeaders(),
+	async getAccess(accessToken: string) {
+		const response = await fetch(`${apiBaseUrl}/api/ai/access`, {
+			headers: createHeaders(accessToken),
 		})
-		if (!response.ok) throw new Error(await getDetail(response))
-		return response.json() as Promise<{ status: string }>
+		await ensureOk(response)
+		return response.json() as Promise<AiAccessResponse>
 	},
 
-	async chat(payload: { userId: string; conversationId: string; message: string }) {
-		const response = await fetch(`${vkAiApiBaseUrl}/api/chat`, {
+	async chat(payload: { accessToken: string; conversationId: string; message: string }) {
+		const response = await fetch(`${apiBaseUrl}/api/ai/chat`, {
 			method: 'POST',
-			headers: createHeaders({ 'Content-Type': 'application/json' }),
+			headers: createHeaders(payload.accessToken, { 'Content-Type': 'application/json' }),
 			body: JSON.stringify({
-				user_id: payload.userId,
-				conversation_id: payload.conversationId,
+				conversationId: payload.conversationId,
 				message: payload.message,
 			}),
 		})
-		if (!response.ok) throw new Error(await getDetail(response))
-
-		const data = (await response.json()) as VkAiChatResponse
-		if (data.audio_reply_url) {
-			data.audio_reply_url = resolveVkAiMediaUrl(data.audio_reply_url)
-		}
-		return data
+		await ensureOk(response)
+		return response.json() as Promise<VkAiChatResponse>
 	},
 
-	async uploadFile(payload: { userId: string; conversationId: string; file: File }) {
+	async uploadFile(payload: { accessToken: string; conversationId: string; file: File }) {
 		const formData = new FormData()
-		formData.set('user_id', payload.userId)
-		formData.set('conversation_id', payload.conversationId)
+		formData.set('conversationId', payload.conversationId)
 		formData.set('file', payload.file)
 
-		const response = await fetch(`${vkAiApiBaseUrl}/api/files/upload`, {
+		const response = await fetch(`${apiBaseUrl}/api/ai/files/upload`, {
 			method: 'POST',
-			headers: createHeaders(),
+			headers: createHeaders(payload.accessToken),
 			body: formData,
 		})
-		if (!response.ok) throw new Error(await getDetail(response))
+		await ensureOk(response)
 		return response.json() as Promise<VkAiUploadResponse>
 	},
 
-	async sendVoice(payload: { userId: string; conversationId: string; audio: File }) {
+	async sendVoice(payload: { accessToken: string; conversationId: string; audio: File }) {
 		const formData = new FormData()
-		formData.set('user_id', payload.userId)
-		formData.set('conversation_id', payload.conversationId)
+		formData.set('conversationId', payload.conversationId)
 		formData.set('audio', payload.audio)
 
-		const response = await fetch(`${vkAiApiBaseUrl}/api/voice`, {
+		const response = await fetch(`${apiBaseUrl}/api/ai/voice`, {
 			method: 'POST',
-			headers: createHeaders(),
+			headers: createHeaders(payload.accessToken),
 			body: formData,
 		})
-		if (!response.ok) throw new Error(await getDetail(response))
-
-		const data = (await response.json()) as VkAiVoiceResponse
-		if (data.audio_reply_url) {
-			data.audio_reply_url = resolveVkAiMediaUrl(data.audio_reply_url)
-		}
-		return data
+		await ensureOk(response)
+		return response.json() as Promise<VkAiVoiceResponse>
 	},
 
-	async getConversation(payload: { userId: string; conversationId: string }) {
-		const query = new URLSearchParams({ user_id: payload.userId })
-		const response = await fetch(`${vkAiApiBaseUrl}/api/conversations/${encodeURIComponent(payload.conversationId)}?${query}`, {
-			headers: createHeaders(),
+	async getConversation(payload: { accessToken: string; conversationId: string }) {
+		const response = await fetch(`${apiBaseUrl}/api/ai/conversations/${encodeURIComponent(payload.conversationId)}`, {
+			headers: createHeaders(payload.accessToken),
 		})
-		if (!response.ok) throw new Error(await getDetail(response))
+		await ensureOk(response)
 		return response.json() as Promise<VkAiConversationResponse>
 	},
 
-	async resetConversation(payload: { userId: string; conversationId: string }) {
-		const query = new URLSearchParams({ user_id: payload.userId })
-		const response = await fetch(
-			`${vkAiApiBaseUrl}/api/conversations/${encodeURIComponent(payload.conversationId)}/reset?${query}`,
-			{
-				method: 'POST',
-				headers: createHeaders(),
-			},
-		)
-		if (!response.ok) throw new Error(await getDetail(response))
+	async resetConversation(payload: { accessToken: string; conversationId: string }) {
+		const response = await fetch(`${apiBaseUrl}/api/ai/conversations/${encodeURIComponent(payload.conversationId)}/reset`, {
+			method: 'POST',
+			headers: createHeaders(payload.accessToken),
+		})
+		await ensureOk(response)
 		return response.json() as Promise<{ status: string; user_id: string; conversation_id: string }>
 	},
 }
