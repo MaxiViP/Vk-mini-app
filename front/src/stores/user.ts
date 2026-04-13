@@ -578,7 +578,12 @@ export const useUserStore = defineStore('user', () => {
 			throw error
 		}
 
-		await syncProfileFromServer()
+		try {
+			await syncProfileFromServer()
+		} catch (error) {
+			console.warn('Post-purchase profile sync failed:', error)
+		}
+
 		return response
 	}
 
