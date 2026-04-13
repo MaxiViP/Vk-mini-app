@@ -1,0 +1,9 @@
+{
+	"workspaces": [
+		"front",
+		"back"
+	],
+	"scripts": {
+		"dev": "concurrently \"npm run dev --workspace=front\" \"npm run dev --workspace=back\""
+	}
+}

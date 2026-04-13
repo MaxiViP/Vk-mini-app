@@ -4,6 +4,7 @@ import axios from 'axios'
 import jwt from 'jsonwebtoken'
 
 import { AppError } from '../../shared/errors.js'
+import logger from '../../config/logger.js'
 import { authService } from './auth.service.js'
 
 const allowedProviders = new Set(['vk', 'google', 'yandex'])
@@ -38,6 +39,13 @@ const providerConfigs = {
 		clientSecret: process.env.YANDEX_CLIENT_SECRET || '',
 		scope: process.env.YANDEX_OAUTH_SCOPE || 'login:email login:info',
 	},
+}
+
+const maskValue = (value, visible = 8) => {
+	const normalized = String(value || '')
+	if (!normalized) return ''
+	if (normalized.length <= visible) return normalized
+	return `...${normalized.slice(-visible)}`
 }
 
 const buildProviderAuthUrl = ({ provider, state, redirectUri }) => {
@@ -86,14 +94,30 @@ const createSignedState = ({ provider, redirectUri }) =>
 const resolveStatePayload = ({ provider, state }) => {
 	const saved = pendingStates.get(state)
 	if (saved && saved.provider === provider && saved.expiresAt >= Date.now()) {
+		logger.info('OAuth state resolved from memory', {
+			provider,
+			state: maskValue(state),
+			redirectUri: saved.redirectUri,
+		})
 		pendingStates.delete(state)
 		return { redirectUri: saved.redirectUri }
 	}
 	if (saved) {
+		logger.warn('OAuth state found in memory but rejected', {
+			provider,
+			state: maskValue(state),
+			savedProvider: saved.provider,
+			expiresAt: new Date(saved.expiresAt).toISOString(),
+			isExpired: saved.expiresAt < Date.now(),
+		})
 		pendingStates.delete(state)
 	}
 
 	if (provider === 'vk' && state === 'vk-bridge') {
+		logger.info('OAuth state resolved via VK bridge shortcut', {
+			provider,
+			redirectUri: process.env.VK_REDIRECT_URI || '',
+		})
 		return { redirectUri: process.env.VK_REDIRECT_URI || '' }
 	}
 
@@ -103,8 +127,17 @@ const resolveStatePayload = ({ provider, state }) => {
 		if (payload?.provider !== provider) return null
 		if (typeof payload?.redirectUri !== 'string' || !payload.redirectUri) return null
 
+		logger.info('OAuth state resolved from signed JWT', {
+			provider,
+			state: maskValue(state),
+			redirectUri: payload.redirectUri,
+		})
 		return { redirectUri: payload.redirectUri }
 	} catch {
+		logger.warn('OAuth state verification failed', {
+			provider,
+			state: maskValue(state),
+		})
 		return null
 	}
 }
@@ -123,7 +156,20 @@ const toProviderErrorDetails = error => ({
 })
 
 const exchangeOAuthCode = async ({ provider, code, redirectUri, codeVerifier }) => {
+	logger.info('OAuth code exchange started', {
+		provider,
+		redirectUri,
+		hasCode: Boolean(code),
+		code: maskValue(code),
+		hasCodeVerifier: Boolean(codeVerifier),
+		providerConfigPresent: isProviderConfigPresent(provider),
+	})
+
 	if (shouldUseFallback(provider)) {
+		logger.warn('OAuth provider config missing, fallback profile will be used', {
+			provider,
+			redirectUri,
+		})
 		return fallbackProfileFromCode({ provider, code })
 	}
 	if (!redirectUri) {
@@ -160,6 +206,13 @@ const exchangeOAuthCode = async ({ provider, code, redirectUri, codeVerifier }) 
 			})
 		}
 
+		logger.info('OAuth token exchange succeeded', {
+			provider,
+			redirectUri,
+			hasAccessToken: Boolean(accessToken),
+			tokenType: tokenRes.data?.token_type || null,
+		})
+
 		if (!config.profileUrl) {
 			return fallbackProfileFromCode({ provider, code })
 		}
@@ -170,6 +223,14 @@ const exchangeOAuthCode = async ({ provider, code, redirectUri, codeVerifier }) 
 		})
 
 		const profile = profileRes.data || {}
+		logger.info('OAuth profile fetch succeeded', {
+			provider,
+			redirectUri,
+			profileKeys: Object.keys(profile),
+			providerUserId: maskValue(
+				String(profile.id || profile.sub || profile.default_email || profile.login || profile.uid || ''),
+			),
+		})
 		return {
 			providerUserId: String(
 				profile.id || profile.sub || profile.default_email || profile.login || profile.uid || crypto.randomUUID(),
@@ -182,6 +243,15 @@ const exchangeOAuthCode = async ({ provider, code, redirectUri, codeVerifier }) 
 			},
 		}
 	} catch (error) {
+		logger.error('OAuth code exchange failed', {
+			provider,
+			redirectUri,
+			code: maskValue(code),
+			status: error?.response?.status || error?.statusCode || null,
+			message: error?.message || 'Unknown OAuth error',
+			providerMessage: error?.response?.data?.error_description || error?.response?.data?.error || null,
+		})
+
 		if (ALLOW_OAUTH_FALLBACK) {
 			return fallbackProfileFromCode({ provider, code })
 		}
@@ -205,6 +275,13 @@ export const oauthService = {
 		pendingStates.set(state, { provider, redirectUri, expiresAt: Date.now() + STATE_TTL_MS })
 		const authUrl = buildProviderAuthUrl({ provider, state, redirectUri })
 
+		logger.info('OAuth start created', {
+			provider,
+			redirectUri,
+			state: maskValue(state),
+			providerConfigPresent: isProviderConfigPresent(provider),
+		})
+
 		return { authUrl, state }
 	},
 
@@ -212,8 +289,21 @@ export const oauthService = {
 		if (!allowedProviders.has(provider)) throw new AppError('Unsupported OAuth provider', 400)
 		if (!code || !state) throw new AppError('code and state are required', 400)
 
+		logger.info('OAuth finalize requested', {
+			provider,
+			code: maskValue(code),
+			state: maskValue(state),
+			hasCodeVerifier: Boolean(codeVerifier),
+			ip,
+			userAgent,
+		})
+
 		const saved = resolveStatePayload({ provider, state })
 		if (!saved) {
+			logger.warn('OAuth finalize rejected because state is invalid', {
+				provider,
+				state: maskValue(state),
+			})
 			throw new AppError('Invalid OAuth state', 400)
 		}
 
@@ -224,7 +314,19 @@ export const oauthService = {
 			codeVerifier,
 		})
 
+		logger.info('OAuth finalize resolved provider profile', {
+			provider,
+			redirectUri: saved.redirectUri,
+			providerUserId: maskValue(providerUserId),
+			profileKeys: Object.keys(profile || {}),
+		})
+
 		const user = await authService.upsertOAuthUser({ provider, providerUserId, profile })
+		logger.info('OAuth finalize completed', {
+			provider,
+			userId: user.id,
+			redirectUri: saved.redirectUri,
+		})
 		return authService.issueTokens({ user, userAgent, ip })
 	},
 }
