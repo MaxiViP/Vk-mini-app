@@ -17,6 +17,7 @@ import { errorHandler, notFoundHandler } from './shared/errors.js'
 
 const app = express()
 
+app.set('trust proxy', 1)
 app.use(cors())
 app.use(express.json({ limit: '1mb' }))
 app.use(apiRateLimit)
