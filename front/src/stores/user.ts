@@ -566,7 +566,10 @@ export const useUserStore = defineStore('user', () => {
 
 	async function purchasePlan(planCode: string) {
 		if (!token.value) throw new Error('Требуется авторизация')
-		const idempotencyKey = crypto.randomUUID()
+		const idempotencyKey =
+			typeof crypto !== 'undefined' && crypto.randomUUID
+				? crypto.randomUUID()
+				: `${Date.now()}-${Math.random().toString(16).slice(2)}`
 
 		let response
 		try {
