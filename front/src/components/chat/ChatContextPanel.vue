@@ -48,6 +48,68 @@
 						</section>
 
 						<section class="context-section">
+							<h4>Память AI</h4>
+							<label class="context-label" for="user-memory-textarea">
+								Память AI — используется во всех AI-чатах. Сюда можно сохранить постоянные инструкции: как отвечать, что учитывать о вас, какой стиль держать.
+							</label>
+							<div class="context-presets">
+								<span class="context-presets__label">Шаблоны памяти</span>
+								<div class="context-presets__list">
+									<button
+										v-for="preset in userMemoryPresets"
+										:key="preset.label"
+										class="context-inline-btn"
+										type="button"
+										@click="applyUserMemoryPreset(preset.value)"
+										:disabled="userMemoryStatus === 'saving'"
+									>
+										{{ preset.label }}
+									</button>
+								</div>
+							</div>
+							<textarea
+								id="user-memory-textarea"
+								v-model="userMemory"
+								class="context-textarea"
+								placeholder="Например: обращайся ко мне на ты, отвечай по делу, учитывай, что я backend-разработчик..."
+								rows="5"
+								:maxlength="USER_MEMORY_MAX_LENGTH"
+							></textarea>
+							<div class="context-inline-actions">
+								<button class="context-inline-btn" type="button" @click="clearUserMemory" :disabled="userMemoryStatus === 'saving'">
+									Очистить память
+								</button>
+							</div>
+							<p class="context-hint">
+								{{ userMemory.length }}/{{ USER_MEMORY_MAX_LENGTH }}
+								<span v-if="userMemoryStatus === 'saving'">• сохраняется...</span>
+								<span v-else-if="userMemoryStatus === 'saved'">• сохранено</span>
+								<span v-else-if="userMemoryStatus === 'error'">• ошибка сохранения</span>
+							</p>
+							<p class="context-hint">Память будет применяться ко всем новым AI-ответам.</p>
+						</section>
+
+						<section class="context-section">
+							<h4>Контекст для AI</h4>
+							<label class="context-label" for="session-context-textarea">
+								Контекст для AI — действует только в текущей сессии. Подходит для временных правил и текущих задач.
+							</label>
+							<textarea
+								id="session-context-textarea"
+								v-model="sessionContext"
+								class="context-textarea"
+								placeholder="Например: отвечай кратко, учитывай, что я разработчик..."
+								rows="5"
+								:maxlength="SESSION_CONTEXT_MAX_LENGTH"
+							></textarea>
+							<div class="context-inline-actions">
+								<button class="context-inline-btn" type="button" @click="clearSessionContext">Очистить контекст</button>
+							</div>
+							<p class="context-hint">{{ sessionContext.length }}/{{ SESSION_CONTEXT_MAX_LENGTH }}</p>
+							<p class="context-hint">Контекст применяется только к текущей AI-сессии.</p>
+						</section>
+
+						<section class="context-section">
 							<h4>Сессия</h4>
 							<div class="context-card">
 								<p><b>Status:</b> {{ chat.backendStatus }}</p>
@@ -99,21 +161,105 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
+import { fetchAiMemory, saveAiMemory } from '../../api/workspace'
 import { useChatStore } from '../../stores/chat'
+import { useUserStore } from '../../stores/user'
 
-defineProps<{ visible: boolean }>()
+const props = defineProps<{ visible: boolean }>()
 const emit = defineEmits<{ (e: 'update:visible', value: boolean): void }>()
 const chat = useChatStore()
+const userStore = useUserStore()
+
+const SESSION_CONTEXT_MAX_LENGTH = 1200
+const USER_MEMORY_MAX_LENGTH = 1200
+const userMemoryPresets = [
+	{
+		label: 'Разработчик',
+		value: 'Отвечай структурно и по делу. Делай упор на практическую реализацию, код, риски и короткие примеры.',
+	},
+	{
+		label: 'Маркетолог',
+		value: 'Отвечай с фокусом на аудиторию, оффер, позиционирование, воронку, метрики и маркетинговые гипотезы.',
+	},
+	{
+		label: 'Копирайтер',
+		value: 'Пиши ясно, живо и убедительно. Предлагай сильные формулировки, заголовки и несколько стилистических вариантов.',
+	},
+]
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const isRecording = ref(false)
+const sessionContext = ref('')
+const userMemory = ref('')
+const userMemoryStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+const isHydratingUserMemory = ref(false)
 let mediaRecorder: MediaRecorder | null = null
 let mediaStream: MediaStream | null = null
 let recordedChunks: Blob[] = []
+let saveUserMemoryTimer: number | null = null
 
 const close = () => emit('update:visible', false)
 const formatDate = (value: number) => new Date(value).toLocaleString()
+const normalizeLimitedText = (value: string, maxLength: number) => String(value || '').slice(0, maxLength)
+const loadSessionContext = () => {
+	sessionContext.value = chat.readSessionContext(userStore.user?.vkId, chat.conversationId)
+}
+const clearSaveUserMemoryTimer = () => {
+	if (saveUserMemoryTimer) {
+		window.clearTimeout(saveUserMemoryTimer)
+		saveUserMemoryTimer = null
+	}
+}
+
+const loadUserMemory = async () => {
+	if (!userStore.token) {
+		userMemory.value = ''
+		userMemoryStatus.value = 'idle'
+		return
+	}
+
+	isHydratingUserMemory.value = true
+	try {
+		const payload = await fetchAiMemory(userStore.token)
+		userMemory.value = normalizeLimitedText(payload.aiMemory || '', USER_MEMORY_MAX_LENGTH)
+		userMemoryStatus.value = 'idle'
+	} catch (error) {
+		userMemoryStatus.value = 'error'
+		console.warn('Failed to load AI memory', error)
+	} finally {
+		isHydratingUserMemory.value = false
+	}
+}
+
+const persistUserMemory = async (value: string) => {
+	if (!userStore.token) return
+
+	userMemoryStatus.value = 'saving'
+	try {
+		const payload = await saveAiMemory(userStore.token, value)
+		userMemory.value = normalizeLimitedText(payload.aiMemory || '', USER_MEMORY_MAX_LENGTH)
+		userMemoryStatus.value = 'saved'
+	} catch (error) {
+		userMemoryStatus.value = 'error'
+		console.warn('Failed to save AI memory', error)
+	}
+}
+const applyUserMemoryPreset = (value: string) => {
+	const normalized = normalizeLimitedText(value, USER_MEMORY_MAX_LENGTH)
+	userMemory.value = normalized
+	clearSaveUserMemoryTimer()
+	void persistUserMemory(normalized.trim())
+}
+const clearUserMemory = () => {
+	userMemory.value = ''
+	clearSaveUserMemoryTimer()
+	void persistUserMemory('')
+}
+const clearSessionContext = () => {
+	sessionContext.value = ''
+	chat.writeSessionContext('', userStore.user?.vkId, chat.conversationId)
+}
 
 const stopRecordingTracks = () => {
 	mediaStream?.getTracks().forEach(track => track.stop())
@@ -186,6 +332,52 @@ const toggleVoiceRecording = async () => {
 		chat.addSystemMessage(`Голосовой ввод недоступен: ${(error as Error).message}`)
 	}
 }
+
+watch(
+	() => `${userStore.user?.vkId || 'guest'}:${chat.conversationId}`,
+	() => {
+		loadSessionContext()
+	},
+	{ immediate: true },
+)
+
+watch(sessionContext, value => {
+	const normalized = normalizeLimitedText(value, SESSION_CONTEXT_MAX_LENGTH)
+	if (normalized !== value) {
+		sessionContext.value = normalized
+		return
+	}
+
+	chat.writeSessionContext(normalized, userStore.user?.vkId, chat.conversationId)
+})
+
+watch(
+	() => [props.visible, userStore.user?.vkId] as const,
+	([visible]) => {
+		if (!visible) return
+		void loadUserMemory()
+	},
+	{ immediate: true },
+)
+
+watch(userMemory, value => {
+	const normalized = normalizeLimitedText(value, USER_MEMORY_MAX_LENGTH)
+	if (normalized !== value) {
+		userMemory.value = normalized
+		return
+	}
+
+	if (isHydratingUserMemory.value || !props.visible || !userStore.token) return
+
+	clearSaveUserMemoryTimer()
+	saveUserMemoryTimer = window.setTimeout(() => {
+		void persistUserMemory(normalized.trim())
+	}, 400)
+})
+
+onBeforeUnmount(() => {
+	clearSaveUserMemoryTimer()
+})
 </script>
 
 <style scoped>
@@ -251,6 +443,95 @@ const toggleVoiceRecording = async () => {
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
+}
+
+.context-label {
+	color: var(--color-text-muted);
+	font-size: 13px;
+	line-height: 1.45;
+}
+
+.context-hint {
+	margin: 0;
+	color: var(--color-text-muted);
+	font-size: 12px;
+}
+
+.context-inline-actions {
+	display: flex;
+	justify-content: flex-start;
+}
+
+.context-presets {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.context-presets__label {
+	font-size: 12px;
+	color: var(--color-text-muted);
+}
+
+.context-presets__list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.context-inline-btn {
+	padding: 7px 10px;
+	border-radius: 999px;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	background: rgba(255, 255, 255, 0.04);
+	color: var(--color-text-soft);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+	transition:
+		background var(--transition-base),
+		border-color var(--transition-base),
+		transform var(--transition-fast);
+}
+
+.context-inline-btn:hover:not(:disabled) {
+	transform: translateY(-1px);
+	background: rgba(255, 255, 255, 0.07);
+	border-color: rgba(255, 255, 255, 0.14);
+}
+
+.context-inline-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.context-textarea {
+	width: 100%;
+	min-height: 112px;
+	padding: 12px 14px;
+	border-radius: 16px;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	background: rgba(255, 255, 255, 0.04);
+	color: var(--color-text);
+	font: inherit;
+	line-height: 1.5;
+	resize: vertical;
+	box-sizing: border-box;
+	outline: none;
+	transition:
+		border-color var(--transition-base),
+		box-shadow var(--transition-base),
+		background var(--transition-base);
+}
+
+.context-textarea:focus {
+	border-color: var(--mode-accent-border, rgba(16, 163, 127, 0.35));
+	box-shadow: 0 0 0 3px var(--mode-accent-soft, rgba(16, 163, 127, 0.12));
+	background: rgba(255, 255, 255, 0.05);
+}
+
+.context-textarea::placeholder {
+	color: var(--color-text-muted);
 }
 
 .context-actions {

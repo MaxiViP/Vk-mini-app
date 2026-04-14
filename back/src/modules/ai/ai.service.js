@@ -4,9 +4,14 @@ import prisma from '../../db/prisma.js'
 import { AppError } from '../../shared/errors.js'
 import { ensurePlanCatalogSeeded, expireElapsedSubscriptions, getActiveSubscriptionWithPlan } from '../billing/billing.service.js'
 import { aiClient } from './ai.client.js'
+import { workspaceService } from '../workspace/workspace.service.js'
 
 const AI_PRODUCT_TYPE = 'ai'
 const AI_PROVIDER = 'vk_ai'
+const AI_MEMORY_MAX_LENGTH = 1200
+const AI_SESSION_CONTEXT_MAX_LENGTH = 1200
+const AI_MEMORY_CACHE_TTL_MS = 15000
+const aiMemoryCache = new Map()
 
 const USAGE_MODELS = {
 	chat: 'chat',
@@ -184,8 +189,44 @@ const createUsageEvent = ({ userId, subscription, modelName }) =>
 	})
 
 const toExternalUserId = userId => String(userId)
+const normalizeAiBlock = (value, maxLength) => String(value || '').slice(0, maxLength).trim()
+const buildAiPromptMessage = ({ userMemory, sessionContext, message }) =>
+	[
+		userMemory ? `ИНСТРУКЦИЯ:\n${userMemory}` : '',
+		sessionContext ? `КОНТЕКСТ:\n${sessionContext}` : '',
+		`ВОПРОС:\n${message}`,
+	]
+		.filter(Boolean)
+		.join('\n\n')
+const getCachedAiMemory = async userId => {
+	const key = String(userId)
+	const now = Date.now()
+	const cached = aiMemoryCache.get(key)
+
+	if (cached && cached.expiresAt > now) {
+		return cached.value
+	}
+
+	const { aiMemory } = await workspaceService.getAiMemory(userId)
+	const normalized = normalizeAiBlock(aiMemory, AI_MEMORY_MAX_LENGTH)
+	aiMemoryCache.set(key, {
+		value: normalized,
+		expiresAt: now + AI_MEMORY_CACHE_TTL_MS,
+	})
+	return normalized
+}
+const setCachedAiMemory = (userId, aiMemory) => {
+	aiMemoryCache.set(String(userId), {
+		value: normalizeAiBlock(aiMemory, AI_MEMORY_MAX_LENGTH),
+		expiresAt: Date.now() + AI_MEMORY_CACHE_TTL_MS,
+	})
+}
 
 export const aiService = {
+	syncAiMemoryCache(userId, aiMemory) {
+		setCachedAiMemory(userId, aiMemory)
+	},
+
 	async getPlans() {
 		await ensurePlanCatalogSeeded()
 
@@ -211,15 +252,23 @@ export const aiService = {
 		}
 	},
 
-	async sendChat({ userId, conversationId, message }) {
+	async sendChat({ userId, conversationId, message, sessionContext = '' }) {
 		const access = await assertSubscriptionActive(userId)
 		assertCapability(access, 'chat')
 		assertRemaining(access, 'chat')
+		const normalizedSessionContext = normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH)
+		const normalizedUserMemory = await getCachedAiMemory(userId)
+		const fullMessage = buildAiPromptMessage({
+			userMemory: normalizedUserMemory,
+			sessionContext: normalizedSessionContext,
+			message,
+		})
 
 		const response = await aiClient.chat({
 			userId: toExternalUserId(userId),
 			conversationId,
-			message,
+			message: fullMessage,
+			sessionContext: normalizedSessionContext || undefined,
 		})
 
 		await createUsageEvent({

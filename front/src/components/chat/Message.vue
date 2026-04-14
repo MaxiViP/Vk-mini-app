@@ -113,26 +113,30 @@ const saveToNotes = () => {
 }
 
 .meta-chip {
-	background: rgba(255, 255, 255, 0.08);
-	color: var(--color-text-soft);
+	background: var(--mode-accent-soft);
+	border: 1px solid var(--mode-accent-border);
+	color: var(--mode-accent-strong);
 }
 
 .source-chip {
-	background: rgba(16, 163, 127, 0.12);
-	color: #9ee8d6;
+	background: var(--mode-accent-soft);
+	border: 1px solid var(--mode-accent-border);
+	color: var(--mode-accent-strong);
 }
 
 .meta-transcript {
 	margin-bottom: 10px;
 	padding: 8px 10px;
 	border-radius: 12px;
-	background: rgba(125, 145, 255, 0.12);
-	color: #d5ddff;
+	background: var(--mode-accent-soft);
+	border: 1px solid var(--mode-accent-border);
+	color: var(--mode-accent-strong);
 	font-size: 13px;
 }
 
 .audio-reply {
 	width: 100%;
 	margin-top: 12px;
+	accent-color: var(--mode-accent);
 }
 </style>

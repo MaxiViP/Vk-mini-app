@@ -130,13 +130,14 @@ export const vkAiApi = {
 		return response.json() as Promise<AiAccessResponse>
 	},
 
-	async chat(payload: { accessToken: string; conversationId: string; message: string }) {
+	async chat(payload: { accessToken: string; conversationId: string; message: string; sessionContext?: string }) {
 		const response = await fetch(`${apiBaseUrl}/api/ai/chat`, {
 			method: 'POST',
 			headers: createHeaders(payload.accessToken, { 'Content-Type': 'application/json' }),
 			body: JSON.stringify({
 				conversationId: payload.conversationId,
 				message: payload.message,
+				sessionContext: payload.sessionContext,
 			}),
 		})
 		await ensureOk(response)

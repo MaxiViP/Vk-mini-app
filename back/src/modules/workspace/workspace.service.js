@@ -1,5 +1,6 @@
 import prisma from '../../db/prisma.js'
 
+const AI_MEMORY_MAX_LENGTH = 1200
 const DEFAULT_NOTES_PAYLOAD = {
 	notes: [],
 	folders: [{ id: 'inbox', name: 'Входящие' }],
@@ -30,6 +31,8 @@ const toMessage = item => ({
 	timestamp: Number(item.timestamp) || Date.now(),
 })
 
+const normalizeAiMemory = value => String(value || '').slice(0, AI_MEMORY_MAX_LENGTH).trim()
+
 const sanitizeChatHistory = payload => {
 	if (!Array.isArray(payload)) return []
 	return payload
@@ -59,9 +62,29 @@ const sanitizeNotesPayload = payload => {
 		: []
 
 	const hasInbox = folders.some(folder => folder.id === 'inbox')
+	const aiMemory = normalizeAiMemory(payload.aiMemory)
+
 	return {
 		notes,
 		folders: hasInbox ? folders : [{ id: 'inbox', name: 'Входящие' }, ...folders],
+		...(aiMemory ? { aiMemory } : {}),
+	}
+}
+
+const mergeNotesPayload = (currentPayload, patch = {}) => {
+	const current = sanitizeNotesPayload(currentPayload)
+	const next = patch && typeof patch === 'object' ? patch : {}
+	const nextNotes = Array.isArray(next.notes) ? sanitizeNotesPayload({ notes: next.notes, folders: current.folders }).notes : current.notes
+	const nextFolders = Array.isArray(next.folders)
+		? sanitizeNotesPayload({ notes: current.notes, folders: next.folders }).folders
+		: current.folders
+	const aiMemory =
+		Object.prototype.hasOwnProperty.call(next, 'aiMemory') ? normalizeAiMemory(next.aiMemory) : normalizeAiMemory(current.aiMemory)
+
+	return {
+		notes: nextNotes,
+		folders: nextFolders,
+		...(aiMemory ? { aiMemory } : {}),
 	}
 }
 
@@ -76,6 +99,19 @@ const upsertDefaultWorkspace = userId => {
 			notesPayload: DEFAULT_NOTES_PAYLOAD,
 		},
 	})
+}
+
+const getOrCreateWorkspaceRecord = async userId => {
+	if (!prisma.userWorkspace) return null
+
+	try {
+		return await upsertDefaultWorkspace(userId)
+	} catch (error) {
+		if (isWorkspaceStorageUnavailable(error)) {
+			return null
+		}
+		throw error
+	}
 }
 
 const buildWorkspaceFallback = payload => ({
@@ -110,17 +146,9 @@ export const workspaceService = {
 	async getWorkspace(userId) {
 		if (!prisma.userWorkspace) return getDefaultWorkspacePayload()
 
-		let workspace
-		try {
-			workspace = await upsertDefaultWorkspace(userId)
-		} catch (error) {
-			if (isWorkspaceStorageUnavailable(error)) {
-				return getDefaultWorkspacePayload()
-			}
-			throw error
-		}
-
+		const workspace = await getOrCreateWorkspaceRecord(userId)
 		if (!workspace) return getDefaultWorkspacePayload()
+
 		return {
 			chatHistory: sanitizeChatHistory(workspace.chatHistory),
 			notesPayload: sanitizeNotesPayload(workspace.notesPayload),
@@ -139,11 +167,32 @@ export const workspaceService = {
 	},
 
 	async saveNotesPayload(userId, notesPayload) {
-		const sanitized = sanitizeNotesPayload(notesPayload)
-		const workspace = await persistWorkspace(userId, { notesPayload: sanitized })
+		const currentWorkspace = await getOrCreateWorkspaceRecord(userId)
+		const mergedNotesPayload = mergeNotesPayload(currentWorkspace?.notesPayload, sanitizeNotesPayload(notesPayload))
+		const workspace = await persistWorkspace(userId, { notesPayload: mergedNotesPayload })
 
 		return {
 			notesPayload: sanitizeNotesPayload(workspace.notesPayload),
+			updatedAt: workspace.updatedAt,
+		}
+	},
+
+	async getAiMemory(userId) {
+		const workspace = await getOrCreateWorkspaceRecord(userId)
+
+		return {
+			aiMemory: normalizeAiMemory(workspace?.notesPayload?.aiMemory),
+			updatedAt: workspace?.updatedAt || new Date(),
+		}
+	},
+
+	async saveAiMemory(userId, aiMemory) {
+		const currentWorkspace = await getOrCreateWorkspaceRecord(userId)
+		const mergedNotesPayload = mergeNotesPayload(currentWorkspace?.notesPayload, { aiMemory })
+		const workspace = await persistWorkspace(userId, { notesPayload: mergedNotesPayload })
+
+		return {
+			aiMemory: normalizeAiMemory(workspace?.notesPayload?.aiMemory),
 			updatedAt: workspace.updatedAt,
 		}
 	},

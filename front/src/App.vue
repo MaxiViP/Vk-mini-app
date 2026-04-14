@@ -1,5 +1,5 @@
 <template>
-	<div class="app-container">
+	<div :class="['app-container', chatModeClass]">
 		<div class="top-bar">
 			<AILogo />
 			<button v-if="userStore.user?.isAdmin" class="pill-btn" @click="showAdmin = true">Админка</button>
@@ -56,6 +56,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { internalApiBaseUrl, isVkAiBackend } from './config/chatBackend'
 import { initVK } from './vk/bridge'
+import { useChatStore } from './stores/chat'
 import { useModelsStore } from './stores/models'
 import { useUserStore } from './stores/user'
 import ProfileTrigger from './components/profile/ProfileTrigger.vue'
@@ -68,6 +69,7 @@ import AuthModal from './components/auth/AuthModal.vue'
 import AdminPanel from './components/admin/AdminPanel.vue'
 
 const modelsStore = useModelsStore()
+const chatStore = useChatStore()
 const userStore = useUserStore()
 
 type NotesPanelExposed = {
@@ -81,6 +83,7 @@ const showAuthModal = ref(false)
 const isChatContextOpen = ref(false)
 const isModelSelectorOpen = ref(false)
 const notesPanelRef = ref<NotesPanelExposed | null>(null)
+const chatModeClass = computed(() => (chatStore.chatMode === 'ai' ? 'theme-ai' : 'theme-core'))
 
 const ACTIVITY_INTERVAL_SEC = 30
 const sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
@@ -284,5 +287,44 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.app-container {
+	--mode-accent: #6ea9ff;
+	--mode-accent-soft: rgba(110, 169, 255, 0.16);
+	--mode-accent-border: rgba(110, 169, 255, 0.32);
+	--mode-accent-strong: #d9e9ff;
+	--mode-accent-glow: rgba(110, 169, 255, 0.24);
+	--mode-panel-bg: rgba(255, 255, 255, 0.04);
+	--mode-panel-bg-strong: rgba(255, 255, 255, 0.06);
+	transition:
+		background 240ms ease,
+		background-color 240ms ease,
+		box-shadow 240ms ease;
+}
 
+.theme-core {
+	--mode-accent: #6ea9ff;
+	--mode-accent-soft: rgba(110, 169, 255, 0.16);
+	--mode-accent-border: rgba(110, 169, 255, 0.32);
+	--mode-accent-strong: #d9e9ff;
+	--mode-accent-glow: rgba(110, 169, 255, 0.24);
+	--mode-panel-bg: rgba(255, 255, 255, 0.04);
+	--mode-panel-bg-strong: rgba(255, 255, 255, 0.06);
+	background:
+		radial-gradient(circle at top left, rgba(84, 132, 255, 0.16), transparent 36%),
+		linear-gradient(180deg, rgba(12, 18, 34, 0.98) 0%, rgba(8, 12, 24, 1) 100%);
+}
+
+.theme-ai {
+	--mode-accent: #24d1b4;
+	--mode-accent-soft: rgba(36, 209, 180, 0.16);
+	--mode-accent-border: rgba(36, 209, 180, 0.34);
+	--mode-accent-strong: #c9fff3;
+	--mode-accent-glow: rgba(36, 209, 180, 0.24);
+	--mode-panel-bg: rgba(7, 34, 35, 0.5);
+	--mode-panel-bg-strong: rgba(10, 43, 44, 0.72);
+	background:
+		radial-gradient(circle at top right, rgba(0, 255, 194, 0.2), transparent 34%),
+		radial-gradient(circle at bottom left, rgba(63, 114, 255, 0.18), transparent 30%),
+		linear-gradient(180deg, rgba(6, 24, 28, 0.98) 0%, rgba(4, 12, 18, 1) 100%);
+}
 </style>

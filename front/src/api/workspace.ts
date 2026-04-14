@@ -22,11 +22,17 @@ export interface WorkspaceNote {
 export interface NotesPayload {
 	notes: WorkspaceNote[]
 	folders: WorkspaceFolder[]
+	aiMemory?: string
 }
 
 export interface WorkspaceResponse {
 	chatHistory: WorkspaceMessage[]
 	notesPayload: NotesPayload
+	updatedAt: string
+}
+
+export interface AiMemoryResponse {
+	aiMemory: string
 	updatedAt: string
 }
 
@@ -66,5 +72,16 @@ export async function saveNotesPayload(token: string, notesPayload: NotesPayload
 	return requestWorkspace<{ notesPayload: NotesPayload; updatedAt: string }>('/api/workspace/me/notes', token, {
 		method: 'PUT',
 		body: JSON.stringify({ notesPayload }),
+	})
+}
+
+export async function fetchAiMemory(token: string): Promise<AiMemoryResponse> {
+	return requestWorkspace<AiMemoryResponse>('/api/workspace/me/ai-memory', token)
+}
+
+export async function saveAiMemory(token: string, aiMemory: string) {
+	return requestWorkspace<AiMemoryResponse>('/api/workspace/me/ai-memory', token, {
+		method: 'PUT',
+		body: JSON.stringify({ aiMemory }),
 	})
 }

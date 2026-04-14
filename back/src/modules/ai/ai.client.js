@@ -171,7 +171,8 @@ export const aiClient = {
 		return requestJson('/api/health')
 	},
 
-	chat({ userId, conversationId, message }) {
+	chat({ userId, conversationId, message, sessionContext }) {
+		void sessionContext
 		return requestJson('/api/chat', {
 			method: 'POST',
 			body: {

@@ -24,8 +24,9 @@
 
 .modal-close {
 	position: absolute;
-	top: 14px;
-	right: 14px;
+	top: 0;
+	right: 0;
+	transform: translate(50%, -50%);
 	width: 32px;
 	height: 32px;
 	display: flex;
@@ -210,8 +211,9 @@
 	}
 
 	.modal-close {
-		top: 10px;
-		right: 10px;
+		top: 8px;
+		right: 8px;
+		transform: none;
 	}
 
 	.modal-container--recharge {

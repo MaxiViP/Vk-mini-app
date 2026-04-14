@@ -10,6 +10,8 @@ import { useUserStore } from './user'
 const STORAGE_KEY_PREFIX = 'chat_history'
 const CONVERSATION_STORAGE_KEY = 'vk_ai_conversation_id'
 const CHAT_MODE_STORAGE_KEY = 'chat_mode'
+const AI_SESSION_CONTEXT_KEY_PREFIX = 'ai:context'
+const AI_SESSION_CONTEXT_MAX_LENGTH = 1200
 
 const EXTERNAL_AI_BUSINESS_CODES = new Set([
 	'AI_SUBSCRIPTION_REQUIRED',
@@ -29,7 +31,10 @@ const toWorkspaceMessage = (message: Message): WorkspaceMessage => ({
 type ChatMode = 'core' | 'ai'
 
 const getStorageKey = (userId?: string, mode: ChatMode = 'core') => `${STORAGE_KEY_PREFIX}:${mode}:${userId || 'guest'}`
+const getAiSessionContextStorageKey = (userId?: string, conversationId?: string) =>
+	`${AI_SESSION_CONTEXT_KEY_PREFIX}:${userId || 'guest'}:${conversationId || createConversationId(userId)}`
 const isLikelyJwt = (token?: string | null) => Boolean(token && token.split('.').length === 3)
+const normalizeSessionContext = (value: string) => String(value || '').slice(0, AI_SESSION_CONTEXT_MAX_LENGTH)
 
 const normalizeMeta = (meta: unknown): MessageMeta | undefined => {
 	if (!meta || typeof meta !== 'object') return undefined
@@ -153,6 +158,30 @@ export const useChatStore = defineStore('chat', () => {
 		const nextId = createConversationId(userId)
 		conversationId.value = nextId
 		localStorage.setItem(CONVERSATION_STORAGE_KEY, nextId)
+	}
+
+	const readSessionContext = (userId = userStore.user?.vkId, currentConversationId = conversationId.value) => {
+		try {
+			return normalizeSessionContext(localStorage.getItem(getAiSessionContextStorageKey(userId, currentConversationId)) || '')
+		} catch {
+			return ''
+		}
+	}
+
+	const writeSessionContext = (value: string, userId = userStore.user?.vkId, currentConversationId = conversationId.value) => {
+		const key = getAiSessionContextStorageKey(userId, currentConversationId)
+		const normalized = normalizeSessionContext(value).trim()
+
+		try {
+			if (!normalized) {
+				localStorage.removeItem(key)
+				return
+			}
+
+			localStorage.setItem(key, normalized)
+		} catch {
+			// ignore localStorage failures
+		}
 	}
 
 	const pushSourceHistory = (payload: {
@@ -512,10 +541,12 @@ export const useChatStore = defineStore('chat', () => {
 
 		try {
 			if (isExternalBackend.value) {
+				const sessionContext = readSessionContext()
 				const response = await vkAiApi.chat({
 					accessToken: getExternalAccessToken(),
 					conversationId: conversationId.value,
 					message: text,
+					sessionContext: sessionContext.trim() || undefined,
 				})
 
 				addSystemMessage(response.reply, {
@@ -691,6 +722,8 @@ export const useChatStore = defineStore('chat', () => {
 		contextFiles,
 		voiceRecords,
 		sourceHistory,
+		readSessionContext,
+		writeSessionContext,
 		sendMessage,
 		abortRequest,
 		sendVoiceMessage,

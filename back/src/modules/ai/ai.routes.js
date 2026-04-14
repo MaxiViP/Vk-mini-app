@@ -77,6 +77,7 @@ router.post('/chat', async (req, res, next) => {
 			userId: req.user.id,
 			conversationId: String(req.body.conversationId),
 			message: String(req.body.message),
+			sessionContext: typeof req.body.sessionContext === 'string' ? req.body.sessionContext : '',
 		})
 
 		res.json(result)

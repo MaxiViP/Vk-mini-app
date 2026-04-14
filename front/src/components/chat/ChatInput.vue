@@ -1,9 +1,9 @@
 <template>
-	<div class="input">
+	<div :class="['input', { 'input--ai': chat.isAiMode }]">
 		<ScrollBtn />
-		<div class="input-inner">
+		<div :class="['input-inner', { 'input-inner--ai': chat.isAiMode }]">
 			<button
-				class="attach-btn"
+				:class="['attach-btn', { 'attach-btn--ai': chat.isAiMode }]"
 				type="button"
 				@click="openFilePicker"
 				:disabled="disabled || uploading || isRecording || isGenerating"
@@ -21,6 +21,7 @@
 			/>
 
 			<input
+				:class="['text-input', { 'text-input--ai': chat.isAiMode }]"
 				v-model="text"
 				@keydown.enter.prevent="handleEnter"
 				placeholder="Напишите сообщение..."
@@ -36,7 +37,7 @@
 				<button
 					v-if="showVoiceTrigger && !isGenerating"
 					ref="voiceButtonRef"
-					class="voice-btn"
+					:class="['voice-btn', { 'voice-btn--ai': chat.isAiMode }]"
 					type="button"
 					@click="toggleVoiceRecording"
 					:disabled="disabled || uploading"
@@ -50,7 +51,7 @@
 
 				<button
 					v-else
-					class="send-btn"
+					:class="['send-btn', { 'send-btn--ai': chat.isAiMode }]"
 					type="button"
 					:disabled="sendButtonDisabled"
 					@click="handleSendOrStopClick"
@@ -69,6 +70,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
+import { useChatStore } from '../../stores/chat'
 import ScrollBtn from '../common/ScrollBtn.vue'
 
 const LONG_PRESS_MS = 450
@@ -89,6 +91,7 @@ const emit = defineEmits<{
 	(e: 'voice-error', message: string): void
 }>()
 
+const chat = useChatStore()
 const text = ref('')
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const deleteZoneRef = ref<HTMLDivElement | null>(null)
@@ -317,6 +320,24 @@ onBeforeUnmount(() => {
 	box-sizing: border-box;
 }
 
+.input-inner--ai {
+	border: 1px solid var(--mode-accent-border);
+	background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
+		var(--mode-panel-bg-strong);
+	box-shadow:
+		0 0 0 1px rgba(255, 255, 255, 0.02),
+		0 16px 40px rgba(0, 0, 0, 0.24);
+}
+
+.input-inner--ai:focus-within {
+	border-color: var(--mode-accent);
+	box-shadow:
+		0 0 0 1px var(--mode-accent-border),
+		0 0 0 6px var(--mode-accent-soft),
+		0 18px 44px rgba(0, 0, 0, 0.26);
+}
+
 .file-input {
 	display: none;
 }
@@ -346,6 +367,12 @@ onBeforeUnmount(() => {
 	flex-shrink: 0;
 }
 
+.attach-btn--ai {
+	background: var(--mode-accent-soft);
+	box-shadow: 0 0 0 1px var(--mode-accent-border);
+	color: var(--mode-accent-strong);
+}
+
 .voice-btn {
 	background: rgba(255, 107, 107, 0.18);
 	color: #ffc3c3;
@@ -356,6 +383,16 @@ onBeforeUnmount(() => {
 	background: var(--color-primary);
 }
 
+.voice-btn--ai,
+.send-btn--ai {
+	box-shadow: 0 0 0 1px var(--mode-accent-border);
+}
+
+.send-btn--ai {
+	background: var(--mode-accent);
+	color: #04261f;
+}
+
 .attach-btn:hover:not(:disabled),
 .voice-btn:hover:not(:disabled),
 .send-btn:hover:not(:disabled) {
@@ -364,6 +401,10 @@ onBeforeUnmount(() => {
 
 .send-btn:hover:not(:disabled) {
 	background: var(--color-primary-hover);
+}
+
+.send-btn--ai:hover:not(:disabled) {
+	background: #35dec1;
 }
 
 .attach-btn:disabled,
@@ -382,6 +423,10 @@ onBeforeUnmount(() => {
 	color: var(--color-text);
 	font-size: 15px;
 	line-height: 1.4;
+}
+
+.text-input--ai {
+	text-shadow: 0 0 18px rgba(36, 209, 180, 0.06);
 }
 
 .input-inner > input:not([type='file'])::placeholder {

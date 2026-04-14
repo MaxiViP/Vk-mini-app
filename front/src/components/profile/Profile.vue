@@ -32,11 +32,14 @@
 				<div class="section-head">
 					<h3>Тарифы и оплата</h3>
 					<p class="billing-subtitle">
-						Источник правды теперь backend: баланс, подписки, списания и история операций хранятся в базе и
-						используются во всех сценариях оплаты.
+						Источник правды теперь backend: баланс, подписки, списания и история операций хранятся в базе и используются
+						во всех сценариях оплаты.
 					</p>
 				</div>
-
+				<div class="profile-actions">
+					<button @click="showRechargeModal = true" class="recharge-btn" :disabled="isBusy">Пополнить</button>
+					<button @click="reloadBilling" class="logout-btn" :disabled="isBusy">Обновить</button>
+				</div>
 				<div class="billing-summary">
 					<p>
 						Текущий режим:
@@ -53,9 +56,7 @@
 						<b>{{ activeSubscription.remainingRequests }}</b>
 					</p>
 
-					<p v-else class="hint-text">
-						Pay-per-request активен автоматически, когда нет действующей подписки.
-					</p>
+					<p v-else class="hint-text">Pay-per-request активен автоматически, когда нет действующей подписки.</p>
 
 					<p class="hint-text">
 						Любой запрос в режиме pay-per-request: {{ userStore.billing?.paygPricing.basic || 5 }} ₽.
@@ -138,17 +139,14 @@
 						AI-подписка истекла. Ниже можно купить новый AI-тариф.
 					</p>
 
-					<p v-else class="hint-text">
-						AI-подписка не активна. Для AI-чата нужна отдельная подписка.
-					</p>
+					<p v-else class="hint-text">AI-подписка не активна. Для AI-чата нужна отдельная подписка.</p>
 				</div>
 
 				<div class="profile-stats">
 					<div class="stat-card">
 						<span class="stat-label">Лимиты</span>
 						<strong>
-							чат {{ formatAiCounter(aiAccess?.limits.chat) }} /
-							voice {{ formatAiCounter(aiAccess?.limits.voice) }} /
+							чат {{ formatAiCounter(aiAccess?.limits.chat) }} / voice {{ formatAiCounter(aiAccess?.limits.voice) }} /
 							files {{ formatAiCounter(aiAccess?.limits.fileUpload) }}
 						</strong>
 					</div>
@@ -156,8 +154,7 @@
 					<div class="stat-card">
 						<span class="stat-label">Использовано</span>
 						<strong>
-							чат {{ formatAiCounter(aiAccess?.usage.chat) }} /
-							voice {{ formatAiCounter(aiAccess?.usage.voice) }} /
+							чат {{ formatAiCounter(aiAccess?.usage.chat) }} / voice {{ formatAiCounter(aiAccess?.usage.voice) }} /
 							files {{ formatAiCounter(aiAccess?.usage.fileUpload) }}
 						</strong>
 					</div>
@@ -165,9 +162,9 @@
 					<div class="stat-card">
 						<span class="stat-label">Осталось</span>
 						<strong>
-							чат {{ formatAiCounter(aiAccess?.remaining.chat) }} /
-							voice {{ formatAiCounter(aiAccess?.remaining.voice) }} /
-							files {{ formatAiCounter(aiAccess?.remaining.fileUpload) }}
+							чат {{ formatAiCounter(aiAccess?.remaining.chat) }} / voice
+							{{ formatAiCounter(aiAccess?.remaining.voice) }} / files
+							{{ formatAiCounter(aiAccess?.remaining.fileUpload) }}
 						</strong>
 					</div>
 				</div>
@@ -231,11 +228,6 @@
 						</li>
 					</ul>
 				</div>
-			</div>
-
-			<div class="profile-actions">
-				<button @click="showRechargeModal = true" class="recharge-btn" :disabled="isBusy">Пополнить</button>
-				<button @click="reloadBilling" class="logout-btn" :disabled="isBusy">Обновить</button>
 			</div>
 		</template>
 
@@ -350,7 +342,8 @@ const ledgerTitle = (reason: BillingLedgerEntry['reason']) => {
 	}
 }
 
-const ledgerAmount = (entry: BillingLedgerEntry) => `${entry.type === 'debit' ? '-' : '+'}${formatMoney(entry.amount)} ₽`
+const ledgerAmount = (entry: BillingLedgerEntry) =>
+	`${entry.type === 'debit' ? '-' : '+'}${formatMoney(entry.amount)} ₽`
 
 const reloadBilling = async () => {
 	if (isBusy.value) return

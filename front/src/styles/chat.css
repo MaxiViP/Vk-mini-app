@@ -193,7 +193,7 @@
 	box-sizing: border-box;
 }
 
-.input::before {
+/* .input::before {
 	content: '';
 	position: absolute;
 	top: -28px;
@@ -202,7 +202,7 @@
 	height: 28px;
 	background: linear-gradient(to top, var(--color-bg), transparent);
 	pointer-events: none;
-}
+} */
 
 .input-inner {
 	width: 100%;

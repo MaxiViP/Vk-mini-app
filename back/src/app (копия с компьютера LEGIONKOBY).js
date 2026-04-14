@@ -8,6 +8,7 @@ import userRoutes from './modules/users/user.routes.js'
 import billingRoutes from './modules/billing/billing.routes.js'
 import usageRoutes from './modules/usage/usage.routes.js'
 import llmRoutes from './modules/llm/llm.routes.js'
+import aiRoutes from './modules/ai/ai.routes.js'
 import adminRoutes from './modules/admin/admin.routes.js'
 import workspaceRoutes from './modules/workspace/workspace.routes.js'
 import { idempotencyMiddleware } from './shared/idempotency.js'
@@ -35,6 +36,7 @@ app.use('/api/billing', billingRoutes)
 app.use('/api/payments', billingRoutes)
 app.use('/api/usage', usageRoutes)
 app.use('/api/llm', llmRoutes)
+app.use('/api/ai', aiRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/workspace', workspaceRoutes)
 
