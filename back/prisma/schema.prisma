@@ -185,10 +185,14 @@ model Plan {
   id               String    @id @default(uuid())
   code             String    @unique
   name             String
+  productType      String?   @map("product_type")
   priceMinor       Int       @map("price_minor")
   intervalDays     Int       @map("interval_days")
   includedRequests Int       @map("included_requests")
   accessTier       ModelTier @default(basic) @map("access_tier")
+  aiChatLimit      Int?      @map("ai_chat_limit")
+  aiVoiceLimit     Int?      @map("ai_voice_limit")
+  aiFileUploadLimit Int?     @map("ai_file_upload_limit")
   isActive         Boolean   @default(true) @map("is_active")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
