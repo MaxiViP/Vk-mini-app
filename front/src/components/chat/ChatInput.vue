@@ -1,6 +1,6 @@
 <template>
 	<div class="input">
-		<ScrollBtn type="top" />
+		<ScrollBtn />
 		<div class="input-inner">
 			<button
 				class="attach-btn"
@@ -28,11 +28,7 @@
 			/>
 
 			<div class="action-slot">
-				<div
-					v-if="isRecording"
-					ref="deleteZoneRef"
-					:class="['delete-zone', { 'delete-zone--active': isDeleteHover }]"
-				>
+				<div v-if="isRecording" ref="deleteZoneRef" :class="['delete-zone', { 'delete-zone--active': isDeleteHover }]">
 					<span class="delete-zone__icon">🗑</span>
 					<span class="delete-zone__label">Удалить</span>
 				</div>

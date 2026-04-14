@@ -1,30 +1,49 @@
 <template>
 	<button
 		class="scroll-btn"
-		:class="type"
 		@click="handleScroll"
 		type="button"
-		:aria-label="type === 'bottom' ? 'Прокрутить вниз' : 'Прокрутить вверх'"
+		:aria-label="isAtBottom ? 'Прокрутить вверх' : 'Прокрутить вниз'"
 	>
-		{{ type === 'bottom' ? '↓' : '↑' }}
+		{{ arrow }}
 	</button>
 </template>
 
 <script setup lang="ts">
+import { ref, onMounted, onUnmounted, computed } from 'vue'
+
 const props = withDefaults(
 	defineProps<{
-		type?: 'top' | 'bottom'
 		target?: string
 	}>(),
 	{
-		type: 'top',
 		target: '',
 	},
 )
 
+const isAtBottom = ref(false)
+
 const getTargetElement = (): HTMLElement | null => {
 	if (!props.target) return null
 	return document.querySelector(props.target) as HTMLElement | null
+}
+
+const checkScrollPosition = () => {
+	const el = getTargetElement()
+
+	if (el) {
+		const threshold = 10
+		isAtBottom.value =
+			el.scrollTop + el.clientHeight >= el.scrollHeight - threshold
+		return
+	}
+
+	const scrollTop = window.scrollY
+	const windowHeight = window.innerHeight
+	const pageHeight = document.documentElement.scrollHeight
+
+	isAtBottom.value =
+		scrollTop + windowHeight >= pageHeight - 10
 }
 
 const handleScroll = () => {
@@ -32,21 +51,42 @@ const handleScroll = () => {
 
 	if (el) {
 		el.scrollTo({
-			top: props.type === 'bottom' ? el.scrollHeight : 0,
+			top: isAtBottom.value ? 0 : el.scrollHeight,
 			behavior: 'smooth',
 		})
 		return
 	}
 
-	const pageHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)
+	const pageHeight = document.documentElement.scrollHeight
 
 	window.scrollTo({
-		top: props.type === 'bottom' ? pageHeight : 0,
+		top: isAtBottom.value ? 0 : pageHeight,
 		behavior: 'smooth',
 	})
 }
-</script>
 
+onMounted(() => {
+	const el = getTargetElement()
+	if (el) {
+		el.addEventListener('scroll', checkScrollPosition)
+	} else {
+		window.addEventListener('scroll', checkScrollPosition)
+	}
+
+	checkScrollPosition()
+})
+
+onUnmounted(() => {
+	const el = getTargetElement()
+	if (el) {
+		el.removeEventListener('scroll', checkScrollPosition)
+	} else {
+		window.removeEventListener('scroll', checkScrollPosition)
+	}
+})
+
+const arrow = computed(() => (isAtBottom.value ? '↑' : '↓'))
+</script>
 <style scoped>
 .scroll-btn {
 	position: absolute;

@@ -27,7 +27,11 @@
 			</div>
 
 			<div class="context-secondary">
-				<button class="context-action" @click="chat.resetConversation" :disabled="chat.isLoading || chat.isUploadingFile">
+				<button
+					class="context-action"
+					@click="chat.resetConversation"
+					:disabled="chat.isLoading || chat.isUploadingFile"
+				>
 					Сбросить контекст
 				</button>
 				<button class="context-action" @click="toggleContextPanel">Открыть панель контекста</button>
@@ -45,7 +49,6 @@
 		</div>
 
 		<div class="messages">
-			<ScrollBtn type="bottom" class="scroll-down" />
 			<Message v-for="(msg, idx) in chat.messages" :key="idx" :message="msg" />
 			<div v-if="chat.isLoading" class="message assistant typing">
 				<div class="avatar">🤖</div>
@@ -158,7 +161,11 @@ async function sendWithFallback(messageText: string) {
 	if (chat.isExternalBackend) {
 		chat.addUserMessage(messageText)
 		try {
-			await chat.sendMessage(messageText, fallbackExternalModel, chat.messages.map(m => ({ role: m.role, content: m.content })))
+			await chat.sendMessage(
+				messageText,
+				fallbackExternalModel,
+				chat.messages.map(m => ({ role: m.role, content: m.content })),
+			)
 		} catch (error) {
 			const typedError = error as Error
 
