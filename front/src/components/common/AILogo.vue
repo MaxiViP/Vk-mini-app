@@ -27,7 +27,6 @@
 	display: block;
 	overflow: visible;
 	margin-top: 5px;
- 
 }
 
 .logo-text {
@@ -37,7 +36,7 @@
 	stroke-linecap: round;
 	stroke-linejoin: round;
 	font-family: 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue', Arial, sans-serif;
-	font-size: 128px;
+	font-size: 90px;
 	font-weight: 200;
 	letter-spacing: 6px;
 
@@ -46,7 +45,7 @@
 
 	stroke-dasharray: 900;
 	stroke-dashoffset: 900;
-	animation: drawLogo 4.2s ease-in-out infinite alternate;
+	animation: drawLogo 2.2s ease-in-out infinite alternate;
 
 	filter: drop-shadow(0 0 6px rgba(246, 173, 85, 0.35));
 }
@@ -66,14 +65,12 @@
 }
 
 @media (max-width: 420px) {
-.ai-logo svg {
-	width: 240px;
-	height: 44px;
-	display: block;
-	overflow: visible;
-	margin-top: 5px;
- 
-}
-
+	.ai-logo svg {
+		width: 240px;
+		height: 44px;
+		display: block;
+		overflow: visible;
+		margin-top: 5px;
+	}
 }
 </style>

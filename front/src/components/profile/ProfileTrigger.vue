@@ -65,6 +65,7 @@ onUnmounted(() => {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+	margin-left: auto;
 	min-width: 44px;
 	min-height: 44px;
 }
