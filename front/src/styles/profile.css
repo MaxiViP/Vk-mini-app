@@ -431,7 +431,7 @@
 @media (max-width: 768px) {
 	.profile {
 		padding: 14px;
-		max-height: min(calc(var(--viewport-height) - 16px), 100%);
+		/* max-height: min(calc(var(--viewport-height) - 16px), 100%); */
 		overflow-y: auto;
 		-webkit-overflow-scrolling: touch;
 	}
@@ -469,7 +469,7 @@
 	.profile {
 		padding: 12px;
 		border-radius: 18px;
-		max-height: calc(var(--viewport-height) - 8px);
+		/* max-height: calc(var(--viewport-height) - 8px); */
 		overflow-y: auto;
 		-webkit-overflow-scrolling: touch;
 	}
