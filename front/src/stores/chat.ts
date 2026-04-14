@@ -4,11 +4,12 @@ import { computed, ref, watch } from 'vue'
 import type { Message, Model, ChatHistoryItem, MessageMeta, SourceHistoryItem } from '../types'
 import { fetchWorkspace, saveChatHistory, type WorkspaceMessage } from '../api/workspace'
 import { getVkAiErrorCode, vkAiApi } from '../api/vkAi'
-import { internalApiBaseUrl, isVkAiBackend } from '../config/chatBackend'
+import { internalApiBaseUrl } from '../config/chatBackend'
 import { useUserStore } from './user'
 
 const STORAGE_KEY_PREFIX = 'chat_history'
 const CONVERSATION_STORAGE_KEY = 'vk_ai_conversation_id'
+const CHAT_MODE_STORAGE_KEY = 'chat_mode'
 
 const EXTERNAL_AI_BUSINESS_CODES = new Set([
 	'AI_SUBSCRIPTION_REQUIRED',
@@ -25,7 +26,9 @@ const toWorkspaceMessage = (message: Message): WorkspaceMessage => ({
 	timestamp: Number(message.timestamp) || Date.now(),
 })
 
-const getStorageKey = (userId?: string) => `${STORAGE_KEY_PREFIX}:${userId || 'guest'}`
+type ChatMode = 'core' | 'ai'
+
+const getStorageKey = (userId?: string, mode: ChatMode = 'core') => `${STORAGE_KEY_PREFIX}:${mode}:${userId || 'guest'}`
 const isLikelyJwt = (token?: string | null) => Boolean(token && token.split('.').length === 3)
 
 const normalizeMeta = (meta: unknown): MessageMeta | undefined => {
@@ -97,11 +100,13 @@ const shouldKeepExternalBackendOnline = (error: unknown) => {
 
 export const useChatStore = defineStore('chat', () => {
 	const userStore = useUserStore()
-	const messages = ref<Message[]>([])
+	const coreMessages = ref<Message[]>([])
+	const aiMessages = ref<Message[]>([])
 	const isLoading = ref(false)
 	const isHydrating = ref(false)
 	const isUploadingFile = ref(false)
 	const backendStatus = ref<'idle' | 'online' | 'offline'>('idle')
+	const chatMode = ref<ChatMode>(localStorage.getItem(CHAT_MODE_STORAGE_KEY) === 'ai' ? 'ai' : 'core')
 	const conversationId = ref(localStorage.getItem(CONVERSATION_STORAGE_KEY) || createConversationId())
 	const contextFiles = ref<string[]>([])
 	const voiceRecords = ref<string[]>([])
@@ -109,9 +114,33 @@ export const useChatStore = defineStore('chat', () => {
 	let saveTimer: number | null = null
 	let abortController: AbortController | null = null
 
-	const isExternalBackend = computed(() => isVkAiBackend)
-	const backendLabel = computed(() => (isExternalBackend.value ? 'VK AI backend' : 'Internal LLM backend'))
+	const messages = computed<Message[]>({
+		get: () => (chatMode.value === 'ai' ? aiMessages.value : coreMessages.value),
+		set: value => {
+			if (chatMode.value === 'ai') {
+				aiMessages.value = value
+				return
+			}
+			coreMessages.value = value
+		},
+	})
+	const isAiMode = computed(() => chatMode.value === 'ai')
+	const isExternalBackend = isAiMode
+	const backendLabel = computed(() => (isAiMode.value ? 'VK AI backend' : 'Internal LLM backend'))
 	const backendBaseUrl = computed(() => internalApiBaseUrl || window.location.origin)
+
+	const setStoredChatMode = (mode: ChatMode) => {
+		chatMode.value = mode
+		localStorage.setItem(CHAT_MODE_STORAGE_KEY, mode)
+	}
+
+	const setModeMessages = (mode: ChatMode, nextMessages: Message[]) => {
+		if (mode === 'ai') {
+			aiMessages.value = nextMessages
+			return
+		}
+		coreMessages.value = nextMessages
+	}
 
 	const getExternalAccessToken = () => {
 		if (!userStore.token || !isLikelyJwt(userStore.token)) {
@@ -145,23 +174,24 @@ export const useChatStore = defineStore('chat', () => {
 		sourceHistory.value = sourceHistory.value.slice(0, 20)
 	}
 
-	const hydrateFromLocalStorage = (userId?: string) => {
-		const key = getStorageKey(userId)
+	const hydrateFromLocalStorage = (userId?: string, mode: ChatMode = chatMode.value) => {
+		const key = getStorageKey(userId, mode)
 		const saved = localStorage.getItem(key)
-		console.log('[chat] hydrateFromLocalStorage:start', { key, hasSaved: Boolean(saved) })
+		console.log('[chat] hydrateFromLocalStorage:start', { key, mode, hasSaved: Boolean(saved) })
 
 		if (!saved) {
-			messages.value = []
+			setModeMessages(mode, [])
 			console.log('[chat] hydrateFromLocalStorage:empty')
 			return
 		}
 
 		try {
-			messages.value = normalizeStoredMessages(JSON.parse(saved))
-			console.log('[chat] hydrateFromLocalStorage:success', { count: messages.value.length })
+			const normalized = normalizeStoredMessages(JSON.parse(saved))
+			setModeMessages(mode, normalized)
+			console.log('[chat] hydrateFromLocalStorage:success', { mode, count: normalized.length })
 		} catch (e) {
 			console.error('[chat] hydrateFromLocalStorage:error', e)
-			messages.value = []
+			setModeMessages(mode, [])
 		}
 	}
 
@@ -211,30 +241,26 @@ export const useChatStore = defineStore('chat', () => {
 				conversationId: conversationId.value,
 			})
 
-			messages.value = conversation.messages.map(item => ({
+			const nextMessages = conversation.messages.map(item => ({
 				role: item.role,
 				content: item.content,
 				timestamp: Date.now(),
 			}))
+			setModeMessages('ai', nextMessages)
 			contextFiles.value = Array.isArray(conversation.files) ? conversation.files : []
 			voiceRecords.value = Array.isArray(conversation.voice_records) ? conversation.voice_records : []
-			localStorage.setItem(getStorageKey(userId), JSON.stringify(messages.value))
+			localStorage.setItem(getStorageKey(userId, 'ai'), JSON.stringify(nextMessages))
 			backendStatus.value = 'online'
 		} catch (error) {
 			console.warn('[chat] hydrateExternalConversation:fallback_to_local', error)
-			hydrateFromLocalStorage(userId)
+			hydrateFromLocalStorage(userId, 'ai')
 			backendStatus.value = shouldKeepExternalBackendOnline(error) ? 'online' : 'offline'
 		} finally {
 			isHydrating.value = false
 		}
 	}
 
-	const syncWithServer = async () => {
-		if (isExternalBackend.value) {
-			await hydrateExternalConversation()
-			return
-		}
-
+	const syncCoreWithServer = async () => {
 		if (!userStore.token || !isLikelyJwt(userStore.token) || !userStore.user?.vkId) {
 			console.log('[chat] syncWithServer:skipped', {
 				hasToken: Boolean(userStore.token),
@@ -247,7 +273,7 @@ export const useChatStore = defineStore('chat', () => {
 		console.log('[chat] syncWithServer:start', { userId: userStore.user.vkId })
 		isHydrating.value = true
 		try {
-			const localSnapshot = [...messages.value]
+			const localSnapshot = [...coreMessages.value]
 			const workspace = await fetchWorkspace(userStore.token)
 			const serverMessages = Array.isArray(workspace.chatHistory)
 				? workspace.chatHistory.map(item => ({
@@ -259,20 +285,29 @@ export const useChatStore = defineStore('chat', () => {
 
 			if (serverMessages.length === 0 && localSnapshot.length > 0) {
 				console.log('[chat] syncWithServer:server_empty_use_local', { localCount: localSnapshot.length })
-				messages.value = localSnapshot
+				coreMessages.value = localSnapshot
 				await saveChatHistory(userStore.token, localSnapshot.map(toWorkspaceMessage))
 			} else {
-				messages.value = serverMessages
+				coreMessages.value = serverMessages
 			}
 
-			localStorage.setItem(getStorageKey(userStore.user.vkId), JSON.stringify(messages.value))
-			console.log('[chat] syncWithServer:success', { count: messages.value.length })
+			localStorage.setItem(getStorageKey(userStore.user.vkId, 'core'), JSON.stringify(coreMessages.value))
+			console.log('[chat] syncWithServer:success', { count: coreMessages.value.length })
 		} catch (error) {
 			console.warn('[chat] syncWithServer:fallback_to_localStorage', error)
-			hydrateFromLocalStorage(userStore.user.vkId)
+			hydrateFromLocalStorage(userStore.user.vkId, 'core')
 		} finally {
 			isHydrating.value = false
 		}
+	}
+
+	const syncWithServer = async () => {
+		if (isAiMode.value) {
+			await hydrateExternalConversation()
+			return
+		}
+
+		await syncCoreWithServer()
 	}
 
 	const schedulePersist = () => {
@@ -282,9 +317,9 @@ export const useChatStore = defineStore('chat', () => {
 			return
 		}
 
-		const key = getStorageKey(userId)
+		const key = getStorageKey(userId, chatMode.value)
 		localStorage.setItem(key, JSON.stringify(messages.value))
-		console.log('[chat] schedulePersist:local_saved', { key, count: messages.value.length })
+		console.log('[chat] schedulePersist:local_saved', { key, mode: chatMode.value, count: messages.value.length })
 
 		if (isExternalBackend.value) {
 			return
@@ -324,14 +359,14 @@ export const useChatStore = defineStore('chat', () => {
 			sourceHistory.value = []
 
 			if (!userId) {
-				hydrateFromLocalStorage(undefined)
+				hydrateFromLocalStorage(undefined, chatMode.value)
 				if (isExternalBackend.value) {
 					await hydrateExternalConversation()
 				}
 				return
 			}
 
-			hydrateFromLocalStorage(userId)
+			hydrateFromLocalStorage(userId, chatMode.value)
 			await syncWithServer()
 		},
 		{ immediate: true },
@@ -350,6 +385,12 @@ export const useChatStore = defineStore('chat', () => {
 			}
 		},
 	)
+
+	const setChatMode = async (mode: ChatMode) => {
+		if (chatMode.value === mode) return
+		setStoredChatMode(mode)
+		await syncWithServer()
+	}
 
 	function addSystemMessage(content: string, meta?: MessageMeta) {
 		messages.value.push({
@@ -636,10 +677,12 @@ export const useChatStore = defineStore('chat', () => {
 	}
 
 	return {
+		chatMode,
 		messages,
 		isLoading,
 		isHydrating,
 		isUploadingFile,
+		isAiMode,
 		isExternalBackend,
 		backendStatus,
 		backendLabel,
@@ -653,6 +696,7 @@ export const useChatStore = defineStore('chat', () => {
 		sendVoiceMessage,
 		addSystemMessage,
 		addUserMessage,
+		setChatMode,
 		clearHistory: resetConversation,
 		syncWithServer,
 		resetConversation,

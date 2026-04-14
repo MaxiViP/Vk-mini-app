@@ -1,6 +1,23 @@
 <template>
 	<div class="chat">
-		<div v-if="chat.isExternalBackend" class="chat-context-bar">
+		<div class="chat-mode-switch">
+			<button
+				type="button"
+				:class="['chat-mode-switch__button', { active: chat.chatMode === 'core' }]"
+				@click="switchMode('core')"
+			>
+				Чат
+			</button>
+			<button
+				type="button"
+				:class="['chat-mode-switch__button', { active: chat.chatMode === 'ai' }]"
+				@click="switchMode('ai')"
+			>
+				AI-помощник
+			</button>
+		</div>
+
+		<div v-if="chat.isAiMode" class="chat-context-bar">
 			<div class="context-primary">
 				<span :class="['context-status', `context-status--${chat.backendStatus}`]">
 					{{ backendStatusLabel }}
@@ -48,7 +65,7 @@
 			:disabled="false"
 			:uploading="chat.isUploadingFile"
 			:is-generating="chat.isLoading"
-			:show-file-action="chat.isExternalBackend"
+			:show-file-action="chat.isAiMode"
 		/>
 
 		<ChatContextPanel v-model:visible="showContextPanel" />
@@ -69,6 +86,10 @@ import ScrollBtn from '../common/ScrollBtn.vue'
 const chat = useChatStore()
 const modelsStore = useModelsStore()
 const showContextPanel = ref(false)
+
+const switchMode = (mode: 'core' | 'ai') => {
+	void chat.setChatMode(mode)
+}
 
 const fallbackExternalModel: Model = {
 	id: 'vk-ai-external',
@@ -230,6 +251,30 @@ onUnmounted(() => {
 	flex-direction: column;
 	height: 100%;
 	gap: 12px;
+}
+
+.chat-mode-switch {
+	display: inline-flex;
+	gap: 8px;
+	max-width: var(--content-width);
+	width: 100%;
+	margin: 0 auto;
+}
+
+.chat-mode-switch__button {
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	background: rgba(255, 255, 255, 0.04);
+	color: var(--color-text-soft);
+	padding: 10px 14px;
+	border-radius: 999px;
+	cursor: pointer;
+	font-weight: 600;
+}
+
+.chat-mode-switch__button.active {
+	background: rgba(16, 163, 127, 0.18);
+	border-color: rgba(16, 163, 127, 0.45);
+	color: #fff;
 }
 
 .chat-context-bar {
