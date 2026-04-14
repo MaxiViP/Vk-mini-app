@@ -270,6 +270,7 @@ const activeSubscription = computed(() => userStore.activeSubscription)
 const plans = computed(() => userStore.billing?.plans || [])
 const aiAccess = computed(() => userStore.aiAccess)
 const aiPlans = computed(() => userStore.aiPlans || [])
+const availableBalanceMinor = computed(() => Number(userStore.billing?.wallet.balanceMinor || 0))
 const recentLedger = computed(() => (userStore.billing?.recentLedger || []).slice(0, 6))
 const recentPayments = computed(() => (userStore.billing?.recentPayments || []).slice(0, 6))
 
@@ -318,11 +319,11 @@ const planDescription = (planCode: string) => {
 	return 'Подходит для массовых базовых сценариев'
 }
 
-const canBuyPlan = (plan: BillingPlan) => (userStore.user?.balance || 0) >= plan.price
+const canBuyPlan = (plan: BillingPlan) => availableBalanceMinor.value >= Number(plan.priceMinor || 0)
 const canBuyAiPlan = (plan: AiAccessPlan) => {
 	if (aiAccess.value?.hasAccess && aiAccess.value.plan?.code === plan.code) return false
 	if (!plan.isActive) return false
-	return (userStore.user?.balance || 0) >= Number(plan.priceMinor || 0) / 100
+	return availableBalanceMinor.value >= Number(plan.priceMinor || 0)
 }
 
 const planButtonLabel = (plan: BillingPlan) => {
