@@ -13,38 +13,16 @@ const toInt = (value, fallback) => {
 	return Number.isNaN(parsed) ? fallback : parsed
 }
 
-const trim = value => String(value || '').trim()
-const nodeEnv = trim(process.env.NODE_ENV) || 'development'
-const isProduction = nodeEnv === 'production'
-const databaseUrl = trim(process.env.DATABASE_URL)
-const jwtSecret = trim(process.env.JWT_SECRET)
-const vkAiBackendUrl = trim(process.env.VK_AI_BACKEND_URL)
-const vkAiBackendApiKey = trim(process.env.VK_AI_BACKEND_API_KEY)
-const usesAiBackend = true
-
-const assertRequired = (name, value) => {
-	if (isProduction && !value) {
-		throw new Error(`${name} is required in production`)
-	}
-}
-
-assertRequired('JWT_SECRET', jwtSecret)
-assertRequired('DATABASE_URL', databaseUrl)
-
-if (usesAiBackend) {
-	assertRequired('VK_AI_BACKEND_URL', vkAiBackendUrl)
-}
-
 const env = {
-	nodeEnv,
+	nodeEnv: process.env.NODE_ENV || 'development',
 	port: toInt(process.env.PORT, 3000),
-	databaseUrl,
-	jwtSecret,
-	openaiApiKey: trim(process.env.OPENAI_API_KEY),
-	vkAiBackendUrl,
-	vkAiBackendApiKey,
+	databaseUrl: process.env.DATABASE_URL || '',
+	jwtSecret: process.env.JWT_SECRET || 'change_me_in_prod',
+	openaiApiKey: process.env.OPENAI_API_KEY || '',
+	vkAiBackendUrl: process.env.VK_AI_BACKEND_URL || '',
+	vkAiBackendApiKey: process.env.VK_AI_BACKEND_API_KEY || '',
 	vkAiBackendTimeoutMs: toInt(process.env.VK_AI_BACKEND_TIMEOUT_MS, 30000),
-	logLevel: trim(process.env.LOG_LEVEL) || 'info',
+	logLevel: process.env.LOG_LEVEL || 'info',
 }
 
 export default env
