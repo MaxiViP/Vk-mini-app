@@ -7,6 +7,10 @@
 		"dev": "concurrently \"npm run dev --workspace=front\" \"npm run dev --workspace=back\"",
 		"build:front": "npm run build --workspace=front",
 		"install:all": "npm install --workspaces",
-		"deploy": "npm run install:all && npm run build:front && pm2 restart vk-backend"
+		"deploy": "npm run install:all && npm run build:front && pm2 restart vk-backend",
+		"test": "node test/run-tests.mjs"
+	},
+	"devDependencies": {
+		"concurrently": "^9.2.1"
 	}
 }

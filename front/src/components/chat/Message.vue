@@ -29,37 +29,103 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeMount, ref, watch } from 'vue'
-import { marked } from 'marked'
-import hljs from 'highlight.js'
-import 'highlight.js/styles/github-dark.css'
+import { computed, nextTick, ref, watch } from 'vue'
 
 import type { Message } from '../../types'
+
+type MarkdownRenderer = {
+	parse: (value: string) => string
+}
+
+let markdownRendererPromise: Promise<MarkdownRenderer> | null = null
+
+const MARKDOWN_PATTERN =
+	/```|`[^`\n]+`|^\s{0,3}#{1,6}\s|^\s*[-*+]\s|^\s*\d+\.\s|^\s*>\s|\[[^\]]+\]\([^)]+\)|(\*\*|__)[^\n]+(\*\*|__)|^\|.+\|/m
+
+const loadMarkdownRenderer = () => {
+	if (!markdownRendererPromise) {
+		markdownRendererPromise = Promise.all([
+			import('marked'),
+			import('highlight.js'),
+			import('highlight.js/styles/github-dark.css'),
+		]).then(([markedModule, hljsModule]) => {
+			const { marked } = markedModule
+			const hljs = hljsModule.default
+
+			marked.use({
+				gfm: true,
+				breaks: true,
+				renderer: {
+					code({ text, lang }) {
+						const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
+						const highlighted = hljs.highlight(text, { language }).value
+						return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`
+					},
+				},
+			})
+
+			return {
+				parse: value => marked.parse(value, { async: false }) as string,
+			}
+		})
+	}
+
+	return markdownRendererPromise
+}
+
+const escapeHtml = (value: string) =>
+	value
+		.replaceAll('&', '&amp;')
+		.replaceAll('<', '&lt;')
+		.replaceAll('>', '&gt;')
+		.replaceAll('"', '&quot;')
+		.replaceAll("'", '&#39;')
+
+const renderPlainText = (value: string) => escapeHtml(value).replaceAll('\n', '<br>')
+const looksLikeMarkdown = (message: Message) => message.role === 'assistant' && MARKDOWN_PATTERN.test(message.content)
 
 const props = defineProps<{
 	message: Message
 	showLimits?: boolean
 }>()
 const audioReplyRef = ref<HTMLAudioElement | null>(null)
+const renderedContent = ref('')
+let renderToken = 0
 
-onBeforeMount(() => {
-	marked.use({
-		gfm: true,
-		breaks: true,
-		renderer: {
-			code({ text, lang }) {
-				const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
-				const highlighted = hljs.highlight(text, { language }).value
-				return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`
-			},
-		},
-	})
-})
+const renderMessageContent = async () => {
+	const content = props.message.content
+	const currentToken = ++renderToken
 
-const renderedContent = computed(() => {
-	if (!props.message.content) return ''
-	return marked.parse(props.message.content, { async: false }) as string
-})
+	if (!content) {
+		renderedContent.value = ''
+		return
+	}
+
+	if (!looksLikeMarkdown(props.message)) {
+		renderedContent.value = renderPlainText(content)
+		return
+	}
+
+	renderedContent.value = renderPlainText(content)
+
+	try {
+		const renderer = await loadMarkdownRenderer()
+		if (currentToken !== renderToken) return
+		renderedContent.value = renderer.parse(content)
+	} catch (error) {
+		if (currentToken !== renderToken) return
+		console.warn('markdown render fallback', error)
+		renderedContent.value = renderPlainText(content)
+	}
+}
+
+watch(
+	() => [props.message.role, props.message.content] as const,
+	() => {
+		void renderMessageContent()
+	},
+	{ immediate: true },
+)
 
 const metaSummary = computed(() => {
 	const result: string[] = []

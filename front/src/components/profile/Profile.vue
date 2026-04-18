@@ -243,6 +243,7 @@
 import { computed, onMounted, ref } from 'vue'
 
 import type { AiAccessPlan, BillingLedgerEntry, BillingPayment, BillingPlan } from '../../types'
+import { canBuyPlanFromWallet } from '../../domain/billingRules'
 import { useUserStore } from '../../stores/user'
 import RechargeModal from './RechargeModal.vue'
 
@@ -311,11 +312,18 @@ const planDescription = (planCode: string) => {
 	return 'Подходит для массовых базовых сценариев'
 }
 
-const canBuyPlan = (plan: BillingPlan) => availableBalanceMinor.value >= Number(plan.priceMinor || 0)
+const canBuyPlan = (plan: BillingPlan) =>
+	canBuyPlanFromWallet({
+		walletBalanceMinor: availableBalanceMinor.value,
+		planPriceMinor: Number(plan.priceMinor || 0),
+	})
 const canBuyAiPlan = (plan: AiAccessPlan) => {
 	if (aiAccess.value?.hasAccess && aiAccess.value.plan?.code === plan.code) return false
 	if (!plan.isActive) return false
-	return availableBalanceMinor.value >= Number(plan.priceMinor || 0)
+	return canBuyPlanFromWallet({
+		walletBalanceMinor: availableBalanceMinor.value,
+		planPriceMinor: Number(plan.priceMinor || 0),
+	})
 }
 
 const planButtonLabel = (plan: BillingPlan) => {

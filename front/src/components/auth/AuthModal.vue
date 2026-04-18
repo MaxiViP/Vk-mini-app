@@ -40,7 +40,7 @@
 								ref="phoneInputRef"
 								v-model="phone"
 								type="tel"
-								placeholder="+7 905 735 35 80"
+								placeholder="+7 123 456 78 90"
 								required
 								autocomplete="tel"
 								:disabled="userStore.authPending || !!userStore.phoneChallenge"

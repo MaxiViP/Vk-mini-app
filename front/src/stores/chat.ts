@@ -5,6 +5,7 @@ import type { Message, Model, ChatHistoryItem, MessageMeta, SourceHistoryItem } 
 import { fetchWorkspace, saveChatHistory, type WorkspaceMessage } from '../api/workspace'
 import { getVkAiErrorCode, vkAiApi } from '../api/vkAi'
 import { internalApiBaseUrl } from '../config/chatBackend'
+import { shouldUseAiApi } from '../domain/chatModeRules'
 import { useUserStore } from './user'
 
 const STORAGE_KEY_PREFIX = 'chat_history'
@@ -12,6 +13,8 @@ const CONVERSATION_STORAGE_KEY = 'vk_ai_conversation_id'
 const CHAT_MODE_STORAGE_KEY = 'chat_mode'
 const AI_SESSION_CONTEXT_KEY_PREFIX = 'ai:context'
 const AI_SESSION_CONTEXT_MAX_LENGTH = 1200
+const LOCAL_PERSIST_DEBOUNCE_MS = 300
+const SERVER_PERSIST_DEBOUNCE_MS = 500
 
 const EXTERNAL_AI_BUSINESS_CODES = new Set([
 	'AI_SUBSCRIPTION_REQUIRED',
@@ -116,7 +119,8 @@ export const useChatStore = defineStore('chat', () => {
 	const contextFiles = ref<string[]>([])
 	const voiceRecords = ref<string[]>([])
 	const sourceHistory = ref<SourceHistoryItem[]>([])
-	let saveTimer: number | null = null
+	let localPersistTimer: number | null = null
+	let serverSaveTimer: number | null = null
 	let abortController: AbortController | null = null
 
 	const messages = computed<Message[]>({
@@ -130,7 +134,7 @@ export const useChatStore = defineStore('chat', () => {
 		},
 	})
 	const isAiMode = computed(() => chatMode.value === 'ai')
-	const isExternalBackend = isAiMode
+	const isExternalBackend = computed(() => shouldUseAiApi(chatMode.value))
 	const backendLabel = computed(() => (isAiMode.value ? 'VK AI backend' : 'Internal LLM backend'))
 	const backendBaseUrl = computed(() => internalApiBaseUrl || window.location.origin)
 
@@ -145,6 +149,35 @@ export const useChatStore = defineStore('chat', () => {
 			return
 		}
 		coreMessages.value = nextMessages
+	}
+
+	const getModeMessages = (mode: ChatMode) => (mode === 'ai' ? aiMessages.value : coreMessages.value)
+
+	const clearPersistTimers = () => {
+		if (localPersistTimer) {
+			window.clearTimeout(localPersistTimer)
+			localPersistTimer = null
+		}
+
+		if (serverSaveTimer) {
+			window.clearTimeout(serverSaveTimer)
+			serverSaveTimer = null
+		}
+	}
+
+	const scheduleLocalPersist = (mode: ChatMode, userId?: string) => {
+		if (localPersistTimer) window.clearTimeout(localPersistTimer)
+
+		localPersistTimer = window.setTimeout(() => {
+			const key = getStorageKey(userId, mode)
+			localStorage.setItem(key, JSON.stringify(getModeMessages(mode)))
+			console.log('[chat] schedulePersist:local_saved', {
+				key,
+				mode,
+				count: getModeMessages(mode).length,
+			})
+			localPersistTimer = null
+		}, LOCAL_PERSIST_DEBOUNCE_MS)
 	}
 
 	const getExternalAccessToken = () => {
@@ -341,14 +374,13 @@ export const useChatStore = defineStore('chat', () => {
 
 	const schedulePersist = () => {
 		const userId = userStore.user?.vkId
+		const mode = chatMode.value
 		if (isHydrating.value) {
 			console.log('[chat] schedulePersist:skipped_hydrating')
 			return
 		}
 
-		const key = getStorageKey(userId, chatMode.value)
-		localStorage.setItem(key, JSON.stringify(messages.value))
-		console.log('[chat] schedulePersist:local_saved', { key, mode: chatMode.value, count: messages.value.length })
+		scheduleLocalPersist(mode, userId)
 
 		if (isExternalBackend.value) {
 			return
@@ -363,17 +395,19 @@ export const useChatStore = defineStore('chat', () => {
 			return
 		}
 
-		if (saveTimer) window.clearTimeout(saveTimer)
-		saveTimer = window.setTimeout(async () => {
+		if (serverSaveTimer) window.clearTimeout(serverSaveTimer)
+		serverSaveTimer = window.setTimeout(async () => {
 			try {
-				const payload = messages.value.map(toWorkspaceMessage)
+				const payload = getModeMessages(mode).map(toWorkspaceMessage)
 				console.log('[chat] schedulePersist:server_save:start', { count: payload.length })
 				await saveChatHistory(userStore.token!, payload)
 				console.log('[chat] schedulePersist:server_save:success')
 			} catch (error) {
 				console.error('[chat] schedulePersist:server_save:error', error)
+			} finally {
+				serverSaveTimer = null
 			}
-		}, 500)
+		}, SERVER_PERSIST_DEBOUNCE_MS)
 	}
 
 	watch(messages, schedulePersist, { deep: true })
@@ -382,6 +416,7 @@ export const useChatStore = defineStore('chat', () => {
 		() => userStore.user?.vkId,
 		async userId => {
 			console.log('[chat] watch:userId', { userId })
+			clearPersistTimers()
 			setConversationId(userId)
 			contextFiles.value = []
 			voiceRecords.value = []
@@ -417,6 +452,7 @@ export const useChatStore = defineStore('chat', () => {
 
 	const setChatMode = async (mode: ChatMode) => {
 		if (chatMode.value === mode) return
+		clearPersistTimers()
 		setStoredChatMode(mode)
 		await syncWithServer()
 	}
@@ -474,6 +510,7 @@ export const useChatStore = defineStore('chat', () => {
 
 	async function resetConversation() {
 		const userId = userStore.user?.vkId || 'guest'
+		clearPersistTimers()
 
 		if (isExternalBackend.value) {
 			try {
@@ -492,7 +529,7 @@ export const useChatStore = defineStore('chat', () => {
 		contextFiles.value = []
 		voiceRecords.value = []
 		sourceHistory.value = []
-		localStorage.removeItem(getStorageKey(userId))
+		localStorage.removeItem(getStorageKey(userId, chatMode.value))
 	}
 
 	async function sendVoiceMessage(audio: File) {

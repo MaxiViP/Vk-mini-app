@@ -71,8 +71,12 @@
 			</div>
 		</div>
 
-		<div class="messages">
-			<Message v-for="(msg, idx) in chat.messages" :key="idx" :message="msg" />
+		<div ref="messagesContainerRef" class="messages" @scroll="handleMessagesScroll">
+			<div v-if="topSpacerHeight > 0" aria-hidden="true" :style="{ height: `${topSpacerHeight}px` }"></div>
+			<div v-for="item in visibleMessages" :key="item.key" :ref="setMessageRowRef(item.index)">
+				<Message :message="item.message" />
+			</div>
+			<div v-if="bottomSpacerHeight > 0" aria-hidden="true" :style="{ height: `${bottomSpacerHeight}px` }"></div>
 			<div v-if="chat.isLoading" class="message assistant typing">
 				<div class="avatar">🤖</div>
 				<div :class="['bubble', 'typing-indicator', { 'typing-indicator--ai': chat.isAiMode }]">
@@ -109,20 +113,32 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
 
-import type { Model } from '../../types'
+import type { Message as ChatMessage, Model } from '../../types'
 import { useChatStore } from '../../stores/chat'
 import { useModelsStore } from '../../stores/models'
 import { useUserStore } from '../../stores/user'
 import Message from './Message.vue'
 import ChatInput from './ChatInput.vue'
-import ChatContextPanel from './ChatContextPanel.vue'
+
+const ChatContextPanel = defineAsyncComponent(() => import('./ChatContextPanel.vue'))
+const VIRTUALIZATION_MIN_ITEMS = 40
+const DEFAULT_MESSAGE_HEIGHT = 112
+const VIRTUALIZATION_BUFFER_PX = 600
+const AUTO_SCROLL_THRESHOLD_PX = 48
 
 const chat = useChatStore()
 const modelsStore = useModelsStore()
 const userStore = useUserStore()
 const showContextPanel = ref(false)
+const messagesContainerRef = ref<HTMLElement | null>(null)
+const scrollTop = ref(0)
+const viewportHeight = ref(0)
+const isNearBottom = ref(false)
+const measuredHeights = ref<Record<number, number>>({})
+const messageRowRefs = new Map<number, HTMLElement>()
 
 const switchMode = (mode: 'core' | 'ai') => {
 	void chat.setChatMode(mode)
@@ -190,6 +206,176 @@ const aiCapabilityPills = computed(() => {
 
 const typingLabel = computed(() => 'Модель думает')
 const aiTypingLabel = computed(() => (chat.isExternalBackend ? 'AI анализирует контекст' : 'AI готовит ответ'))
+const shouldVirtualize = computed(() => chat.messages.length > VIRTUALIZATION_MIN_ITEMS)
+const getMeasuredHeight = (index: number) => measuredHeights.value[index] ?? DEFAULT_MESSAGE_HEIGHT
+const getMessageStableKey = (message: ChatMessage, index: number) => {
+	const keyedMessage = message as ChatMessage & { id?: string | number }
+	return String(keyedMessage.id ?? message.timestamp ?? index)
+}
+const cumulativeHeights = computed(() => {
+	const result = new Array(chat.messages.length + 1).fill(0)
+
+	for (let index = 0; index < chat.messages.length; index += 1) {
+		result[index + 1] = result[index] + getMeasuredHeight(index)
+	}
+
+	return result
+})
+const totalMessagesHeight = computed(() => cumulativeHeights.value[cumulativeHeights.value.length - 1] ?? 0)
+
+const findStartIndexByOffset = (targetOffset: number) => {
+	const itemCount = chat.messages.length
+	if (itemCount === 0) return 0
+
+	const prefixes = cumulativeHeights.value
+	let low = 0
+	let high = itemCount - 1
+	const safeTargetOffset = Math.max(0, targetOffset)
+
+	while (low < high) {
+		const mid = Math.floor((low + high) / 2)
+		if ((prefixes[mid + 1] ?? 0) >= safeTargetOffset) {
+			high = mid
+		} else {
+			low = mid + 1
+		}
+	}
+
+	return low
+}
+
+const findEndIndexByOffset = (targetOffset: number) => {
+	const itemCount = chat.messages.length
+	if (itemCount === 0) return 0
+
+	const prefixes = cumulativeHeights.value
+	let low = 1
+	let high = itemCount
+	const safeTargetOffset = Math.max(0, targetOffset)
+
+	while (low < high) {
+		const mid = Math.floor((low + high) / 2)
+		if ((prefixes[mid] ?? 0) > safeTargetOffset) {
+			high = mid
+		} else {
+			low = mid + 1
+		}
+	}
+
+	return low
+}
+
+const visibleWindow = computed(() => {
+	const allMessages = chat.messages
+
+	if (!shouldVirtualize.value) {
+		return {
+			items: allMessages.map((message, index) => ({
+				index,
+				key: getMessageStableKey(message, index),
+				message,
+			})),
+			top: 0,
+			bottom: 0,
+		}
+	}
+
+	const windowStart = Math.max(0, scrollTop.value - VIRTUALIZATION_BUFFER_PX)
+	const windowEnd = scrollTop.value + viewportHeight.value + VIRTUALIZATION_BUFFER_PX
+	const prefixes = cumulativeHeights.value
+	const startIndex = findStartIndexByOffset(windowStart)
+	const endIndex = Math.min(allMessages.length, Math.max(startIndex + 1, findEndIndexByOffset(windowEnd)))
+	const offset = prefixes[startIndex] ?? 0
+	const currentOffset = prefixes[endIndex] ?? totalMessagesHeight.value
+
+	return {
+		items: allMessages.slice(startIndex, endIndex).map((message, relativeIndex) => {
+			const index = startIndex + relativeIndex
+			return {
+				index,
+				key: getMessageStableKey(message, index),
+				message,
+			}
+		}),
+		top: offset,
+		bottom: Math.max(0, totalMessagesHeight.value - currentOffset),
+	}
+})
+
+const visibleMessages = computed(() => visibleWindow.value.items)
+const topSpacerHeight = computed(() => visibleWindow.value.top)
+const bottomSpacerHeight = computed(() => visibleWindow.value.bottom)
+const visibleRangeSignature = computed(() => visibleMessages.value.map(item => item.index).join(':'))
+const lastMessageSignature = computed(() => {
+	const lastMessage = chat.messages[chat.messages.length - 1]
+	if (!lastMessage) return ''
+	return `${chat.messages.length}:${lastMessage.role}:${lastMessage.content.length}:${lastMessage.timestamp}`
+})
+
+const updateViewportMetrics = () => {
+	const container = messagesContainerRef.value
+	if (!container) return
+
+	scrollTop.value = container.scrollTop
+	viewportHeight.value = container.clientHeight
+	isNearBottom.value =
+		container.scrollTop + container.clientHeight >= container.scrollHeight - AUTO_SCROLL_THRESHOLD_PX
+}
+
+const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
+	const container = messagesContainerRef.value
+	if (!container) return
+
+	container.scrollTo({
+		top: container.scrollHeight,
+		behavior,
+	})
+}
+
+const measureMessageRowHeight = (row: HTMLElement) => {
+	const measuredElement = (row.firstElementChild as HTMLElement | null) || row
+	const styles = window.getComputedStyle(measuredElement)
+	const marginTop = Number.parseFloat(styles.marginTop) || 0
+	const marginBottom = Number.parseFloat(styles.marginBottom) || 0
+	return measuredElement.offsetHeight + marginTop + marginBottom
+}
+
+const measureVisibleRows = () => {
+	if (!messageRowRefs.size) {
+		updateViewportMetrics()
+		return
+	}
+
+	const nextHeights = { ...measuredHeights.value }
+	let hasChanges = false
+
+	for (const [index, row] of messageRowRefs.entries()) {
+		const nextHeight = measureMessageRowHeight(row)
+		if (nextHeight > 0 && nextHeights[index] !== nextHeight) {
+			nextHeights[index] = nextHeight
+			hasChanges = true
+		}
+	}
+
+	if (hasChanges) {
+		measuredHeights.value = nextHeights
+	}
+
+	updateViewportMetrics()
+}
+
+const setMessageRowRef = (index: number) => (element: Element | ComponentPublicInstance | null) => {
+	if (element instanceof HTMLElement) {
+		messageRowRefs.set(index, element)
+		return
+	}
+
+	messageRowRefs.delete(index)
+}
+
+const handleMessagesScroll = () => {
+	updateViewportMetrics()
+}
 
 const ensureAiAccessLoaded = async () => {
 	if (!chat.isAiMode || !userStore.isAuthenticated || userStore.aiAccess) return
@@ -337,12 +523,47 @@ watch(
 	{ immediate: true },
 )
 
+watch(
+	() => chat.chatMode,
+	() => {
+		messageRowRefs.clear()
+		measuredHeights.value = {}
+	},
+)
+
+watch(
+	() => visibleRangeSignature.value,
+	async () => {
+		await nextTick()
+		measureVisibleRows()
+	},
+	{ flush: 'post' },
+)
+
+watch(
+	() => [chat.messages.length, lastMessageSignature.value, chat.isLoading] as const,
+	async () => {
+		const shouldStickToBottom = isNearBottom.value
+		await nextTick()
+		measureVisibleRows()
+		if (shouldStickToBottom) {
+			scrollToBottom()
+			updateViewportMetrics()
+		}
+	},
+	{ flush: 'post' },
+)
+
 onMounted(() => {
 	window.addEventListener('toggle-chat-context', handleToggleChatContext as EventListener)
+	void nextTick().then(() => {
+		measureVisibleRows()
+	})
 })
 
 onUnmounted(() => {
 	window.removeEventListener('toggle-chat-context', handleToggleChatContext as EventListener)
+	messageRowRefs.clear()
 })
 </script>
 
@@ -405,6 +626,7 @@ onUnmounted(() => {
 }
 
 .chat-context-bar--ai {
+	min-height: 182px;
 	border-color: var(--mode-accent-border);
 	background:
 		linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),
@@ -662,6 +884,10 @@ onUnmounted(() => {
 	.chat-context-bar {
 		padding: 10px 12px;
 		border-radius: 16px;
+	}
+
+	.chat-context-bar--ai {
+		min-height: 286px;
 	}
 
 	.context-status,

@@ -52,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import { internalApiBaseUrl, isVkAiBackend } from './config/chatBackend'
 import { initVK } from './vk/bridge'
@@ -60,13 +60,14 @@ import { useChatStore } from './stores/chat'
 import { useModelsStore } from './stores/models'
 import { useUserStore } from './stores/user'
 import ProfileTrigger from './components/profile/ProfileTrigger.vue'
-import ModelSelector from './components/chat/ModelSelector.vue'
 import Chat from './components/chat/Chat.vue'
-import Profile from './components/profile/Profile.vue'
-import NotesPanel from './components/chat/NotesPanel.vue'
 import AILogo from './components/common/AILogo.vue'
-import AuthModal from './components/auth/AuthModal.vue'
-import AdminPanel from './components/admin/AdminPanel.vue'
+
+const ModelSelector = defineAsyncComponent(() => import('./components/chat/ModelSelector.vue'))
+const Profile = defineAsyncComponent(() => import('./components/profile/Profile.vue'))
+const NotesPanel = defineAsyncComponent(() => import('./components/chat/NotesPanel.vue'))
+const AuthModal = defineAsyncComponent(() => import('./components/auth/AuthModal.vue'))
+const AdminPanel = defineAsyncComponent(() => import('./components/admin/AdminPanel.vue'))
 
 const modelsStore = useModelsStore()
 const chatStore = useChatStore()

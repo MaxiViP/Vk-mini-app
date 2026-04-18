@@ -23,9 +23,10 @@ body {
 	display: flex;
 	justify-content: space-between;
 	align-items: center;
+	align-content: flex-start;
 	gap: 10px 14px;
 	flex-wrap: wrap;
-	min-height: var(--top-bar-height);
+	min-height: calc(var(--top-bar-height) + 12px);
 	margin: 0;
 	padding: 6px 0 2px;
 }

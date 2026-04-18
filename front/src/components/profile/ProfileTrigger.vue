@@ -64,19 +64,22 @@ onUnmounted(() => {
 .profile-trigger {
 	display: inline-flex;
 	align-items: center;
-	justify-content: center;
+	justify-content: flex-start;
 	margin-left: auto;
-	min-width: 44px;
+	width: 148px;
+	min-width: 148px;
 	min-height: 44px;
 }
 
 /* текст (desktop) */
 .profile-trigger__text {
 	display: block;
+	width: 100%;
 	max-width: 160px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	text-align: left;
 }
 
 /* аватар (mobile) */
@@ -97,5 +100,13 @@ onUnmounted(() => {
 	color: #fff;
 	font-size: 12px;
 	font-weight: 700;
+}
+
+@media (max-width: 640px) {
+	.profile-trigger {
+		width: 44px;
+		min-width: 44px;
+		justify-content: center;
+	}
 }
 </style>
