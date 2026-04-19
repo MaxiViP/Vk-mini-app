@@ -1,15 +1,26 @@
 <template>
 	<div class="custom-select" :class="{ open, disabled }" ref="selectRef">
-		<div class="select-trigger" @click="toggleDropdown">
+		<div
+			class="select-trigger"
+			role="button"
+			:tabindex="disabled ? -1 : 0"
+			aria-haspopup="listbox"
+			:aria-expanded="open ? 'true' : 'false'"
+			:aria-disabled="disabled ? 'true' : 'false'"
+			@click="toggleDropdown"
+			@keydown="handleTriggerKeydown"
+		>
 			<span class="selected-value">{{ selectedLabel || placeholder }}</span>
 			<span class="arrow" :class="{ rotated: open }">▼</span>
 		</div>
 
-		<ul class="dropdown-list" v-show="open">
+		<ul class="dropdown-list" v-show="open" role="listbox">
 			<li
 				v-for="option in options"
 				:key="option.value"
 				@click="selectOption(option.value)"
+				role="option"
+				:aria-selected="option.value === modelValue ? 'true' : 'false'"
 				:class="{ active: option.value === modelValue }"
 			>
 				{{ option.label }}
@@ -48,6 +59,20 @@ const selectedLabel = computed(() => {
 const toggleDropdown = () => {
 	if (props.disabled) return
 	open.value = !open.value
+}
+
+const handleTriggerKeydown = (event: KeyboardEvent) => {
+	if (props.disabled) return
+
+	if (event.key === 'Enter' || event.key === ' ') {
+		event.preventDefault()
+		toggleDropdown()
+		return
+	}
+
+	if (event.key === 'Escape') {
+		open.value = false
+	}
 }
 
 const selectOption = (value: string) => {

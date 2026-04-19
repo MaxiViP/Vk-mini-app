@@ -54,7 +54,11 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 
-import { internalApiBaseUrl, isVkAiBackend } from './config/chatBackend'
+import { isVkAiBackend } from './config/chatBackend'
+import { useActivityHeartbeat } from './composables/useActivityHeartbeat'
+import { useAppWindowEvents } from './composables/useAppWindowEvents'
+import { useOAuthCallback } from './composables/useOAuthCallback'
+import { useViewportHeight } from './composables/useViewportHeight'
 import { initVK } from './vk/bridge'
 import { useChatStore } from './stores/chat'
 import { useModelsStore } from './stores/models'
@@ -86,92 +90,20 @@ const isModelSelectorOpen = ref(false)
 const notesPanelRef = ref<NotesPanelExposed | null>(null)
 const chatModeClass = computed(() => (chatStore.chatMode === 'ai' ? 'theme-ai' : 'theme-core'))
 
-const ACTIVITY_INTERVAL_SEC = 30
-const sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
-let activityTimer: number | null = null
-const isLikelyJwt = (token?: string | null) => Boolean(token && token.split('.').length === 3)
-const OAUTH_CALLBACK_HANDLED_KEY = 'oauth_callback_handled'
-let oauthCallbackInFlightKey: string | null = null
-let oauthCallbackInFlightPromise: Promise<boolean> | null = null
-
-const getOAuthCallbackKeyFromLocation = () => {
-	const callbackMatch = window.location.pathname.match(/^\/oauth\/(vk|google|yandex)\/callback$/)
-	if (!callbackMatch) return null
-
-	const provider = callbackMatch[1]
-	const params = new URLSearchParams(window.location.search)
-	const code = params.get('code')
-	const state = params.get('state')
-
-	if (!code || !state) return null
-	return `${provider}:${state}:${code}`
-}
-
-const readHandledOAuthCallbackKey = () => {
-	try {
-		return sessionStorage.getItem(OAUTH_CALLBACK_HANDLED_KEY)
-	} catch {
-		return null
-	}
-}
-
-const writeHandledOAuthCallbackKey = (value: string) => {
-	try {
-		sessionStorage.setItem(OAUTH_CALLBACK_HANDLED_KEY, value)
-	} catch {
-		// ignore sessionStorage failures
-	}
-}
-
-const clearOAuthCallbackFromLocation = () => {
-	window.history.replaceState({}, document.title, '/')
-}
-
-const syncViewportHeight = () => {
-	document.documentElement.style.setProperty('--viewport-height', `${window.innerHeight}px`)
-}
-
-const sendActivityHeartbeat = async () => {
-	if (!userStore.token || !isLikelyJwt(userStore.token) || document.hidden) return
-
-	try {
-		await fetch(`${internalApiBaseUrl}/api/users/me/activity`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: `Bearer ${userStore.token}`,
-			},
-			body: JSON.stringify({
-				sessionId,
-				activeSeconds: ACTIVITY_INTERVAL_SEC,
-				page: window.location.pathname,
-				requestsCount: 0,
-				notesMutations: 0,
-				chatMessagesSent: 0,
-			}),
-		})
-	} catch (error) {
-		console.warn('Activity heartbeat failed', error)
-	}
-}
-
-const startActivityTracking = () => {
-	if (activityTimer) window.clearInterval(activityTimer)
-	activityTimer = window.setInterval(() => {
-		void sendActivityHeartbeat()
-	}, ACTIVITY_INTERVAL_SEC * 1000)
-}
-
-const handleSaveToNotes = (event: Event) => {
-	const customEvent = event as CustomEvent<{ text: string }>
-	showNotes.value = true
-	notesPanelRef.value?.setNewNoteText(customEvent.detail.text)
-}
-
-const handleChatContextState = (event: Event) => {
-	const customEvent = event as CustomEvent<{ open?: boolean }>
-	isChatContextOpen.value = Boolean(customEvent.detail?.open)
-}
+const { handleOAuthCallback } = useOAuthCallback({
+	finalizeOAuthCallbackFromLocation: userStore.finalizeOAuthCallbackFromLocation,
+})
+const { startActivityTracking, stopActivityTracking, sendActivityHeartbeat } = useActivityHeartbeat(userStore)
+const { startViewportSync, stopViewportSync } = useViewportHeight()
+const { startAppWindowEvents, stopAppWindowEvents } = useAppWindowEvents({
+	onSaveToNotes: detail => {
+		showNotes.value = true
+		notesPanelRef.value?.setNewNoteText(detail.text)
+	},
+	onChatContextState: detail => {
+		isChatContextOpen.value = Boolean(detail?.open)
+	},
+})
 
 const toggleChatContext = () => {
 	window.dispatchEvent(
@@ -204,6 +136,48 @@ const handleEscape = (e: KeyboardEvent) => {
 	}
 }
 
+const loadModelsIfNeeded = async () => {
+	if (isVkAiBackend) return
+
+	try {
+		await modelsStore.fetchModels()
+	} catch (error) {
+		console.error('Models fetch error', error)
+	}
+}
+
+const initializeUserSession = async () => {
+	userStore.hydrateAuth()
+
+	const oauthCallbackHandled = await handleOAuthCallback()
+	if (oauthCallbackHandled) {
+		showAuthModal.value = false
+	}
+
+	if (!userStore.isAuthenticated) {
+		showAuthModal.value = true
+		return
+	}
+
+	if (userStore.refreshToken) {
+		try {
+			await userStore.refreshAuth()
+		} catch (error) {
+			console.warn('Auth refresh failed, fallback to existing session', error)
+		}
+	}
+
+	await userStore.initVKUser()
+}
+
+const bootstrapApp = async () => {
+	await loadModelsIfNeeded()
+	await initializeUserSession()
+	initVK()
+	startActivityTracking()
+	void sendActivityHeartbeat()
+}
+
 watch(
 	() => userStore.isAuthenticated,
 	isAuthenticated => {
@@ -213,77 +187,17 @@ watch(
 )
 
 onMounted(async () => {
-	syncViewportHeight()
+	startViewportSync()
 	document.addEventListener('keydown', handleEscape)
-	window.addEventListener('save-to-notes', handleSaveToNotes as EventListener)
-	window.addEventListener('chat-context-state', handleChatContextState as EventListener)
-	window.addEventListener('resize', syncViewportHeight)
-	window.addEventListener('orientationchange', syncViewportHeight)
-
-	try {
-		if (!isVkAiBackend) {
-			await modelsStore.fetchModels()
-		}
-	} catch (error) {
-		console.error('Models fetch error', error)
-	}
-
-	userStore.hydrateAuth()
-	try {
-		const oauthCallbackKey = getOAuthCallbackKeyFromLocation()
-		if (oauthCallbackKey) {
-			if (readHandledOAuthCallbackKey() === oauthCallbackKey) {
-				clearOAuthCallbackFromLocation()
-				showAuthModal.value = false
-			} else if (oauthCallbackInFlightKey === oauthCallbackKey && oauthCallbackInFlightPromise) {
-				const oauthCallbackHandled = await oauthCallbackInFlightPromise
-				if (oauthCallbackHandled) {
-					showAuthModal.value = false
-				}
-			} else {
-				oauthCallbackInFlightKey = oauthCallbackKey
-				oauthCallbackInFlightPromise = userStore.finalizeOAuthCallbackFromLocation()
-				const oauthCallbackHandled = await oauthCallbackInFlightPromise
-				if (oauthCallbackHandled) {
-					writeHandledOAuthCallbackKey(oauthCallbackKey)
-					clearOAuthCallbackFromLocation()
-					showAuthModal.value = false
-				}
-				oauthCallbackInFlightKey = null
-				oauthCallbackInFlightPromise = null
-			}
-		}
-	} catch (error) {
-		oauthCallbackInFlightKey = null
-		oauthCallbackInFlightPromise = null
-		console.error('OAuth callback finalize error', error)
-	}
-
-	if (!userStore.isAuthenticated) {
-		showAuthModal.value = true
-	} else {
-		if (userStore.refreshToken) {
-			try {
-				await userStore.refreshAuth()
-			} catch (error) {
-				console.warn('Auth refresh failed, fallback to existing session', error)
-			}
-		}
-		await userStore.initVKUser()
-	}
-
-	initVK()
-	startActivityTracking()
-	void sendActivityHeartbeat()
+	startAppWindowEvents()
+	await bootstrapApp()
 })
 
 onUnmounted(() => {
 	document.removeEventListener('keydown', handleEscape)
-	window.removeEventListener('save-to-notes', handleSaveToNotes as EventListener)
-	window.removeEventListener('chat-context-state', handleChatContextState as EventListener)
-	window.removeEventListener('resize', syncViewportHeight)
-	window.removeEventListener('orientationchange', syncViewportHeight)
-	if (activityTimer) window.clearInterval(activityTimer)
+	stopAppWindowEvents()
+	stopViewportSync()
+	stopActivityTracking()
 })
 </script>
 

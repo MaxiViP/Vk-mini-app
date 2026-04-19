@@ -347,3 +347,158 @@ sessionContext = контекст текущей AI-сессии. userMemory = �
 На сервере локальные изменения package-lock.json могут блокировать git pull. После backend/env/prisma изменений нужен pm2 restart vk-backend --update-env.
 Все действия по Prisma, миграциям и отладке БД нужно направлять на серверную БД через туннель, без создания локальной MySQL как основной среды.
 ```
+## 13. CSS архитектура и правила (frontend)
+
+В проекте используется разделение стилей на два слоя:
+
+### 13.1. Foundation / Shared layer
+
+Папка:
+- `front/src/styles/*`
+
+Содержит только:
+- reset (`reset.css`)
+- design tokens (`variables.css`)
+- layout (`layout.css`)
+- общие UI-примитивы (`components.css`)
+- modal primitives (`modal.css`)
+
+Запрещено:
+- добавлять feature-специфичные стили (chat/profile/auth)
+- добавлять стили конкретных экранов
+
+---
+
+### 13.2. Feature layer
+
+Папки:
+- `front/src/components/chat/chat.css`
+- `front/src/components/profile/profile.css`
+- `front/src/components/auth/auth.css`
+
+Содержит:
+- layout и структуру feature
+- spacing
+- локальные состояния
+- focus-visible
+- feature-scoped селекторы
+
+Правило:
+→ всё, что относится к одной feature, должно жить рядом с ней
+
+---
+
+### 13.3. Common components
+
+Папка:
+- `front/src/components/common/*`
+
+Правило:
+- если компонент автономный (например `CustomSelect`) → стили рядом с компонентом
+- не переносить такие стили обратно в `components.css`
+
+---
+
+### 13.4. main.css
+
+Файл:
+- `front/src/styles/main.css`
+
+Используется только как import-manifest.
+
+Правила:
+- не содержит CSS-правил
+- только `@import`
+
+Порядок импортов:
+1. reset
+2. variables
+3. layout
+4. shared (components.css, modal.css)
+5. feature CSS (chat, profile, auth)
+
+---
+
+### 13.5. Селекторы
+
+Запрещено:
+- глобальные `input`, `button`, `select`
+- абстрактные классы `.title`, `.item`, `.arrow`, `.block`
+- общие классы без scope (`.submit-btn`, `.error-message`)
+
+Разрешено:
+- `.feature input`
+- `.auth-modal input`
+- `.chat .message`
+- `.profile .stat-card`
+- `.custom-select__arrow`
+
+Всегда:
+→ либо feature-scope  
+→ либо component-scope
+
+---
+
+### 13.6. Вынос стилей из компонентов
+
+Можно выносить:
+- статические стили
+- layout / spacing
+- визуальные правила
+- повторяющиеся CSS
+
+Нельзя выносить:
+- динамические `:style`
+- state-driven классы (`active`, `disabled` и т.д.)
+- runtime-зависимые стили
+
+---
+
+### 13.7. CSS-переменные (tokens)
+
+Приоритет:
+- использовать существующие `var(--...)`
+
+Разрешено:
+- заменять хардкод на токены при 1:1 совпадении
+
+Запрещено:
+- массово менять значения с риском визуальной регрессии
+- вводить новые переменные без необходимости
+
+---
+
+### 13.8. Accessibility
+
+Обязательно:
+- для интерактивных элементов использовать `:focus-visible`
+
+Правила:
+- не использовать `:focus` вместо `:focus-visible`
+- не ломать mouse interaction
+- использовать существующие color tokens
+
+---
+
+### 13.9. Modal layer
+
+`modal.css` должен содержать только:
+- `.modal-overlay`
+- `.modal-container`
+- `.modal-close`
+- transition-классы
+
+Запрещено:
+- добавлять feature-специфичные стили (recharge, profile UI и т.д.)
+
+---
+
+### 13.10. Общие принципы
+
+- не делать массовый рефакторинг
+- не делать полный BEM rewrite
+- не переименовывать всё без необходимости
+- не менять дизайн ради “архитектуры”
+
+Главное правило:
+→ лучше маленький безопасный шаг, чем “идеальный” рефакторинг

@@ -3,6 +3,6 @@
 @import './layout.css';
 @import './components.css';
 @import './modal.css';
-@import './chat.css';
-@import './profile.css';
-@import './auth.css';
+@import '../components/chat/chat.css';
+@import '../components/profile/profile.css';
+@import '../components/auth/auth.css';

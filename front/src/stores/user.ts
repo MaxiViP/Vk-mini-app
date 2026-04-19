@@ -8,6 +8,7 @@ import { getVkAiErrorCode, vkAiApi } from '../api/vkAi'
 import { billingApi } from '../api/billing'
 import { confirmYooKassaPaymentRequest, createYooKassaPaymentRequest } from '../api/payments'
 import { authApi, type OAuthProvider, type UserProfileResponse } from '../services/auth'
+import { clearOAuthCallbackFromLocation, readOAuthCallbackFromLocation } from '../utils/oauthCallback'
 
 const backendStorageScope = String(internalApiBaseUrl || 'same-origin')
 	.trim()
@@ -603,13 +604,12 @@ export const useUserStore = defineStore('user', () => {
 	}
 
 	async function finalizeOAuthCallbackFromLocation() {
-		const callbackMatch = window.location.pathname.match(/^\/oauth\/(vk|google|yandex)\/callback$/)
-		if (!callbackMatch) return false
+		const callback = readOAuthCallbackFromLocation()
+		if (!callback) return false
 
-		const provider = callbackMatch[1] as OAuthProvider
-		const params = new URLSearchParams(window.location.search)
-		const code = params.get('code')
-		const state = params.get('state')
+		const provider = callback.provider
+		const code = callback.code
+		const state = callback.state
 		if (!code || !state) {
 			throw new Error('OAuth callback не содержит code/state')
 		}
@@ -619,7 +619,7 @@ export const useUserStore = defineStore('user', () => {
 			const result = await authApi.finalizeOAuth({ provider, code, state })
 			applyAuthResult(result)
 			await syncProfileAfterAuth()
-			window.history.replaceState({}, document.title, '/')
+			clearOAuthCallbackFromLocation()
 			return true
 		} finally {
 			authPending.value = false
