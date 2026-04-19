@@ -2,11 +2,24 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import bridge from '@vkontakte/vk-bridge'
 
-import type { AiAccessPlan, AiAccessResponse, BillingSummary, User, YooKassaPaymentSession } from '../types'
+import type {
+	AiAccessPlan,
+	AiAccessResponse,
+	BillingSummary,
+	SubscriptionPurchasePreview,
+	SubscriptionPurchaseResult,
+	TopupPreview,
+	User,
+	YooKassaPaymentSession,
+} from '../types'
 import { internalApiBaseUrl } from '../config/chatBackend'
 import { getVkAiErrorCode, vkAiApi } from '../api/vkAi'
 import { billingApi } from '../api/billing'
-import { confirmYooKassaPaymentRequest, createYooKassaPaymentRequest } from '../api/payments'
+import {
+	confirmYooKassaPaymentRequest,
+	createYooKassaPaymentRequest,
+	previewYooKassaPaymentRequest,
+} from '../api/payments'
 import { authApi, type OAuthProvider, type UserProfileResponse } from '../services/auth'
 import { clearOAuthCallbackFromLocation, readOAuthCallbackFromLocation } from '../utils/oauthCallback'
 
@@ -141,6 +154,9 @@ const createFallbackBillingSummary = (
 		},
 		recentLedger: previousBilling?.recentLedger || [],
 		recentPayments: previousBilling?.recentPayments || [],
+		automaticDiscounts: previousBilling?.automaticDiscounts || [],
+		recentDiscounts: previousBilling?.recentDiscounts || [],
+		legacyBillingMode: true,
 	}
 }
 
@@ -224,8 +240,16 @@ export const useUserStore = defineStore('user', () => {
 		persistAuthState()
 	}
 
-	const applyLocalTopupFallback = (amount: number, paymentId: string) => {
-		const amountMinor = Math.round(amount * 100)
+	const applyLocalTopupFallback = (
+		creditedAmount: number,
+		paymentId: string,
+		options: {
+			bonusAmountMinor?: number
+			appliedDiscount?: YooKassaPaymentSession['appliedDiscount']
+		} = {},
+	) => {
+		const amountMinor = Math.round(creditedAmount * 100)
+		const amount = creditedAmount
 		const now = new Date().toISOString()
 
 		if (billing.value) {
@@ -234,7 +258,7 @@ export const useUserStore = defineStore('user', () => {
 				wallet: {
 					...billing.value.wallet,
 					balanceMinor: billing.value.wallet.balanceMinor + amountMinor,
-					balance: billing.value.wallet.balance + amount,
+					balance: billing.value.wallet.balance + creditedAmount,
 				},
 				recentPayments: [
 					{
@@ -242,7 +266,12 @@ export const useUserStore = defineStore('user', () => {
 						provider: 'yookassa',
 						status: 'succeeded',
 						amountMinor,
-						amount,
+						amount: creditedAmount,
+						creditedAmountMinor: amountMinor,
+						creditedAmount: creditedAmount,
+						bonusAmountMinor: options.bonusAmountMinor || 0,
+						bonusAmount: Number(options.bonusAmountMinor || 0) / 100,
+						appliedDiscount: options.appliedDiscount || null,
 						createdAt: now,
 						updatedAt: now,
 					},
@@ -538,12 +567,24 @@ export const useUserStore = defineStore('user', () => {
 		}
 	}
 
-	async function createYooKassaPayment(amount: number): Promise<YooKassaPaymentSession> {
+	async function previewSubscriptionPurchase(planCode: string, promoCode?: string): Promise<SubscriptionPurchasePreview> {
+		if (!token.value) throw new Error('Требуется авторизация')
+
+		return billingApi.previewSubscriptionPurchase(planCode, token.value, promoCode)
+	}
+
+	async function previewTopup(amount: number, promoCode?: string): Promise<TopupPreview> {
+		if (!token.value) throw new Error('Требуется авторизация')
+
+		return previewYooKassaPaymentRequest(amount, token.value, promoCode)
+	}
+
+	async function createYooKassaPayment(amount: number, promoCode?: string): Promise<YooKassaPaymentSession> {
 		if (!token.value) {
 			throw new Error('Требуется авторизация')
 		}
 
-		return createYooKassaPaymentRequest(amount, token.value)
+		return createYooKassaPaymentRequest(amount, token.value, promoCode)
 	}
 
 	async function confirmYooKassaPayment(paymentId: string, amount: number) {
@@ -560,12 +601,15 @@ export const useUserStore = defineStore('user', () => {
 				paymentId,
 				status: 'succeeded' as const,
 				amount,
+				baseAmountMinor: Math.round(amount * 100),
+				bonusMinor: 0,
+				creditedAmountMinor: Math.round(amount * 100),
 				isStub: true,
 			}
 		}
 	}
 
-	async function purchasePlan(planCode: string) {
+	async function purchasePlan(planCode: string, promoCode?: string): Promise<SubscriptionPurchaseResult> {
 		if (!token.value) throw new Error('Требуется авторизация')
 		const idempotencyKey =
 			typeof crypto !== 'undefined' && crypto.randomUUID
@@ -574,7 +618,7 @@ export const useUserStore = defineStore('user', () => {
 
 		let response
 		try {
-			response = await billingApi.purchaseSubscription(planCode, token.value, idempotencyKey)
+			response = await billingApi.purchaseSubscription(planCode, token.value, idempotencyKey, promoCode)
 		} catch (error) {
 			if (getHttpStatus(error) === 404) {
 				throw new Error('Покупка подписок появится после обновления backend на сервере.')
@@ -647,6 +691,8 @@ export const useUserStore = defineStore('user', () => {
 		refreshAuth,
 		loadAiAccess,
 		loadAiPlans,
+		previewSubscriptionPurchase,
+		previewTopup,
 		createYooKassaPayment,
 		confirmYooKassaPayment,
 		purchasePlan,

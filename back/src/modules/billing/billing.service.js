@@ -6,6 +6,7 @@ import { AppError } from '../../shared/errors.js'
 import { logBusinessEvent } from '../../shared/observability.js'
 import { isAdminUser } from '../../shared/access.js'
 import { ALL_PLAN_CATALOG, PLAN_CATALOG, PAYG_PRICING_MINOR, formatMoneyMinor } from './billing.catalog.js'
+import { discountService } from './discount.service.js'
 
 const DEFAULT_CURRENCY = 'RUB'
 
@@ -74,6 +75,12 @@ const serializePayment = payment => ({
 	status: payment.status,
 	amountMinor: payment.amountMinor,
 	amount: formatMoneyMinor(payment.amountMinor),
+	creditedAmountMinor: payment.creditedAmountMinor ?? payment.amountMinor,
+	creditedAmount: formatMoneyMinor(payment.creditedAmountMinor ?? payment.amountMinor),
+	bonusAmountMinor: payment.bonusAmountMinor ?? 0,
+	bonusAmount: formatMoneyMinor(payment.bonusAmountMinor ?? 0),
+	promoCodeSnapshot: payment.promoCodeSnapshot || null,
+	appliedDiscount: payment.appliedDiscountSnapshot || null,
 	createdAt: payment.createdAt,
 	updatedAt: payment.updatedAt,
 })
@@ -132,6 +139,8 @@ const getLegacySummary = async ({ userId, historyLimit = 20 }) => {
 		},
 		recentLedger: ledger.map(serializeLedgerEntry),
 		recentPayments: payments.map(serializePayment),
+		automaticDiscounts: [],
+		recentDiscounts: [],
 		legacyBillingMode: true,
 	}
 }
@@ -166,6 +175,8 @@ export const ensurePlanCatalogSeeded = async () => {
 			}),
 		),
 	)
+
+	await discountService.ensureDiscountSeeded()
 }
 
 export const expireElapsedSubscriptions = async (db, userId = null, productType = null) => {
@@ -241,16 +252,65 @@ const buildPaymentSession = payment => {
 	return {
 		paymentId: payment.id,
 		amount,
+		baseAmountMinor: payment.amountMinor,
+		bonusMinor: payment.bonusAmountMinor ?? 0,
+		creditedAmountMinor: payment.creditedAmountMinor ?? payment.amountMinor,
 		status: payment.status,
 		confirmationUrl: `https://yookassa.ru/mock/${payment.id}`,
 		qrCodeDataUrl: createStubQrCode(payment.id.slice(0, 12)),
 		qrPayload,
 		isStub: true,
 		provider: 'yookassa',
+		appliedDiscount: payment.appliedDiscountSnapshot || null,
 	}
 }
 
 export const billingService = {
+	async previewSubscriptionPurchase({ userId, planCode, promoCode }) {
+		if (!billingV2Available) {
+			throw new AppError('Subscription billing requires billing migration on the server', 503)
+		}
+
+		await ensurePlanCatalogSeeded()
+
+		const plan = await prisma.plan.findUnique({ where: { code: planCode } })
+		if (!plan || !plan.isActive) throw new AppError('Plan not found', 404)
+
+		const preview = await discountService.previewSubscriptionPurchase({
+			userId,
+			productType: plan.productType || CORE_PRODUCT_TYPE,
+			planCode: plan.code,
+			basePriceMinor: plan.priceMinor,
+			promoCode,
+		})
+
+		return {
+			basePriceMinor: preview.basePriceMinor,
+			discountMinor: preview.discountMinor,
+			finalPriceMinor: preview.finalPriceMinor,
+			appliedDiscount: preview.appliedDiscount,
+			message: preview.message || null,
+		}
+	},
+
+	async previewYooKassaPayment({ userId, amount, promoCode }) {
+		await ensurePlanCatalogSeeded()
+
+		const preview = await discountService.previewWalletTopup({
+			userId,
+			baseAmountMinor: toMinor(amount),
+			promoCode,
+		})
+
+		return {
+			baseAmountMinor: preview.baseAmountMinor,
+			bonusMinor: preview.bonusMinor,
+			creditedAmountMinor: preview.creditedAmountMinor,
+			appliedDiscount: preview.appliedDiscount,
+			message: preview.message || null,
+		}
+	},
+
 	async applySuccessfulPayment(payment) {
 		if (!payment) throw new AppError('Payment not found', 404)
 
@@ -267,24 +327,63 @@ export const billingService = {
 
 			const ledgerKey = `payment_success_${currentPayment.id}`
 			const existingLedger = await tx.walletLedger.findUnique({ where: { idempotencyKey: ledgerKey } })
-			if (existingLedger) return
+			const existingRedemption = currentPayment.appliedDiscountId
+				? await tx.discountRedemption.findFirst({ where: { paymentId: currentPayment.id } })
+				: null
+			if (existingLedger) {
+				if (
+					currentPayment.appliedDiscountId &&
+					!existingRedemption &&
+					Number(currentPayment.bonusAmountMinor || 0) > 0
+				) {
+					await discountService.createDiscountRedemption({
+						db: tx,
+						discountId: currentPayment.appliedDiscountId,
+						userId: currentPayment.userId,
+						paymentId: currentPayment.id,
+						promoCodeSnapshot: currentPayment.promoCodeSnapshot,
+						baseAmountMinor: currentPayment.amountMinor,
+						discountAmountMinor: currentPayment.bonusAmountMinor || 0,
+						finalAmountMinor: currentPayment.creditedAmountMinor || currentPayment.amountMinor,
+						applicationType: discountService.DISCOUNT_APPLICATION_TYPES.WALLET_TOPUP,
+					})
+				}
+
+				return
+			}
+
+			const creditedAmountMinor = currentPayment.creditedAmountMinor || currentPayment.amountMinor
 
 			await ensureWalletExists(tx, currentPayment.userId)
 			await tx.wallet.update({
 				where: { userId: currentPayment.userId },
-				data: { balanceMinor: { increment: currentPayment.amountMinor } },
+				data: { balanceMinor: { increment: creditedAmountMinor } },
 			})
 			await tx.walletLedger.create({
 				data: {
 					userId: currentPayment.userId,
 					type: 'credit',
-					amountMinor: currentPayment.amountMinor,
+					amountMinor: creditedAmountMinor,
 					reason: 'payment_topup',
 					referenceType: 'payment',
 					referenceId: currentPayment.id,
 					idempotencyKey: ledgerKey,
 				},
 			})
+
+			if (currentPayment.appliedDiscountId && Number(currentPayment.bonusAmountMinor || 0) > 0 && !existingRedemption) {
+				await discountService.createDiscountRedemption({
+					db: tx,
+					discountId: currentPayment.appliedDiscountId,
+					userId: currentPayment.userId,
+					paymentId: currentPayment.id,
+					promoCodeSnapshot: currentPayment.promoCodeSnapshot,
+					baseAmountMinor: currentPayment.amountMinor,
+					discountAmountMinor: currentPayment.bonusAmountMinor || 0,
+					finalAmountMinor: creditedAmountMinor,
+					applicationType: discountService.DISCOUNT_APPLICATION_TYPES.WALLET_TOPUP,
+				})
+			}
 		})
 
 		await logBusinessEvent({
@@ -292,11 +391,16 @@ export const billingService = {
 			actorUserId: payment.userId,
 			entityType: 'wallet',
 			entityId: payment.userId,
-			payload: { deltaMinor: payment.amountMinor, reason: 'payment_topup' },
+			payload: {
+				deltaMinor: payment.creditedAmountMinor || payment.amountMinor,
+				reason: 'payment_topup',
+				bonusAmountMinor: payment.bonusAmountMinor || 0,
+				appliedDiscount: payment.appliedDiscountSnapshot || null,
+			},
 		})
 	},
 
-	async createYooKassaPayment({ userId, amount, returnUrl, idempotencyKey }) {
+	async createYooKassaPayment({ userId, amount, returnUrl, idempotencyKey, promoCode }) {
 		const amountMinor = toMinor(amount)
 		const safeIdempotencyKey = idempotencyKey || crypto.randomUUID()
 
@@ -305,12 +409,23 @@ export const billingService = {
 			return buildPaymentSession(existing)
 		}
 
+		const preview = await discountService.previewWalletTopup({
+			userId,
+			baseAmountMinor: amountMinor,
+			promoCode,
+		})
+
 		const payment = await prisma.payment.create({
 			data: {
 				userId,
 				provider: 'yookassa',
 				providerPaymentId: `yoopay_${crypto.randomUUID()}`,
 				amountMinor,
+				creditedAmountMinor: preview.creditedAmountMinor,
+				bonusAmountMinor: preview.bonusMinor,
+				promoCodeSnapshot: preview.promoCodeSnapshot,
+				appliedDiscountId: preview.selectedDiscountId,
+				appliedDiscountSnapshot: preview.appliedDiscount,
 				status: 'pending',
 				idempotencyKey: safeIdempotencyKey,
 			},
@@ -323,6 +438,8 @@ export const billingService = {
 				rawPayload: {
 					returnUrl: returnUrl || null,
 					mode: 'stub',
+					promoCode: preview.promoCodeSnapshot,
+					appliedDiscount: preview.appliedDiscount,
 				},
 			},
 		})
@@ -332,7 +449,13 @@ export const billingService = {
 			actorUserId: userId,
 			entityType: 'payment',
 			entityId: payment.id,
-			payload: { amountMinor, idempotencyKey: safeIdempotencyKey },
+			payload: {
+				amountMinor,
+				creditedAmountMinor: preview.creditedAmountMinor,
+				bonusAmountMinor: preview.bonusMinor,
+				idempotencyKey: safeIdempotencyKey,
+				appliedDiscount: preview.appliedDiscount,
+			},
 		})
 
 		return buildPaymentSession(payment)
@@ -402,12 +525,16 @@ export const billingService = {
 		return {
 			paymentId: payment.id,
 			status: 'succeeded',
-			amount: formatMoneyMinor(payment.amountMinor),
+			amount: formatMoneyMinor(payment.creditedAmountMinor || payment.amountMinor),
+			baseAmountMinor: payment.amountMinor,
+			bonusMinor: payment.bonusAmountMinor || 0,
+			creditedAmountMinor: payment.creditedAmountMinor || payment.amountMinor,
+			appliedDiscount: payment.appliedDiscountSnapshot || null,
 			isStub: true,
 		}
 	},
 
-	async purchaseSubscription({ userId, planCode, idempotencyKey }) {
+	async purchaseSubscription({ userId, planCode, idempotencyKey, promoCode }) {
 		if (!billingV2Available) {
 			throw new AppError('Subscription billing requires billing migration on the server', 503)
 		}
@@ -424,11 +551,34 @@ export const billingService = {
 				include: { plan: true },
 			})
 			if (existingSubscription) {
+				const existingRedemption = await prisma.discountRedemption.findFirst({
+					where: { subscriptionId: existingSubscription.id },
+					include: { discount: true },
+				})
+
 				return {
 					subscription: serializeSubscription(existingSubscription),
 					balanceMinor: (
 						await ensureWalletExists(prisma, userId).then(() => prisma.wallet.findUnique({ where: { userId } }))
 					)?.balanceMinor || 0,
+					basePriceMinor: existingSubscription.plan.priceMinor,
+					discountMinor: existingRedemption?.discountAmountMinor || 0,
+					finalPriceMinor:
+						Math.max(existingSubscription.plan.priceMinor - (existingRedemption?.discountAmountMinor || 0), 0),
+					appliedDiscount: existingRedemption?.discount
+						? {
+								id: existingRedemption.discount.id,
+								code: existingRedemption.discount.code || null,
+								name: existingRedemption.discount.name,
+								description: existingRedemption.discount.description || null,
+								type: existingRedemption.discount.discountType,
+								value: existingRedemption.discount.value,
+								isAutomatic: Boolean(existingRedemption.discount.isAutomatic),
+								productType: existingRedemption.discount.productType || null,
+								planCode: existingRedemption.discount.planCode || null,
+								allowStacking: Boolean(existingRedemption.discount.allowStacking),
+							}
+						: null,
 					idempotentReplay: true,
 				}
 			}
@@ -444,7 +594,17 @@ export const billingService = {
 			])
 
 			if (!plan || !plan.isActive) throw new AppError('Plan not found', 404)
-			if ((wallet?.balanceMinor || 0) < plan.priceMinor) {
+
+			const preview = await discountService.previewSubscriptionPurchase({
+				db: tx,
+				userId,
+				productType: plan.productType || CORE_PRODUCT_TYPE,
+				planCode: plan.code,
+				basePriceMinor: plan.priceMinor,
+				promoCode,
+			})
+
+			if ((wallet?.balanceMinor || 0) < preview.finalPriceMinor) {
 				throw new AppError('Insufficient balance for subscription purchase', 402)
 			}
 
@@ -478,14 +638,14 @@ export const billingService = {
 
 			await tx.wallet.update({
 				where: { userId },
-				data: { balanceMinor: { decrement: plan.priceMinor } },
+				data: { balanceMinor: { decrement: preview.finalPriceMinor } },
 			})
 
 			await tx.walletLedger.create({
 				data: {
 					userId,
 					type: 'debit',
-					amountMinor: plan.priceMinor,
+					amountMinor: preview.finalPriceMinor,
 					reason: 'subscription_purchase',
 					referenceType: 'subscription',
 					referenceId: subscription.id,
@@ -493,11 +653,26 @@ export const billingService = {
 				},
 			})
 
+			if (preview.selectedDiscountId && preview.discountMinor > 0) {
+				await discountService.createDiscountRedemption({
+					db: tx,
+					discountId: preview.selectedDiscountId,
+					userId,
+					subscriptionId: subscription.id,
+					promoCodeSnapshot: preview.promoCodeSnapshot,
+					baseAmountMinor: preview.basePriceMinor,
+					discountAmountMinor: preview.discountMinor,
+					finalAmountMinor: preview.finalPriceMinor,
+					applicationType: discountService.DISCOUNT_APPLICATION_TYPES.SUBSCRIPTION_PURCHASE,
+				})
+			}
+
 			const updatedWallet = await tx.wallet.findUnique({ where: { userId } })
 
 			return {
 				subscription,
 				wallet: updatedWallet,
+				preview,
 			}
 		})
 
@@ -508,7 +683,10 @@ export const billingService = {
 			entityId: result.subscription.id,
 			payload: {
 				planCode,
-				priceMinor: result.subscription.plan.priceMinor,
+				basePriceMinor: result.subscription.plan.priceMinor,
+				discountMinor: result.preview.discountMinor,
+				finalPriceMinor: result.preview.finalPriceMinor,
+				appliedDiscount: result.preview.appliedDiscount,
 			},
 		})
 		await logBusinessEvent({
@@ -517,14 +695,20 @@ export const billingService = {
 			entityType: 'wallet',
 			entityId: userId,
 			payload: {
-				deltaMinor: -result.subscription.plan.priceMinor,
+				deltaMinor: -result.preview.finalPriceMinor,
 				reason: 'subscription_purchase',
+				appliedDiscount: result.preview.appliedDiscount,
 			},
 		})
 
 		return {
 			subscription: serializeSubscription(result.subscription),
 			balanceMinor: result.wallet?.balanceMinor || 0,
+			basePriceMinor: result.preview.basePriceMinor,
+			discountMinor: result.preview.discountMinor,
+			finalPriceMinor: result.preview.finalPriceMinor,
+			appliedDiscount: result.preview.appliedDiscount,
+			message: result.preview.message,
 			idempotentReplay: false,
 		}
 	},
@@ -539,7 +723,7 @@ export const billingService = {
 			await ensureWalletExists(prisma, userId)
 			await expireElapsedSubscriptions(prisma, userId, CORE_PRODUCT_TYPE)
 
-			const [wallet, activeSubscription, plans, ledger, payments] = await Promise.all([
+			const [wallet, activeSubscription, plans, ledger, payments, automaticDiscounts, recentDiscounts] = await Promise.all([
 				prisma.wallet.findUnique({ where: { userId } }),
 				getActiveSubscriptionWithPlan(prisma, userId, { productType: CORE_PRODUCT_TYPE }),
 				prisma.plan.findMany({
@@ -556,6 +740,8 @@ export const billingService = {
 					take: Math.min(Number(historyLimit) || 20, 100),
 					orderBy: { createdAt: 'desc' },
 				}),
+				discountService.getAutomaticDiscountsSummary({ userId }),
+				discountService.getRecentDiscountRedemptions({ userId, limit: historyLimit }),
 			])
 
 			return {
@@ -580,6 +766,8 @@ export const billingService = {
 				},
 				recentLedger: ledger.map(serializeLedgerEntry),
 				recentPayments: payments.map(serializePayment),
+				automaticDiscounts,
+				recentDiscounts,
 			}
 		} catch (error) {
 			if (!isLegacyBillingSchemaError(error)) throw error
@@ -588,7 +776,7 @@ export const billingService = {
 	},
 
 	async getHistory({ userId, limit = 50 }) {
-		const [payments, ledger] = await Promise.all([
+		const [payments, ledger, discounts] = await Promise.all([
 			prisma.payment.findMany({
 				where: { userId },
 				take: Math.min(limit, 200),
@@ -599,11 +787,13 @@ export const billingService = {
 				take: Math.min(limit, 200),
 				orderBy: { createdAt: 'desc' },
 			}),
+			discountService.getRecentDiscountRedemptions({ userId, limit }),
 		])
 
 		return {
 			payments: payments.map(serializePayment),
 			ledger: ledger.map(serializeLedgerEntry),
+			discounts,
 		}
 	},
 

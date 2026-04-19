@@ -19,11 +19,30 @@
 							@keyup.enter="submit"
 						/>
 
+						<input
+							v-model.trim="promoCode"
+							type="text"
+							placeholder="Промокод"
+							class="amount-input promo-code-input"
+						/>
+
 						<div class="modal-buttons">
+							<button @click="loadPreview" class="cancel-btn" :disabled="!isValid || isLoading">
+								{{ isLoadingPreview ? 'Проверяем...' : promoCode ? 'Применить' : 'Проверить бонус' }}
+							</button>
 							<button @click="submit" class="submit-btn" :disabled="!isValid || isLoading">
 								{{ isLoading ? 'Создаём платёж...' : 'Создать платёж' }}
 							</button>
-							<button @click="close" class="cancel-btn">Отмена</button>
+						</div>
+
+						<div v-if="preview" class="recharge-preview">
+							<p>Сумма пополнения: <b>{{ formatMoneyMinor(preview.baseAmountMinor) }} ₽</b></p>
+							<p>Бонус: <b>{{ formatMoneyMinor(preview.bonusMinor) }} ₽</b></p>
+							<p>Будет зачислено: <b>{{ formatMoneyMinor(preview.creditedAmountMinor) }} ₽</b></p>
+							<p v-if="preview.appliedDiscount" class="recharge-preview__discount">
+								Применено: {{ preview.appliedDiscount.name }}
+							</p>
+							<p v-if="preview.message" class="stub-note">{{ preview.message }}</p>
 						</div>
 
 						<p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
@@ -32,9 +51,16 @@
 					<div class="modal-content" v-else>
 						<h3>YooKassa stub</h3>
 						<p>Сумма: {{ amount }} ₽</p>
+						<p v-if="paymentSession?.bonusMinor" class="stub-note">
+							Будет зачислено {{ formatMoneyMinor(paymentSession?.creditedAmountMinor) }} ₽, включая бонус
+							{{ formatMoneyMinor(paymentSession?.bonusMinor) }} ₽.
+						</p>
+						<p v-if="paymentSession?.appliedDiscount" class="stub-note">
+							Акция: {{ paymentSession.appliedDiscount.name }}
+						</p>
 						<p class="stub-note">
-							Backend уже создаёт запись платежа в базе. После подключения официального провайдера здесь останется
-							тот же сценарий подтверждения, поменяется только реальный checkout.
+							Backend уже создаёт запись платежа в базе. После подключения официального провайдера останется тот же
+							сценарий подтверждения, поменяется только реальный checkout.
 						</p>
 
 						<img
@@ -73,7 +99,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import type { YooKassaPaymentSession } from '../../types'
+import type { TopupPreview, YooKassaPaymentSession } from '../../types'
 import { useUserStore } from '../../stores/user'
 
 const props = defineProps<{
@@ -82,24 +108,36 @@ const props = defineProps<{
 
 const emit = defineEmits<{
 	(e: 'update:visible', value: boolean): void
-	(e: 'success', amount: number): void
+	(e: 'success', payload: { creditedAmount: number; bonusMinor: number; discountName?: string | null }): void
 }>()
 
 const userStore = useUserStore()
 const amount = ref<number>(100)
+const promoCode = ref('')
+const preview = ref<TopupPreview | null>(null)
 const errorMessage = ref('')
 const isLoading = ref(false)
+const isLoadingPreview = ref(false)
 const step = ref<'form' | 'payment'>('form')
 const paymentSession = ref<YooKassaPaymentSession | null>(null)
 
 const isValid = computed(() => amount.value > 0 && !Number.isNaN(amount.value))
+const normalizedPromoCode = computed(() => {
+	const value = promoCode.value.trim()
+	return value || undefined
+})
+
+const formatMoneyMinor = (value?: number | null) => (Number(value || 0) / 100).toFixed(0)
 
 const resetState = () => {
 	amount.value = 100
+	promoCode.value = ''
+	preview.value = null
 	errorMessage.value = ''
 	step.value = 'form'
 	paymentSession.value = null
 	isLoading.value = false
+	isLoadingPreview.value = false
 }
 
 const close = () => {
@@ -113,6 +151,23 @@ const resetToForm = () => {
 	paymentSession.value = null
 }
 
+const loadPreview = async () => {
+	if (!isValid.value) {
+		errorMessage.value = 'Сумма должна быть больше 0 ₽'
+		return
+	}
+
+	try {
+		errorMessage.value = ''
+		isLoadingPreview.value = true
+		preview.value = await userStore.previewTopup(amount.value, normalizedPromoCode.value)
+	} catch (error) {
+		errorMessage.value = (error as Error).message || 'Не удалось получить preview пополнения.'
+	} finally {
+		isLoadingPreview.value = false
+	}
+}
+
 const submit = async () => {
 	if (!isValid.value) {
 		errorMessage.value = 'Сумма должна быть больше 0 ₽'
@@ -122,7 +177,10 @@ const submit = async () => {
 	try {
 		errorMessage.value = ''
 		isLoading.value = true
-		paymentSession.value = await userStore.createYooKassaPayment(amount.value)
+		if (!preview.value) {
+			preview.value = await userStore.previewTopup(amount.value, normalizedPromoCode.value)
+		}
+		paymentSession.value = await userStore.createYooKassaPayment(amount.value, normalizedPromoCode.value)
 		step.value = 'payment'
 	} catch (error) {
 		errorMessage.value = (error as Error).message || 'Не удалось создать платёж.'
@@ -137,8 +195,12 @@ const confirmPayment = async () => {
 	try {
 		errorMessage.value = ''
 		isLoading.value = true
-		await userStore.confirmYooKassaPayment(paymentSession.value.paymentId, amount.value)
-		emit('success', amount.value)
+		const result = await userStore.confirmYooKassaPayment(paymentSession.value.paymentId, amount.value)
+		emit('success', {
+			creditedAmount: result.amount,
+			bonusMinor: result.bonusMinor || 0,
+			discountName: result.appliedDiscount?.name || null,
+		})
 		close()
 	} catch (error) {
 		errorMessage.value = (error as Error).message || 'Оплата пока не подтверждена.'
@@ -153,4 +215,8 @@ watch(
 		if (!value) resetState()
 	},
 )
+
+watch([amount, promoCode], () => {
+	preview.value = null
+})
 </script>

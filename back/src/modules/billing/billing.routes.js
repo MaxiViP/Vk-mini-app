@@ -20,6 +20,20 @@ router.get(
 )
 
 router.post(
+	'/subscriptions/preview',
+	authMiddleware,
+	asyncHandler(async (req, res) => {
+		requireFields(req.body, ['planCode'])
+		const result = await billingService.previewSubscriptionPurchase({
+			userId: req.user.id,
+			planCode: req.body.planCode,
+			promoCode: req.body.promoCode || undefined,
+		})
+		res.json(result)
+	}),
+)
+
+router.post(
 	'/subscriptions/purchase',
 	authMiddleware,
 	asyncHandler(async (req, res) => {
@@ -27,9 +41,24 @@ router.post(
 		const result = await billingService.purchaseSubscription({
 			userId: req.user.id,
 			planCode: req.body.planCode,
+			promoCode: req.body.promoCode || undefined,
 			idempotencyKey: req.body.idempotencyKey || req.header('Idempotency-Key') || undefined,
 		})
 		res.status(201).json(result)
+	}),
+)
+
+router.post(
+	'/yookassa/preview',
+	authMiddleware,
+	asyncHandler(async (req, res) => {
+		requireFields(req.body, ['amount'])
+		const result = await billingService.previewYooKassaPayment({
+			userId: req.user.id,
+			amount: req.body.amount,
+			promoCode: req.body.promoCode || undefined,
+		})
+		res.json(result)
 	}),
 )
 
@@ -41,6 +70,7 @@ router.post(
 		const result = await billingService.createYooKassaPayment({
 			userId: req.user.id,
 			amount: req.body.amount,
+			promoCode: req.body.promoCode || undefined,
 			returnUrl: req.body.returnUrl,
 			idempotencyKey: req.body.idempotencyKey || req.header('Idempotency-Key') || undefined,
 		})

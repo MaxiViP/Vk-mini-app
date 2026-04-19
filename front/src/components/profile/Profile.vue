@@ -32,8 +32,8 @@
 				<div class="section-head">
 					<h3>Тарифы и оплата</h3>
 					<p class="billing-subtitle">
-						Источник правды теперь backend: баланс, подписки, списания и история операций хранятся в базе и используются
-						во всех сценариях оплаты.
+						Источник правды теперь backend: баланс, подписки, списания и история операций хранятся в базе и
+						используются во всех сценариях оплаты.
 					</p>
 				</div>
 				<div class="profile-actions">
@@ -61,6 +61,11 @@
 					<p class="hint-text">
 						Любой запрос в режиме pay-per-request: {{ userStore.billing?.paygPricing.basic || 5 }} ₽.
 					</p>
+
+					<p v-if="automaticDiscounts.length" class="hint-text">
+						Автоматические акции:
+						<b>{{ automaticDiscounts.map(discount => discount.name).join(', ') }}</b>
+					</p>
 				</div>
 
 				<div class="plans-grid">
@@ -79,6 +84,36 @@
 						<h4>{{ plan.name }}</h4>
 						<p class="plan-period">{{ plan.intervalDays }} дней</p>
 						<p class="plan-price">{{ formatMoney(plan.price) }} ₽</p>
+
+						<div class="plan-discount-controls">
+							<input
+								:value="getPlanPromoCode(plan.code)"
+								type="text"
+								placeholder="Промокод"
+								class="plan-promo-input"
+								@input="updatePlanPromoCode(plan.code, $event)"
+							/>
+							<button
+								type="button"
+								class="plan-preview-btn"
+								:disabled="isBusy || isPlanPreviewPending(plan.code)"
+								@click="applyPlanPreview(plan.code)"
+							>
+								{{ isPlanPreviewPending(plan.code) ? 'Проверяем...' : getPlanPromoCode(plan.code).trim() ? 'Применить' : 'Проверить цену' }}
+							</button>
+						</div>
+
+						<div v-if="getPlanPreview(plan.code)" class="plan-preview">
+							<p>Базовая цена: <b>{{ formatMoneyMinor(getPlanPreview(plan.code)?.basePriceMinor) }} ₽</b></p>
+							<p>Скидка: <b>{{ formatMoneyMinor(getPlanPreview(plan.code)?.discountMinor) }} ₽</b></p>
+							<p>Итог: <b>{{ formatMoneyMinor(getPlanPreview(plan.code)?.finalPriceMinor) }} ₽</b></p>
+							<p v-if="getPlanPreview(plan.code)?.appliedDiscount" class="plan-preview__discount">
+								Применено: {{ getPlanPreview(plan.code)?.appliedDiscount?.name }}
+							</p>
+							<p v-if="getPlanPreview(plan.code)?.message" class="plan-preview__message">
+								{{ getPlanPreview(plan.code)?.message }}
+							</p>
+						</div>
 
 						<ul>
 							<li>{{ plan.includedRequests }} включённых запросов на период</li>
@@ -180,6 +215,36 @@
 						<p class="plan-period">{{ plan.intervalDays }} дней</p>
 						<p class="plan-price">{{ formatMoney((plan.priceMinor || 0) / 100) }} ₽</p>
 
+						<div class="plan-discount-controls">
+							<input
+								:value="getPlanPromoCode(plan.code)"
+								type="text"
+								placeholder="Промокод"
+								class="plan-promo-input"
+								@input="updatePlanPromoCode(plan.code, $event)"
+							/>
+							<button
+								type="button"
+								class="plan-preview-btn"
+								:disabled="isBusy || isPlanPreviewPending(plan.code)"
+								@click="applyPlanPreview(plan.code)"
+							>
+								{{ isPlanPreviewPending(plan.code) ? 'Проверяем...' : getPlanPromoCode(plan.code).trim() ? 'Применить' : 'Проверить цену' }}
+							</button>
+						</div>
+
+						<div v-if="getPlanPreview(plan.code)" class="plan-preview">
+							<p>Базовая цена: <b>{{ formatMoneyMinor(getPlanPreview(plan.code)?.basePriceMinor) }} ₽</b></p>
+							<p>Скидка: <b>{{ formatMoneyMinor(getPlanPreview(plan.code)?.discountMinor) }} ₽</b></p>
+							<p>Итог: <b>{{ formatMoneyMinor(getPlanPreview(plan.code)?.finalPriceMinor) }} ₽</b></p>
+							<p v-if="getPlanPreview(plan.code)?.appliedDiscount" class="plan-preview__discount">
+								Применено: {{ getPlanPreview(plan.code)?.appliedDiscount?.name }}
+							</p>
+							<p v-if="getPlanPreview(plan.code)?.message" class="plan-preview__message">
+								{{ getPlanPreview(plan.code)?.message }}
+							</p>
+						</div>
+
 						<ul>
 							<li>Чат: {{ formatAiCounter(plan.aiChatLimit) }}</li>
 							<li>Voice: {{ formatAiCounter(plan.aiVoiceLimit) }}</li>
@@ -223,8 +288,8 @@
 							<span>После первого пополнения здесь появится история созданных и подтверждённых платежей.</span>
 						</li>
 						<li v-for="payment in recentPayments" :key="payment.id">
-							<b>{{ payment.status === 'succeeded' ? 'Пополнение подтверждено' : 'Платёж создан' }}</b>
-							<span>{{ formatMoney(payment.amount) }} ₽ · {{ formatDate(payment.createdAt) }}</span>
+							<b>{{ paymentTitle(payment) }}</b>
+							<span>{{ paymentAmountLabel(payment) }} · {{ formatDate(payment.createdAt) }}</span>
 						</li>
 					</ul>
 				</div>
@@ -242,7 +307,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
-import type { AiAccessPlan, BillingLedgerEntry, BillingPayment, BillingPlan } from '../../types'
+import type {
+	AiAccessPlan,
+	BillingLedgerEntry,
+	BillingPayment,
+	BillingPlan,
+	SubscriptionPurchasePreview,
+} from '../../types'
 import { canBuyPlanFromWallet } from '../../domain/billingRules'
 import { useUserStore } from '../../stores/user'
 import RechargeModal from './RechargeModal.vue'
@@ -252,6 +323,9 @@ const showRechargeModal = ref(false)
 const statusMessage = ref('')
 const statusKind = ref<'success' | 'error'>('success')
 const isBusy = ref(false)
+const planPromoCodes = ref<Record<string, string>>({})
+const planPreviews = ref<Record<string, SubscriptionPurchasePreview | null>>({})
+const planPreviewLoading = ref<Record<string, boolean>>({})
 const fallbackAvatar =
 	'data:image/svg+xml;charset=UTF-8,' +
 	encodeURIComponent(
@@ -266,6 +340,7 @@ const aiPlans = computed(() => userStore.aiPlans || [])
 const availableBalanceMinor = computed(() => Number(userStore.billing?.wallet.balanceMinor || 0))
 const recentLedger = computed(() => (userStore.billing?.recentLedger || []).slice(0, 6))
 const recentPayments = computed(() => (userStore.billing?.recentPayments || []).slice(0, 6))
+const automaticDiscounts = computed(() => userStore.billing?.automaticDiscounts || [])
 
 const activeModeLabel = computed(() => {
 	if (!activeSubscription.value?.plan) return 'Pay-per-request'
@@ -303,7 +378,12 @@ const setError = (message: string) => {
 }
 
 const formatMoney = (value: number) => Number(value || 0).toFixed(0)
+const formatMoneyMinor = (value?: number | null) => formatMoney(Number(value || 0) / 100)
 const formatDate = (value: string) => new Date(value).toLocaleString()
+const normalizePromoCode = (value?: string) => {
+	const normalized = String(value || '').trim()
+	return normalized || undefined
+}
 
 const formatAiCounter = (value?: number | null) => Number(value ?? 0)
 
@@ -312,17 +392,58 @@ const planDescription = (planCode: string) => {
 	return 'Подходит для массовых базовых сценариев'
 }
 
+const getPlanPromoCode = (planCode: string) => planPromoCodes.value[planCode] || ''
+const getPlanPreview = (planCode: string) => planPreviews.value[planCode] || null
+const isPlanPreviewPending = (planCode: string) => Boolean(planPreviewLoading.value[planCode])
+
+const updatePlanPromoCode = (planCode: string, event: Event) => {
+	const value = (event.target as HTMLInputElement | null)?.value || ''
+	planPromoCodes.value = {
+		...planPromoCodes.value,
+		[planCode]: value,
+	}
+	planPreviews.value = {
+		...planPreviews.value,
+		[planCode]: null,
+	}
+}
+
+const applyPlanPreview = async (planCode: string) => {
+	try {
+		planPreviewLoading.value = {
+			...planPreviewLoading.value,
+			[planCode]: true,
+		}
+		const preview = await userStore.previewSubscriptionPurchase(planCode, normalizePromoCode(getPlanPromoCode(planCode)))
+		planPreviews.value = {
+			...planPreviews.value,
+			[planCode]: preview,
+		}
+	} catch (error) {
+		setError((error as Error).message || 'Не удалось получить preview тарифа.')
+	} finally {
+		planPreviewLoading.value = {
+			...planPreviewLoading.value,
+			[planCode]: false,
+		}
+	}
+}
+
+const getEffectivePlanPriceMinor = (plan: BillingPlan | AiAccessPlan) =>
+	getPlanPreview(plan.code)?.finalPriceMinor ?? Number(plan.priceMinor || 0)
+
 const canBuyPlan = (plan: BillingPlan) =>
 	canBuyPlanFromWallet({
 		walletBalanceMinor: availableBalanceMinor.value,
-		planPriceMinor: Number(plan.priceMinor || 0),
+		planPriceMinor: getEffectivePlanPriceMinor(plan),
 	})
+
 const canBuyAiPlan = (plan: AiAccessPlan) => {
 	if (aiAccess.value?.hasAccess && aiAccess.value.plan?.code === plan.code) return false
 	if (!plan.isActive) return false
 	return canBuyPlanFromWallet({
 		walletBalanceMinor: availableBalanceMinor.value,
-		planPriceMinor: Number(plan.priceMinor || 0),
+		planPriceMinor: getEffectivePlanPriceMinor(plan),
 	})
 }
 
@@ -353,6 +474,25 @@ const ledgerTitle = (reason: BillingLedgerEntry['reason']) => {
 const ledgerAmount = (entry: BillingLedgerEntry) =>
 	`${entry.type === 'debit' ? '-' : '+'}${formatMoney(entry.amount)} ₽`
 
+const paymentTitle = (payment: BillingPayment) => {
+	if (payment.appliedDiscount?.type?.startsWith('topup_bonus')) {
+		return 'Пополнение с бонусом'
+	}
+
+	return payment.status === 'succeeded' ? 'Пополнение подтверждено' : 'Платёж создан'
+}
+
+const paymentAmountLabel = (payment: BillingPayment) => {
+	const creditedAmount = payment.creditedAmount ?? payment.amount
+	const bonusAmount = payment.bonusAmount ?? 0
+
+	if (bonusAmount > 0) {
+		return `${formatMoney(creditedAmount)} ₽ (включая бонус ${formatMoney(bonusAmount)} ₽)`
+	}
+
+	return `${formatMoney(creditedAmount)} ₽`
+}
+
 const reloadBilling = async () => {
 	if (isBusy.value) return
 	try {
@@ -371,8 +511,12 @@ const buyPlan = async (planCode: string) => {
 
 	try {
 		isBusy.value = true
-		await userStore.purchasePlan(planCode)
-		setSuccess('Подписка активирована и сохранена в базе.')
+		const result = await userStore.purchasePlan(planCode, normalizePromoCode(getPlanPromoCode(planCode)))
+		setSuccess(
+			result.appliedDiscount
+				? `Подписка активирована. Применена скидка: ${result.appliedDiscount.name}.`
+				: 'Подписка активирована и сохранена в базе.',
+		)
 	} catch (error) {
 		setError((error as Error).message || 'Не удалось купить подписку.')
 	} finally {
@@ -385,10 +529,14 @@ const buyAiPlan = async (planCode: string) => {
 
 	try {
 		isBusy.value = true
-		await userStore.purchasePlan(planCode)
+		const result = await userStore.purchasePlan(planCode, normalizePromoCode(getPlanPromoCode(planCode)))
 		await userStore.loadAiAccess()
 		await userStore.loadAiPlans()
-		setSuccess('AI-подписка активирована.')
+		setSuccess(
+			result.appliedDiscount
+				? `AI-подписка активирована. Применена скидка: ${result.appliedDiscount.name}.`
+				: 'AI-подписка активирована.',
+		)
 	} catch (error) {
 		setError((error as Error).message || 'Не удалось купить AI-подписку.')
 	} finally {
@@ -396,8 +544,18 @@ const buyAiPlan = async (planCode: string) => {
 	}
 }
 
-const handleRecharge = (amount: number) => {
-	setSuccess(`Платёж подтверждён. Баланс пополнен на ${formatMoney(amount)} ₽.`)
+const handleRecharge = (payload: { creditedAmount: number; bonusMinor: number; discountName?: string | null }) => {
+	const bonusAmount = Number(payload.bonusMinor || 0) / 100
+	if (bonusAmount > 0) {
+		setSuccess(
+			`Платёж подтверждён. На баланс зачислено ${formatMoney(payload.creditedAmount)} ₽, включая бонус ${formatMoney(bonusAmount)} ₽${
+				payload.discountName ? ` по акции ${payload.discountName}` : ''
+			}.`,
+		)
+		return
+	}
+
+	setSuccess(`Платёж подтверждён. Баланс пополнен на ${formatMoney(payload.creditedAmount)} ₽.`)
 }
 
 onMounted(() => {
@@ -405,6 +563,7 @@ onMounted(() => {
 		setError((error as Error).message || 'Не удалось загрузить биллинг.')
 	})
 })
+
 onMounted(() => {
 	void Promise.allSettled([userStore.loadAiAccess(), userStore.loadAiPlans()])
 })

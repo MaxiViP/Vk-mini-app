@@ -256,6 +256,54 @@
 	color: var(--color-primary);
 }
 
+.profile .plan-discount-controls {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 8px;
+}
+
+.profile .plan-promo-input {
+	width: 100%;
+	min-width: 0;
+	padding: 9px 12px;
+	border: 1px solid var(--color-border-soft);
+	border-radius: var(--radius-md);
+	background: rgba(255, 255, 255, 0.04);
+	color: var(--color-text);
+	font: inherit;
+	box-sizing: border-box;
+}
+
+.profile .plan-preview-btn {
+	padding: 9px 12px;
+	border: 1px solid var(--color-border-soft);
+	border-radius: var(--radius-md);
+	background: rgba(255, 255, 255, 0.06);
+	color: var(--color-text);
+	font-size: 13px;
+}
+
+.profile .plan-preview {
+	padding: 10px 12px;
+	border-radius: var(--radius-md);
+	background: rgba(0, 0, 0, 0.18);
+	border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.profile .plan-preview p {
+	margin: 4px 0;
+	font-size: 13px;
+}
+
+.profile .plan-preview__discount {
+	color: var(--color-primary);
+	font-weight: 600;
+}
+
+.profile .plan-preview__message {
+	color: var(--color-text-muted);
+}
+
 .profile .plan-item ul {
 	margin: 0;
 	padding-left: 18px;
@@ -394,6 +442,8 @@
 .modal-container--recharge .submit-btn:focus-visible,
 .modal-container--recharge .cancel-btn:focus-visible,
 .modal-container--recharge .amount-input:focus-visible,
+.profile .plan-promo-input:focus-visible,
+.profile .plan-preview-btn:focus-visible,
 .modal-container--recharge .payment-link:focus-visible {
 	outline: 2px solid var(--color-primary);
 	outline-offset: 2px;
@@ -424,6 +474,24 @@
 	color: var(--color-text-muted);
 	text-align: center;
 	padding: 28px 20px;
+}
+
+.modal-container--recharge .recharge-preview {
+	margin-top: 16px;
+	padding: 12px 14px;
+	border-radius: var(--radius-md);
+	border: 1px solid var(--color-border-soft);
+	background: rgba(255, 255, 255, 0.03);
+	text-align: left;
+}
+
+.modal-container--recharge .recharge-preview p {
+	margin: 6px 0;
+}
+
+.modal-container--recharge .recharge-preview__discount {
+	color: var(--color-primary);
+	font-weight: 600;
 }
 
 .profile-trigger {
@@ -470,6 +538,10 @@
 	}
 
 	.profile .models-section {
+		grid-template-columns: 1fr;
+	}
+
+	.profile .plan-discount-controls {
 		grid-template-columns: 1fr;
 	}
 }

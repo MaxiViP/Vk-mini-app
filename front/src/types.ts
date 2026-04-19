@@ -50,6 +50,32 @@ export interface User {
 	isAdmin?: boolean
 }
 
+export type ProductType = 'core' | 'ai'
+
+export interface AppliedDiscount {
+	id: string
+	code: string | null
+	name: string
+	description?: string | null
+	type: 'percent' | 'fixed_minor' | 'topup_bonus_percent' | 'topup_bonus_fixed_minor'
+	value: number
+	isAutomatic: boolean
+	productType?: string | null
+	planCode?: string | null
+	allowStacking?: boolean
+}
+
+export interface DiscountRedemption {
+	id: string
+	applicationType: 'subscription_purchase' | 'wallet_topup'
+	promoCodeSnapshot: string | null
+	baseAmountMinor: number
+	discountAmountMinor: number
+	finalAmountMinor: number
+	createdAt: string
+	discount: AppliedDiscount | null
+}
+
 export interface ChatHistoryItem {
 	role: 'user' | 'assistant'
 	content: string
@@ -59,11 +85,15 @@ export interface BillingPlan {
 	id: string
 	code: string
 	name: string
+	productType?: ProductType
 	priceMinor: number
 	price: number
 	intervalDays: number
 	includedRequests: number
 	accessTier: 'basic' | 'premium'
+	aiChatLimit?: number | null
+	aiVoiceLimit?: number | null
+	aiFileUploadLimit?: number | null
 	isActive: boolean
 }
 
@@ -96,8 +126,36 @@ export interface BillingPayment {
 	status: 'pending' | 'succeeded' | 'failed' | 'canceled'
 	amountMinor: number
 	amount: number
+	creditedAmountMinor?: number
+	creditedAmount?: number
+	bonusAmountMinor?: number
+	bonusAmount?: number
+	promoCodeSnapshot?: string | null
+	appliedDiscount?: AppliedDiscount | null
 	createdAt: string
 	updatedAt: string
+}
+
+export interface SubscriptionPurchasePreview {
+	basePriceMinor: number
+	discountMinor: number
+	finalPriceMinor: number
+	appliedDiscount: AppliedDiscount | null
+	message?: string | null
+}
+
+export interface SubscriptionPurchaseResult extends SubscriptionPurchasePreview {
+	subscription: BillingSubscription
+	balanceMinor: number
+	idempotentReplay: boolean
+}
+
+export interface TopupPreview {
+	baseAmountMinor: number
+	bonusMinor: number
+	creditedAmountMinor: number
+	appliedDiscount: AppliedDiscount | null
+	message?: string | null
 }
 
 export interface BillingSummary {
@@ -120,6 +178,9 @@ export interface BillingSummary {
 	}
 	recentLedger: BillingLedgerEntry[]
 	recentPayments: BillingPayment[]
+	automaticDiscounts?: AppliedDiscount[]
+	recentDiscounts?: DiscountRedemption[]
+	legacyBillingMode?: boolean
 }
 
 export interface AiAccessSubscription {
@@ -170,10 +231,14 @@ export interface AiAccessResponse {
 export interface YooKassaPaymentSession {
 	paymentId: string
 	amount: number
+	baseAmountMinor?: number
+	bonusMinor?: number
+	creditedAmountMinor?: number
 	status: 'pending' | 'succeeded' | 'failed' | 'canceled'
 	confirmationUrl: string
 	qrCodeDataUrl: string
 	qrPayload: string
 	isStub: boolean
 	provider?: 'yookassa'
+	appliedDiscount?: AppliedDiscount | null
 }

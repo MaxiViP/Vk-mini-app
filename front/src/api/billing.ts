@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-import type { BillingSummary } from '../types'
+import type { BillingSummary, SubscriptionPurchasePreview, SubscriptionPurchaseResult } from '../types'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
@@ -13,12 +13,28 @@ export const billingApi = {
 			.then(response => response.data)
 	},
 
-	purchaseSubscription(planCode: string, accessToken: string, idempotencyKey: string) {
+	previewSubscriptionPurchase(planCode: string, accessToken: string, promoCode?: string) {
 		return axios
-			.post(
+			.post<SubscriptionPurchasePreview>(
+				`${API_BASE_URL}/api/billing/subscriptions/preview`,
+				{
+					planCode,
+					promoCode,
+				},
+				{
+					headers: { Authorization: `Bearer ${accessToken}` },
+				},
+			)
+			.then(response => response.data)
+	},
+
+	purchaseSubscription(planCode: string, accessToken: string, idempotencyKey: string, promoCode?: string) {
+		return axios
+			.post<SubscriptionPurchaseResult>(
 				`${API_BASE_URL}/api/billing/subscriptions/purchase`,
 				{
 					planCode,
+					promoCode,
 					idempotencyKey,
 				},
 				{
