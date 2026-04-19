@@ -83,9 +83,8 @@ enum UsageStatus {
   reversed
 }
 
-// MODELS
 model User {
-  id         String     @id @default(uuid())
+  id         String     @id @default(uuid()) @db.Char(36)
   email      String?    @unique
   phoneE164  String?    @unique @map("phone_e164")
   firstName  String?    @map("first_name")
@@ -95,23 +94,23 @@ model User {
   createdAt  DateTime   @default(now()) @map("created_at")
   updatedAt  DateTime   @updatedAt @map("updated_at")
 
-  authIdentities AuthIdentity[]
-  sessions       Session[]
-  wallet         Wallet?
-  walletLedger   WalletLedger[]
-  subscriptions  Subscription[]
-  payments       Payment[]
-  targetedDiscounts Discount[]           @relation("DiscountTargetUser")
+  authIdentities      AuthIdentity[]
+  sessions            Session[]
+  wallet              Wallet?
+  walletLedger        WalletLedger[]
+  subscriptions       Subscription[]
+  payments            Payment[]
+  targetedDiscounts   Discount[]           @relation("DiscountTargetUser")
   discountRedemptions DiscountRedemption[]
-  usageEvents    UsageEvent[]
-  auditActions   AuditLog[]      @relation("ActorUserAuditLog")
-  workspace      UserWorkspace?
+  usageEvents         UsageEvent[]
+  auditActions        AuditLog[]           @relation("ActorUserAuditLog")
+  workspace           UserWorkspace?
 
   @@map("users")
 }
 
 model UserWorkspace {
-  userId       String   @id @map("user_id")
+  userId       String   @id @map("user_id") @db.Char(36)
   chatHistory  Json?    @map("chat_history_json")
   notesPayload Json?    @map("notes_payload_json")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -123,8 +122,8 @@ model UserWorkspace {
 }
 
 model AuthIdentity {
-  id              String       @id @default(uuid())
-  userId          String       @map("user_id")
+  id              String       @id @default(uuid()) @db.Char(36)
+  userId          String       @map("user_id") @db.Char(36)
   provider        AuthProvider
   providerUserId  String       @map("provider_user_id")
   providerPayload Json?        @map("provider_payload_json")
@@ -138,8 +137,8 @@ model AuthIdentity {
 }
 
 model Session {
-  id               String    @id @default(uuid())
-  userId           String    @map("user_id")
+  id               String    @id @default(uuid()) @db.Char(36)
+  userId           String    @map("user_id") @db.Char(36)
   refreshTokenHash String    @map("refresh_token_hash")
   userAgent        String?   @map("user_agent")
   ip               String?
@@ -155,7 +154,7 @@ model Session {
 }
 
 model OtpCode {
-  id         String    @id @default(uuid())
+  id         String    @id @default(uuid()) @db.Char(36)
   phoneE164  String    @map("phone_e164")
   codeHash   String    @map("code_hash")
   attempts   Int       @default(0)
@@ -168,7 +167,7 @@ model OtpCode {
 }
 
 model Wallet {
-  userId       String   @id @map("user_id")
+  userId       String   @id @map("user_id") @db.Char(36)
   balanceMinor Int      @default(0) @map("balance_minor")
   currency     String   @default("RUB")
   updatedAt    DateTime @updatedAt @map("updated_at")
@@ -179,8 +178,8 @@ model Wallet {
 }
 
 model WalletLedger {
-  id             String       @id @default(uuid())
-  userId         String       @map("user_id")
+  id             String       @id @default(uuid()) @db.Char(36)
+  userId         String       @map("user_id") @db.Char(36)
   type           LedgerType
   amountMinor    Int          @map("amount_minor")
   reason         LedgerReason
@@ -196,20 +195,20 @@ model WalletLedger {
 }
 
 model Plan {
-  id               String    @id @default(uuid())
-  code             String    @unique
-  name             String
-  productType      String?   @map("product_type")
-  priceMinor       Int       @map("price_minor")
-  intervalDays     Int       @map("interval_days")
-  includedRequests Int       @map("included_requests")
-  accessTier       ModelTier @default(basic) @map("access_tier")
-  aiChatLimit      Int?      @map("ai_chat_limit")
-  aiVoiceLimit     Int?      @map("ai_voice_limit")
-  aiFileUploadLimit Int?     @map("ai_file_upload_limit")
-  isActive         Boolean   @default(true) @map("is_active")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  id                String    @id @default(uuid()) @db.Char(36)
+  code              String    @unique
+  name              String
+  productType       String?   @map("product_type")
+  priceMinor        Int       @map("price_minor")
+  intervalDays      Int       @map("interval_days")
+  includedRequests  Int       @map("included_requests")
+  accessTier        ModelTier @default(basic) @map("access_tier")
+  aiChatLimit       Int?      @map("ai_chat_limit")
+  aiVoiceLimit      Int?      @map("ai_voice_limit")
+  aiFileUploadLimit Int?      @map("ai_file_upload_limit")
+  isActive          Boolean   @default(true) @map("is_active")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   subscriptions Subscription[]
 
@@ -217,21 +216,21 @@ model Plan {
 }
 
 model Subscription {
-  id                String             @id @default(uuid())
-  userId            String             @map("user_id")
-  planId            String             @map("plan_id")
-  status            SubscriptionStatus @default(active)
-  periodStart       DateTime           @map("period_start")
-  periodEnd         DateTime           @map("period_end")
-  includedRequests  Int                @map("included_requests")
-  usedRequests      Int                @default(0) @map("used_requests")
-  cancelAtPeriodEnd Boolean            @default(false) @map("cancel_at_period_end")
-  endedAt           DateTime?          @map("ended_at")
-  createdAt         DateTime           @default(now()) @map("created_at")
+  id                  String             @id @default(uuid()) @db.Char(36)
+  userId              String             @map("user_id") @db.Char(36)
+  planId              String             @map("plan_id") @db.Char(36)
+  status              SubscriptionStatus @default(active)
+  periodStart         DateTime           @map("period_start")
+  periodEnd           DateTime           @map("period_end")
+  includedRequests    Int                @map("included_requests")
+  usedRequests        Int                @default(0) @map("used_requests")
+  cancelAtPeriodEnd   Boolean            @default(false) @map("cancel_at_period_end")
+  endedAt             DateTime?          @map("ended_at")
+  createdAt           DateTime           @default(now()) @map("created_at")
 
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan        Plan         @relation(fields: [planId], references: [id], onDelete: Restrict)
-  usageEvents UsageEvent[]
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan                Plan                @relation(fields: [planId], references: [id], onDelete: Restrict)
+  usageEvents         UsageEvent[]
   discountRedemptions DiscountRedemption[]
 
   @@index([userId, status])
@@ -240,24 +239,24 @@ model Subscription {
 }
 
 model Payment {
-  id                String          @id @default(uuid())
-  userId            String          @map("user_id")
-  provider          PaymentProvider
-  providerPaymentId String          @unique @map("provider_payment_id")
-  amountMinor       Int             @map("amount_minor")
-  creditedAmountMinor Int?          @map("credited_amount_minor")
-  bonusAmountMinor  Int?            @map("bonus_amount_minor")
-  promoCodeSnapshot String?         @map("promo_code_snapshot")
-  appliedDiscountId String?         @map("applied_discount_id")
-  appliedDiscountSnapshot Json?     @map("applied_discount_snapshot_json")
-  status            PaymentStatus   @default(pending)
-  idempotencyKey    String          @unique @map("idempotency_key")
-  createdAt         DateTime        @default(now()) @map("created_at")
-  updatedAt         DateTime        @updatedAt @map("updated_at")
+  id                       String          @id @default(uuid()) @db.Char(36)
+  userId                   String          @map("user_id") @db.Char(36)
+  provider                 PaymentProvider
+  providerPaymentId        String          @unique @map("provider_payment_id")
+  amountMinor              Int             @map("amount_minor")
+  creditedAmountMinor      Int?            @map("credited_amount_minor")
+  bonusAmountMinor         Int?            @map("bonus_amount_minor")
+  promoCodeSnapshot        String?         @map("promo_code_snapshot")
+  appliedDiscountId        String?         @map("applied_discount_id") @db.Char(36)
+  appliedDiscountSnapshot  Json?           @map("applied_discount_snapshot_json")
+  status                   PaymentStatus   @default(pending)
+  idempotencyKey           String          @unique @map("idempotency_key")
+  createdAt                DateTime        @default(now()) @map("created_at")
+  updatedAt                DateTime        @updatedAt @map("updated_at")
 
-  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  events PaymentEvent[]
-  appliedDiscount Discount?        @relation(fields: [appliedDiscountId], references: [id], onDelete: SetNull)
+  user                User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events              PaymentEvent[]
+  appliedDiscount     Discount?            @relation(fields: [appliedDiscountId], references: [id], onDelete: SetNull)
   discountRedemptions DiscountRedemption[]
 
   @@index([userId, createdAt])
@@ -266,8 +265,8 @@ model Payment {
 }
 
 model PaymentEvent {
-  id         String   @id @default(uuid())
-  paymentId  String   @map("payment_id")
+  id         String   @id @default(uuid()) @db.Char(36)
+  paymentId  String   @map("payment_id") @db.Char(36)
   eventType  String   @map("event_type")
   rawPayload Json     @map("raw_payload_json")
   receivedAt DateTime @default(now()) @map("received_at")
@@ -279,14 +278,14 @@ model PaymentEvent {
 }
 
 model UsageEvent {
-  id             String             @id @default(uuid())
-  userId         String             @map("user_id")
+  id             String             @id @default(uuid()) @db.Char(36)
+  userId         String             @map("user_id") @db.Char(36)
   modelProvider  String             @map("model_provider")
   modelName      String             @map("model_name")
   billingTier    ModelTier          @map("billing_tier")
   billingSource  UsageBillingSource @default(payg) @map("billing_source")
   status         UsageStatus        @default(completed)
-  subscriptionId String?            @map("subscription_id")
+  subscriptionId String?            @map("subscription_id") @db.Char(36)
   inputTokens    Int                @default(0) @map("input_tokens")
   outputTokens   Int                @default(0) @map("output_tokens")
   costMinor      Int                @default(0) @map("cost_minor")
@@ -301,8 +300,8 @@ model UsageEvent {
 }
 
 model AuditLog {
-  id          String   @id @default(uuid())
-  actorUserId String?  @map("actor_user_id")
+  id          String   @id @default(uuid()) @db.Char(36)
+  actorUserId String?  @map("actor_user_id") @db.Char(36)
   entityType  String   @map("entity_type")
   entityId    String   @map("entity_id")
   action      String
@@ -320,29 +319,29 @@ model AuditLog {
 }
 
 model Discount {
-  id           String       @id @default(uuid())
-  code         String?      @unique
-  name         String
-  description  String?
-  discountType DiscountType @map("discount_type")
-  value        Int
-  productType  String?      @map("product_type")
-  planCode     String?      @map("plan_code")
-  isActive     Boolean      @default(true) @map("is_active")
-  isAutomatic  Boolean      @default(false) @map("is_automatic")
-  startsAt     DateTime?    @map("starts_at")
-  endsAt       DateTime?    @map("ends_at")
-  maxUses      Int?         @map("max_uses")
-  maxUsesPerUser Int?       @map("max_uses_per_user")
-  firstPurchaseOnly Boolean @default(false) @map("first_purchase_only")
-  allowStacking Boolean     @default(false) @map("allow_stacking")
-  targetUserId String?      @map("target_user_id")
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
+  id                String       @id @default(uuid()) @db.Char(36)
+  code              String?      @unique
+  name              String
+  description       String?
+  discountType      DiscountType @map("discount_type")
+  value             Int
+  productType       String?      @map("product_type")
+  planCode          String?      @map("plan_code")
+  isActive          Boolean      @default(true) @map("is_active")
+  isAutomatic       Boolean      @default(false) @map("is_automatic")
+  startsAt          DateTime?    @map("starts_at")
+  endsAt            DateTime?    @map("ends_at")
+  maxUses           Int?         @map("max_uses")
+  maxUsesPerUser    Int?         @map("max_uses_per_user")
+  firstPurchaseOnly Boolean      @default(false) @map("first_purchase_only")
+  allowStacking     Boolean      @default(false) @map("allow_stacking")
+  targetUserId      String?      @map("target_user_id") @db.Char(36)
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
 
-  targetUser   User?                @relation("DiscountTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
-  payments     Payment[]
-  redemptions  DiscountRedemption[]
+  targetUser  User?                @relation("DiscountTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+  payments    Payment[]
+  redemptions DiscountRedemption[]
 
   @@index([isActive, isAutomatic, startsAt, endsAt])
   @@index([productType, planCode])
@@ -351,22 +350,22 @@ model Discount {
 }
 
 model DiscountRedemption {
-  id                 String                  @id @default(uuid())
-  discountId         String                  @map("discount_id")
-  userId             String                  @map("user_id")
-  paymentId          String?                 @map("payment_id")
-  subscriptionId     String?                 @map("subscription_id")
-  promoCodeSnapshot  String?                 @map("promo_code_snapshot")
-  baseAmountMinor    Int                     @map("base_amount_minor")
-  discountAmountMinor Int                    @map("discount_amount_minor")
-  finalAmountMinor   Int                     @map("final_amount_minor")
-  applicationType    DiscountApplicationType @map("application_type")
-  createdAt          DateTime                @default(now()) @map("created_at")
+  id                  String                  @id @default(uuid()) @db.Char(36)
+  discountId          String                  @map("discount_id") @db.Char(36)
+  userId              String                  @map("user_id") @db.Char(36)
+  paymentId           String?                 @map("payment_id") @db.Char(36)
+  subscriptionId      String?                 @map("subscription_id") @db.Char(36)
+  promoCodeSnapshot   String?                 @map("promo_code_snapshot")
+  baseAmountMinor     Int                     @map("base_amount_minor")
+  discountAmountMinor Int                     @map("discount_amount_minor")
+  finalAmountMinor    Int                     @map("final_amount_minor")
+  applicationType     DiscountApplicationType @map("application_type")
+  createdAt           DateTime                @default(now()) @map("created_at")
 
-  discount      Discount      @relation(fields: [discountId], references: [id], onDelete: Cascade)
-  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  payment       Payment?      @relation(fields: [paymentId], references: [id], onDelete: SetNull)
-  subscription  Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  discount     Discount      @relation(fields: [discountId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payment      Payment?      @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
 
   @@index([discountId, createdAt])
   @@index([userId, createdAt])

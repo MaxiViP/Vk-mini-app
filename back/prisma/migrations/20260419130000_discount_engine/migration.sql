@@ -1,5 +1,5 @@
 CREATE TABLE `discounts` (
-    `id` VARCHAR(191) NOT NULL,
+    `id` CHAR(36) NOT NULL,
     `code` VARCHAR(191) NULL,
     `name` VARCHAR(191) NOT NULL,
     `description` TEXT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE `discounts` (
     `max_uses_per_user` INTEGER NULL,
     `first_purchase_only` BOOLEAN NOT NULL DEFAULT false,
     `allow_stacking` BOOLEAN NOT NULL DEFAULT false,
-    `target_user_id` VARCHAR(191) NULL,
+    `target_user_id` CHAR(36) NULL,
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updated_at` DATETIME(3) NOT NULL,
 
@@ -27,11 +27,11 @@ CREATE TABLE `discounts` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 CREATE TABLE `discount_redemptions` (
-    `id` VARCHAR(191) NOT NULL,
-    `discount_id` VARCHAR(191) NOT NULL,
-    `user_id` VARCHAR(191) NOT NULL,
-    `payment_id` VARCHAR(191) NULL,
-    `subscription_id` VARCHAR(191) NULL,
+    `id` CHAR(36) NOT NULL,
+    `discount_id` CHAR(36) NOT NULL,
+    `user_id` CHAR(36) NOT NULL,
+    `payment_id` CHAR(36) NULL,
+    `subscription_id` CHAR(36) NULL,
     `promo_code_snapshot` VARCHAR(191) NULL,
     `base_amount_minor` INTEGER NOT NULL,
     `discount_amount_minor` INTEGER NOT NULL,
@@ -50,7 +50,7 @@ ALTER TABLE `payments`
     ADD COLUMN `credited_amount_minor` INTEGER NULL,
     ADD COLUMN `bonus_amount_minor` INTEGER NULL,
     ADD COLUMN `promo_code_snapshot` VARCHAR(191) NULL,
-    ADD COLUMN `applied_discount_id` VARCHAR(191) NULL,
+    ADD COLUMN `applied_discount_id` CHAR(36) NULL,
     ADD COLUMN `applied_discount_snapshot_json` JSON NULL;
 
 CREATE INDEX `payments_applied_discount_id_idx` ON `payments`(`applied_discount_id`);
