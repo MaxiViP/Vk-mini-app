@@ -24,7 +24,7 @@ CREATE TABLE `discounts` (
     INDEX `discounts_product_type_plan_code_idx`(`product_type`, `plan_code`),
     INDEX `discounts_target_user_id_idx`(`target_user_id`),
     PRIMARY KEY (`id`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 
 CREATE TABLE `discount_redemptions` (
     `id` CHAR(36) NOT NULL,
