@@ -1,6 +1,6 @@
 import { internalApiBaseUrl } from '../config/chatBackend'
 
-const ACTIVITY_INTERVAL_SEC = 30
+const ACTIVITY_INTERVAL_SEC = import.meta.env.DEV ? 120 : 30
 
 const isLikelyJwt = (token?: string | null) => Boolean(token && token.split('.').length === 3)
 

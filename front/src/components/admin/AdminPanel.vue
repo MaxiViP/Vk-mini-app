@@ -111,7 +111,8 @@ const usersQuery = ref('')
 const eventType = ref('')
 const dateFrom = ref('')
 const dateTo = ref('')
-const AUTO_REFRESH_MS = 15000
+const AUTO_REFRESH_MS = import.meta.env.DEV ? 60000 : 15000
+const AUTO_REFRESH_ENABLED = !import.meta.env.DEV
 const RATE_LIMIT_COOLDOWN_MS = 30000
 let refreshTimer: number | null = null
 let rateLimitedUntil = 0
@@ -239,6 +240,7 @@ const handleRefreshClick = async () => {
 onMounted(loadAll)
 
 onMounted(() => {
+	if (!AUTO_REFRESH_ENABLED) return
 	refreshTimer = window.setInterval(() => {
 		void loadAll({ usersOnly: true })
 	}, AUTO_REFRESH_MS)

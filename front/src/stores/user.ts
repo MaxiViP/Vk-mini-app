@@ -33,32 +33,6 @@ const USER_STORAGE_KEY = `user_profile:${backendStorageScope}`
 const BILLING_STORAGE_KEY = `billing_summary:${backendStorageScope}`
 const LEGACY_STORAGE_KEYS = ['token', 'refresh_token', 'user_profile', 'billing_summary']
 
-const FORCED_ADMIN_PHONES = ['+79057353580']
-
-const normalizePhone = (value?: string | null) => {
-	const digits = String(value || '').replace(/\D/g, '')
-	if (!digits) return ''
-
-	let normalizedDigits = digits
-
-	if (normalizedDigits.startsWith('8') && normalizedDigits.length === 11) {
-		normalizedDigits = `7${normalizedDigits.slice(1)}`
-	} else if (normalizedDigits.length === 10) {
-		normalizedDigits = `7${normalizedDigits}`
-	}
-
-	return `+${normalizedDigits}`
-}
-
-const isForcedAdminPhone = (value?: string | null) => {
-	const normalized = normalizePhone(value)
-	if (!normalized) return false
-	return FORCED_ADMIN_PHONES.some(phone => normalizePhone(phone) === normalized)
-}
-
-const resolveIsAdmin = (isAdmin: boolean | undefined, phoneE164?: string | null) =>
-	Boolean(isAdmin) || isForcedAdminPhone(phoneE164)
-
 const safeParse = <T>(raw: string | null): T | null => {
 	if (!raw) return null
 	try {
@@ -70,6 +44,7 @@ const safeParse = <T>(raw: string | null): T | null => {
 
 const getHttpStatus = (error: unknown) => (error as { response?: { status?: number } })?.response?.status || null
 const isUnauthorizedError = (error: unknown) => getHttpStatus(error) === 401
+export const isDevSessionRefreshToken = (token?: string | null) => Boolean(token?.startsWith('dev-refresh-'))
 
 const emptyAiCounters = () => ({
 	chat: 0,
@@ -181,7 +156,7 @@ const mapApiUserToUiUser = (
 	balance: billing ? billing.wallet.balance : Number(apiUser.wallet?.balanceMinor || 0) / 100,
 	requestsLeft: billing?.usageSnapshot.remainingIncludedRequests || 0,
 	phoneE164: apiUser.phoneE164 || undefined,
-	isAdmin: resolveIsAdmin(apiUser.isAdmin, apiUser.phoneE164),
+	isAdmin: Boolean(apiUser.isAdmin),
 })
 
 export const useUserStore = defineStore('user', () => {
@@ -403,7 +378,6 @@ export const useUserStore = defineStore('user', () => {
 		billing.value = safeParse<BillingSummary>(localStorage.getItem(BILLING_STORAGE_KEY))
 
 		if (user.value) {
-			user.value.isAdmin = resolveIsAdmin(user.value.isAdmin, user.value.phoneE164)
 			if (billing.value) {
 				user.value.balance = billing.value.wallet.balance
 				user.value.requestsLeft = billing.value.usageSnapshot.remainingIncludedRequests
@@ -501,6 +475,7 @@ export const useUserStore = defineStore('user', () => {
 	}
 
 	async function refreshAuth() {
+		if (isDevSessionRefreshToken(refreshToken.value)) return null
 		if (!refreshToken.value) throw new Error('Нет refresh token')
 		let result
 		try {
@@ -637,7 +612,7 @@ export const useUserStore = defineStore('user', () => {
 
 	async function logout() {
 		try {
-			if (refreshToken.value) {
+			if (refreshToken.value && !isDevSessionRefreshToken(refreshToken.value)) {
 				await authApi.logout(refreshToken.value)
 			}
 		} catch (error) {

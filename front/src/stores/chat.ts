@@ -6,7 +6,7 @@ import { fetchWorkspace, saveChatHistory, type WorkspaceMessage } from '../api/w
 import { getVkAiErrorCode, vkAiApi } from '../api/vkAi'
 import { internalApiBaseUrl } from '../config/chatBackend'
 import { shouldUseAiApi } from '../domain/chatModeRules'
-import { useUserStore } from './user'
+import { isDevSessionRefreshToken, useUserStore } from './user'
 
 const STORAGE_KEY_PREFIX = 'chat_history'
 const CONVERSATION_STORAGE_KEY = 'vk_ai_conversation_id'
@@ -631,7 +631,7 @@ export const useChatStore = defineStore('chat', () => {
 
 			let response = await executeChatRequest()
 
-			if (response.status === 401 && userStore.refreshToken) {
+			if (response.status === 401 && userStore.refreshToken && !isDevSessionRefreshToken(userStore.refreshToken)) {
 				try {
 					await userStore.refreshAuth()
 					response = await executeChatRequest()

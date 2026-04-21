@@ -3,6 +3,15 @@ import jwt from 'jsonwebtoken'
 import env from '../config/env.js'
 import { logBusinessEvent } from './observability.js'
 
+const isDevMode = env.nodeEnv !== 'production'
+
+export const shouldSkipActivityLog = path => {
+	if (path === '/api/users/me/activity') return true
+	if (path === '/api/billing/yookassa/webhook' || path === '/api/payments/yookassa/webhook') return true
+	if (isDevMode && path.startsWith('/api/admin/')) return true
+	return false
+}
+
 const extractUserId = req => {
 	const header = req.header('Authorization')
 	if (!header?.startsWith('Bearer ')) return null
@@ -19,6 +28,7 @@ const extractUserId = req => {
 export const apiActivityMiddleware = (req, res, next) => {
 	if (!req.path.startsWith('/api')) return next()
 	if (req.path === '/health') return next()
+	if (shouldSkipActivityLog(req.path)) return next()
 
 	const startedAt = Date.now()
 	const actorUserId = extractUserId(req)

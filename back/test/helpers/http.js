@@ -25,17 +25,20 @@ export const stopTestServer = async server =>
 		})
 	})
 
-export const createAccessToken = (payload = {}) =>
-	jwt.sign(
+export const createAccessToken = (payload = {}) => {
+	const { sub, ...rest } = payload
+
+	return jwt.sign(
 		{
 			status: 'active',
 			firstName: 'Test',
 			lastName: 'User',
-			...payload,
+			...rest,
 		},
 		env.jwtSecret,
 		{
-			subject: payload.sub || 'test-user',
+			subject: sub || 'test-user',
 			expiresIn: '1h',
 		},
 	)
+}

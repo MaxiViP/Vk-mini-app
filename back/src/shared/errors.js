@@ -1,3 +1,6 @@
+import env from '../config/env.js'
+import logger from '../config/logger.js'
+
 export class AppError extends Error {
 	constructor(message, statusCode = 500, details = null) {
 		super(message)
@@ -34,9 +37,24 @@ export const notFoundHandler = (req, _res, next) => {
 	next(new AppError(`Route ${req.method} ${req.originalUrl} not found`, 404))
 }
 
-export const errorHandler = (error, _req, res, _next) => {
+export const errorHandler = (error, req, res, _next) => {
 	const normalizedError = normalizeError(error)
 	const statusCode = normalizedError.statusCode || 500
+	const logPayload = {
+		method: req.method,
+		url: req.originalUrl,
+		statusCode,
+		message: normalizedError.message || 'Internal server error',
+		details: normalizedError.details || null,
+		...(env.nodeEnv !== 'production' && normalizedError.stack ? { stack: normalizedError.stack } : {}),
+	}
+
+	if (statusCode >= 500) {
+		logger.error('Request failed', logPayload)
+	} else {
+		logger.warn('Request failed', logPayload)
+	}
+
 	res.status(statusCode).json({
 		message: normalizedError.message || 'Internal server error',
 		details: normalizedError.details || null,

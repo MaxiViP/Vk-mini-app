@@ -6,6 +6,7 @@ import env from '../../config/env.js'
 import prisma from '../../db/prisma.js'
 import { AppError } from '../../shared/errors.js'
 import { isAdminUser } from '../../shared/access.js'
+import { isDevRefreshToken, refreshDevAuthResult, revokeDevRefreshToken } from './dev-session.store.js'
 
 const ACCESS_TOKEN_TTL = '15m'
 const REFRESH_TOKEN_TTL_DAYS = 30
@@ -97,6 +98,11 @@ export const authService = {
 
 	async refreshSession({ refreshToken, userAgent, ip }) {
 		if (!refreshToken) throw new AppError('refreshToken is required', 400)
+		if (isDevRefreshToken(refreshToken)) {
+			void userAgent
+			void ip
+			return refreshDevAuthResult(refreshToken)
+		}
 		const refreshTokenHash = hashValue(refreshToken)
 
 		const existingSession = await prisma.session.findFirst({
@@ -120,6 +126,9 @@ export const authService = {
 
 	async logoutSession({ refreshToken }) {
 		if (!refreshToken) throw new AppError('refreshToken is required', 400)
+		if (isDevRefreshToken(refreshToken)) {
+			return revokeDevRefreshToken(refreshToken)
+		}
 
 		const refreshTokenHash = hashValue(refreshToken)
 		await prisma.session.updateMany({

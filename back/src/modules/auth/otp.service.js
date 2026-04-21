@@ -1,10 +1,8 @@
 import crypto from 'node:crypto'
-import jwt from 'jsonwebtoken'
-
 import prisma from '../../db/prisma.js'
-import env from '../../config/env.js'
 import { AppError } from '../../shared/errors.js'
 import { authService } from './auth.service.js'
+import { issueDevAuthResult } from './dev-session.store.js'
 
 const OTP_TTL_SECONDS = 5 * 60
 const OTP_MAX_ATTEMPTS = 5
@@ -77,26 +75,7 @@ const issueDevPhoneAuthResult = phoneE164 => {
 		isAdmin: isAdminPhone(phoneE164),
 	}
 
-	return {
-		accessToken: jwt.sign(
-			{
-				sub: user.id,
-				status: user.status,
-				phoneE164: user.phoneE164,
-				firstName: user.firstName,
-				lastName: user.lastName,
-				avatarUrl: user.avatarUrl,
-				isAdmin: user.isAdmin,
-			},
-			env.jwtSecret,
-			{
-				expiresIn: '15m',
-			},
-		),
-		refreshToken: `dev-refresh-${crypto.randomUUID()}`,
-		refreshTokenExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-		user,
-	}
+	return issueDevAuthResult(user)
 }
 
 export const otpService = {

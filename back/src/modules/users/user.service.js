@@ -1,6 +1,7 @@
 import prisma from '../../db/prisma.js'
 import { AppError } from '../../shared/errors.js'
 import { logAuditChange, logBusinessEvent } from '../../shared/observability.js'
+import { isAdminUser } from '../../shared/access.js'
 
 const isUserStorageUnavailable = error => {
 	const message = String(error?.message || '').toLowerCase()
@@ -15,7 +16,7 @@ const isUserStorageUnavailable = error => {
 	)
 }
 
-const buildDevProfile = authContext => ({
+const buildDevProfile = (authContext, isAdmin = false) => ({
 	id: authContext.id,
 	email: null,
 	phoneE164: authContext.phoneE164 || null,
@@ -23,7 +24,7 @@ const buildDevProfile = authContext => ({
 	lastName: authContext.lastName || 'Phone',
 	avatarUrl: authContext.avatarUrl || null,
 	status: authContext.status || 'active',
-	isAdmin: Boolean(authContext.isAdmin),
+	isAdmin,
 	wallet: {
 		balanceMinor: 0,
 		currency: 'RUB',
@@ -45,6 +46,7 @@ export const userService = {
 						avatarUrl: userOrContext?.avatarUrl,
 						isAdmin: userOrContext?.isAdmin,
 					}
+		const admin = await isAdminUser(authContext.id)
 
 		try {
 			const user = await prisma.user.findUnique({
@@ -60,18 +62,18 @@ export const userService = {
 
 			if (!user) {
 				if (String(authContext.id || '').startsWith('dev-phone-')) {
-					return buildDevProfile(authContext)
+					return buildDevProfile(authContext, admin)
 				}
 				throw new AppError('User not found', 404)
 			}
 
 			return {
 				...user,
-				isAdmin: Boolean(authContext.isAdmin),
+				isAdmin: admin,
 			}
 		} catch (error) {
 			if (String(authContext.id || '').startsWith('dev-phone-') && isUserStorageUnavailable(error)) {
-				return buildDevProfile(authContext)
+				return buildDevProfile(authContext, admin)
 			}
 			throw error
 		}

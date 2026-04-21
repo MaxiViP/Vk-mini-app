@@ -62,7 +62,7 @@ import { useViewportHeight } from './composables/useViewportHeight'
 import { initVK } from './vk/bridge'
 import { useChatStore } from './stores/chat'
 import { useModelsStore } from './stores/models'
-import { useUserStore } from './stores/user'
+import { isDevSessionRefreshToken, useUserStore } from './stores/user'
 import ProfileTrigger from './components/profile/ProfileTrigger.vue'
 import Chat from './components/chat/Chat.vue'
 import AILogo from './components/common/AILogo.vue'
@@ -159,7 +159,7 @@ const initializeUserSession = async () => {
 		return
 	}
 
-	if (userStore.refreshToken) {
+	if (userStore.refreshToken && !isDevSessionRefreshToken(userStore.refreshToken)) {
 		try {
 			await userStore.refreshAuth()
 		} catch (error) {
