@@ -162,16 +162,30 @@ export const vkAiApi = {
 		sessionContext?: string
 		mode?: 'context' | 'simple'
 	}) {
-		const response = await authorizedFetch(`${apiBaseUrl}/api/ai/chat`, {
-			method: 'POST',
-			headers: createHeaders(payload.accessToken, { 'Content-Type': 'application/json' }),
-			body: JSON.stringify({
-				mode: payload.mode,
-				conversationId: payload.conversationId,
-				message: payload.message,
-				sessionContext: payload.sessionContext,
-			}),
-		}, { accessToken: payload.accessToken })
+		const normalizedSessionContext = payload.sessionContext?.trim() || ''
+		const hasSessionContext = Boolean(normalizedSessionContext)
+
+		const finalMode: 'context' | 'simple' = hasSessionContext
+			? 'context'
+			: payload.mode === 'simple'
+				? 'simple'
+				: 'context'
+
+		const response = await authorizedFetch(
+			`${apiBaseUrl}/api/ai/chat`,
+			{
+				method: 'POST',
+				headers: createHeaders(payload.accessToken, { 'Content-Type': 'application/json' }),
+				body: JSON.stringify({
+					mode: finalMode,
+					conversationId: payload.conversationId,
+					message: payload.message,
+					sessionContext: hasSessionContext ? normalizedSessionContext : undefined,
+				}),
+			},
+			{ accessToken: payload.accessToken },
+		)
+
 		await ensureOk(response)
 		return response.json() as Promise<VkAiChatResponse>
 	},
@@ -181,11 +195,15 @@ export const vkAiApi = {
 		formData.set('conversationId', payload.conversationId)
 		formData.set('file', payload.file)
 
-		const response = await authorizedFetch(`${apiBaseUrl}/api/ai/files/upload`, {
-			method: 'POST',
-			headers: createHeaders(payload.accessToken),
-			body: formData,
-		}, { accessToken: payload.accessToken })
+		const response = await authorizedFetch(
+			`${apiBaseUrl}/api/ai/files/upload`,
+			{
+				method: 'POST',
+				headers: createHeaders(payload.accessToken),
+				body: formData,
+			},
+			{ accessToken: payload.accessToken },
+		)
 		await ensureOk(response)
 		return response.json() as Promise<VkAiUploadResponse>
 	},
@@ -195,11 +213,15 @@ export const vkAiApi = {
 		formData.set('conversationId', payload.conversationId)
 		formData.set('audio', payload.audio)
 
-		const response = await authorizedFetch(`${apiBaseUrl}/api/ai/voice`, {
-			method: 'POST',
-			headers: createHeaders(payload.accessToken),
-			body: formData,
-		}, { accessToken: payload.accessToken })
+		const response = await authorizedFetch(
+			`${apiBaseUrl}/api/ai/voice`,
+			{
+				method: 'POST',
+				headers: createHeaders(payload.accessToken),
+				body: formData,
+			},
+			{ accessToken: payload.accessToken },
+		)
 		await ensureOk(response)
 		return response.json() as Promise<VkAiVoiceResponse>
 	},
