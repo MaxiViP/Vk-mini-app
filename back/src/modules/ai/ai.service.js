@@ -3,7 +3,11 @@ import crypto from 'node:crypto'
 import prisma from '../../db/prisma.js'
 import logger from '../../config/logger.js'
 import { AppError } from '../../shared/errors.js'
-import { ensurePlanCatalogSeeded, expireElapsedSubscriptions, getActiveSubscriptionWithPlan } from '../billing/billing.service.js'
+import {
+	ensurePlanCatalogSeeded,
+	expireElapsedSubscriptions,
+	getActiveSubscriptionWithPlan,
+} from '../billing/billing.service.js'
 import { aiClient } from './ai.client.js'
 import { workspaceService } from '../workspace/workspace.service.js'
 
@@ -195,15 +199,20 @@ const createUsageEvent = ({ userId, subscription, modelName }) =>
 const AI_HISTORY_SOURCE = 'vk_ai'
 const AI_CONVERSATION_TITLE_MAX_LENGTH = 255
 const toExternalUserId = userId => String(userId)
-const normalizeAiBlock = (value, maxLength) => String(value || '').slice(0, maxLength).trim()
+const normalizeAiBlock = (value, maxLength) =>
+	String(value || '')
+		.slice(0, maxLength)
+		.trim()
 const normalizeAiChatMode = value => (String(value || '').toLowerCase() === 'simple' ? 'simple' : 'context')
 const normalizeAiMessageContent = value => String(value || '').trim()
 const normalizeAiConversationTitle = value => {
 	const normalized = normalizeAiMessageContent(value).slice(0, AI_CONVERSATION_TITLE_MAX_LENGTH)
 	return normalized || null
 }
+
 const resolveConversationKey = ({ userId, conversationId, mode = 'context' }) =>
 	String(conversationId || '').trim() || `aivk-${normalizeAiChatMode(mode)}-${userId}`
+
 const buildAiPromptMessage = ({ userMemory, sessionContext, message }) => {
 	const normalizedUserMemory = normalizeAiBlock(userMemory, AI_MEMORY_MAX_LENGTH)
 	const normalizedSessionContext = normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH)
@@ -218,6 +227,8 @@ const buildAiPromptMessage = ({ userMemory, sessionContext, message }) => {
 					'IMPORTANT:',
 					'- You MUST follow TEMPORARY SESSION RULES over GLOBAL AI MEMORY if they conflict.',
 					'- TEMPORARY SESSION RULES override any previous instructions.',
+					'- If TEMPORARY SESSION RULES specify a response language, you MUST respond in that language.',
+					'- Do not default to the language of the user message if it conflicts with TEMPORARY SESSION RULES.',
 				].join('\n')
 			: '',
 		`[USER MESSAGE]\n${normalizedMessage}`,
@@ -225,6 +236,7 @@ const buildAiPromptMessage = ({ userMemory, sessionContext, message }) => {
 		.filter(Boolean)
 		.join('\n\n')
 }
+
 const buildAiRequestMessage = ({ userMemory, message }) => {
 	const normalizedMessage = normalizeAiMessageContent(message)
 	const blocks = [userMemory ? `ИНСТРУКЦИЯ:\n${userMemory}` : ''].filter(Boolean)
@@ -262,8 +274,10 @@ const getCachedAiMemory = async userId => {
 		value: normalized,
 		expiresAt: now + AI_MEMORY_CACHE_TTL_MS,
 	})
+
 	return normalized
 }
+
 const setCachedAiMemory = (userId, aiMemory) => {
 	aiMemoryCache.set(String(userId), {
 		value: normalizeAiBlock(aiMemory, AI_MEMORY_MAX_LENGTH),
@@ -274,12 +288,11 @@ const setCachedAiMemory = (userId, aiMemory) => {
 const isAiHistoryStorageUnavailable = error => {
 	if (!error) return false
 	if (error.code === 'P2021' || error.code === 'P2022' || error.code === 'P1001') return true
+
 	const message = String(error.message || '').toLowerCase()
 	return (
-		(
-			(message.includes('ai_messages') || message.includes('ai_conversations')) &&
-			(message.includes('does not exist') || message.includes("doesn't exist"))
-		) ||
+		((message.includes('ai_messages') || message.includes('ai_conversations')) &&
+			(message.includes('does not exist') || message.includes("doesn't exist"))) ||
 		message.includes("can't reach database server") ||
 		message.includes('connection refused') ||
 		message.includes('econnrefused') ||
@@ -377,7 +390,7 @@ const touchAiConversation = async ({ conversation, role, title }) => {
 			data: {
 				status: 'active',
 				lastMessageAt: new Date(),
-				...((role === 'user' || role === 'assistant') ? { messageCount: { increment: 1 } } : {}),
+				...(role === 'user' || role === 'assistant' ? { messageCount: { increment: 1 } } : {}),
 				...(!conversation.title && normalizeAiConversationTitle(title)
 					? { title: normalizeAiConversationTitle(title) }
 					: {}),
@@ -629,12 +642,14 @@ export const aiService = {
 		const access = await assertSubscriptionActive(userId)
 		assertCapability(access, 'chat')
 		assertRemaining(access, 'chat')
+
 		const chatMode = normalizeAiChatMode(mode)
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: chatMode })
 		const normalizedUserMessage = normalizeAiMessageContent(message)
 		const normalizedUserMemory = await getCachedAiMemory(userId)
 		const normalizedSessionContext =
 			chatMode === 'context' ? normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH) : ''
+
 		const fullMessage =
 			chatMode === 'simple'
 				? buildAiMemoryOnlyRequestMessage({
@@ -646,12 +661,14 @@ export const aiService = {
 						sessionContext: normalizedSessionContext,
 						message: normalizedUserMessage,
 					})
+
 		const conversation = await ensureAiConversation({
 			userId,
 			conversationKey: resolvedConversationId,
 			mode: chatMode,
 			title: normalizedUserMessage,
 		})
+
 		let response
 
 		await persistAiMessage({
@@ -723,7 +740,6 @@ export const aiService = {
 			modelName: USAGE_MODELS.chat,
 		})
 
-		// Временное ограничение: audio_reply_url пробрасывается как есть, media-proxy на этом шаге не реализован.
 		return {
 			...response,
 			user_id: response?.user_id || toExternalUserId(userId),
@@ -735,6 +751,7 @@ export const aiService = {
 		const access = await assertSubscriptionActive(userId)
 		assertCapability(access, 'fileUpload')
 		assertRemaining(access, 'fileUpload')
+
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
 		const conversation = await ensureAiConversation({
 			userId,
@@ -777,6 +794,7 @@ export const aiService = {
 		const access = await assertSubscriptionActive(userId)
 		assertCapability(access, 'voice')
 		assertRemaining(access, 'voice')
+
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
 		const conversation = await ensureAiConversation({
 			userId,
@@ -828,7 +846,6 @@ export const aiService = {
 			modelName: USAGE_MODELS.voice,
 		})
 
-		// Временное ограничение: audio_reply_url пробрасывается как есть, media-proxy на этом шаге не реализован.
 		return response
 	},
 
@@ -847,6 +864,7 @@ export const aiService = {
 	async getConversation({ userId, conversationId }) {
 		const access = await assertSubscriptionActive(userId)
 		assertCapability(access, 'chat')
+
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
 		const storedConversation = await loadStoredConversation({
 			userId,
@@ -865,6 +883,7 @@ export const aiService = {
 
 	async resetConversation({ userId, conversationId }) {
 		await assertSubscriptionActive(userId)
+
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
 
 		const upstreamReset = await aiClient.resetConversation({
