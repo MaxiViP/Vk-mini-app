@@ -6,9 +6,16 @@ import { AppError } from '../../shared/errors.js'
 
 const clientLogger = logger.createChild({ module: 'ai-client' })
 
-const sanitizeUrl = value => String(value || '').trim().replace(/\/+$/, '')
+const sanitizeUrl = value =>
+	String(value || '')
+		.trim()
+		.replace(/\/+$/, '')
 const getBaseUrl = () => sanitizeUrl(env.vkAiBackendUrl)
 const getApiKey = () => String(env.vkAiBackendApiKey || '').trim()
+
+const MIN_TIMEOUT_MS = 60000
+const DEFAULT_TIMEOUT_MS = 60000
+const CHAT_RETRY_ATTEMPTS = 2
 
 const ensureConfigured = () => {
 	if (!getBaseUrl()) {
@@ -31,9 +38,21 @@ const buildHeaders = (headers = {}) => ({
 	...headers,
 })
 
+const getTimeoutMs = () => Math.max(Number(env.vkAiBackendTimeoutMs) || DEFAULT_TIMEOUT_MS, MIN_TIMEOUT_MS)
+
+const isRetriableAppError = error =>
+	error instanceof AppError &&
+	error.details &&
+	typeof error.details === 'object' &&
+	(error.details.reason === 'timeout' ||
+		error.details.reason === 'network_error' ||
+		(error.details.upstreamStatus && Number(error.details.upstreamStatus) >= 500))
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+
 const withTimeout = async fn => {
 	const controller = new AbortController()
-	const timeoutId = setTimeout(() => controller.abort(), Math.max(Number(env.vkAiBackendTimeoutMs) || 30000, 1000))
+	const timeoutId = setTimeout(() => controller.abort(), getTimeoutMs())
 
 	try {
 		return await fn(controller.signal)
@@ -110,6 +129,7 @@ const buildUpstreamError = async response => {
 			upstreamStatus: response.status,
 			upstreamMessage,
 			upstreamCode,
+			reason: 'upstream_5xx',
 		})
 	}
 
@@ -131,39 +151,100 @@ const parseJson = async response => {
 	return safeResponse.json()
 }
 
-const requestJson = async (path, { method = 'GET', body = null, query = null } = {}) => {
+const requestJson = async (
+	path,
+	{ method = 'GET', body = null, query = null, retryAttempts = 1, retryDelayMs = 700 } = {},
+) => {
 	ensureConfigured()
-	const url = new URL(`${getBaseUrl()}${path}`)
 
-	if (query) {
-		for (const [key, value] of Object.entries(query)) {
-			if (value !== undefined && value !== null && value !== '') {
-				url.searchParams.set(key, String(value))
+	const execute = async () => {
+		const url = new URL(`${getBaseUrl()}${path}`)
+
+		if (query) {
+			for (const [key, value] of Object.entries(query)) {
+				if (value !== undefined && value !== null && value !== '') {
+					url.searchParams.set(key, String(value))
+				}
 			}
+		}
+
+		return withTimeout(signal =>
+			fetch(url, {
+				method,
+				headers: buildHeaders(body ? { 'Content-Type': 'application/json' } : undefined),
+				body: body ? JSON.stringify(body) : undefined,
+				signal,
+			}).then(parseJson),
+		)
+	}
+
+	let lastError = null
+
+	for (let attempt = 1; attempt <= retryAttempts; attempt += 1) {
+		try {
+			return await execute()
+		} catch (error) {
+			lastError = error
+
+			const shouldRetry = attempt < retryAttempts && isRetriableAppError(error)
+			if (!shouldRetry) {
+				throw error
+			}
+
+			clientLogger.warn('Retrying AI backend request', {
+				path,
+				method,
+				attempt,
+				retryAttempts,
+				reason: error?.details?.reason || error?.message || 'unknown',
+			})
+
+			await sleep(retryDelayMs * attempt)
 		}
 	}
 
-	return withTimeout(signal =>
-		fetch(url, {
-			method,
-			headers: buildHeaders(body ? { 'Content-Type': 'application/json' } : undefined),
-			body: body ? JSON.stringify(body) : undefined,
-			signal,
-		}).then(parseJson),
-	)
+	throw lastError
 }
 
-const requestFormData = async (path, formData, { method = 'POST' } = {}) => {
+const requestFormData = async (path, formData, { method = 'POST', retryAttempts = 1, retryDelayMs = 700 } = {}) => {
 	ensureConfigured()
 
-	return withTimeout(signal =>
-		fetch(`${getBaseUrl()}${path}`, {
-			method,
-			headers: buildHeaders(),
-			body: formData,
-			signal,
-		}).then(parseJson),
-	)
+	const execute = async () =>
+		withTimeout(signal =>
+			fetch(`${getBaseUrl()}${path}`, {
+				method,
+				headers: buildHeaders(),
+				body: formData,
+				signal,
+			}).then(parseJson),
+		)
+
+	let lastError = null
+
+	for (let attempt = 1; attempt <= retryAttempts; attempt += 1) {
+		try {
+			return await execute()
+		} catch (error) {
+			lastError = error
+
+			const shouldRetry = attempt < retryAttempts && isRetriableAppError(error)
+			if (!shouldRetry) {
+				throw error
+			}
+
+			clientLogger.warn('Retrying AI backend form-data request', {
+				path,
+				method,
+				attempt,
+				retryAttempts,
+				reason: error?.details?.reason || error?.message || 'unknown',
+			})
+
+			await sleep(retryDelayMs * attempt)
+		}
+	}
+
+	throw lastError
 }
 
 export const aiClient = {
@@ -181,6 +262,7 @@ export const aiClient = {
 			body: {
 				message,
 			},
+			retryAttempts: CHAT_RETRY_ATTEMPTS,
 		})
 	},
 
@@ -193,6 +275,7 @@ export const aiClient = {
 				conversation_id: conversationId,
 				message,
 			},
+			retryAttempts: CHAT_RETRY_ATTEMPTS,
 		})
 	},
 
