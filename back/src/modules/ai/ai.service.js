@@ -10,6 +10,7 @@ const AI_PRODUCT_TYPE = 'ai'
 const AI_PROVIDER = 'vk_ai'
 const AI_HISTORY_PROVIDER = 'aivk'
 const AI_MEMORY_MAX_LENGTH = 1200
+const AI_SESSION_CONTEXT_MAX_LENGTH = 1200
 const AI_MEMORY_CACHE_TTL_MS = 15000
 const AI_HISTORY_STORAGE_UNAVAILABLE = Symbol('AI_HISTORY_STORAGE_UNAVAILABLE')
 const aiMemoryCache = new Map()
@@ -201,14 +202,19 @@ const normalizeAiConversationTitle = value => {
 }
 const resolveConversationKey = ({ userId, conversationId, mode = 'context' }) =>
 	String(conversationId || '').trim() || `aivk-${normalizeAiChatMode(mode)}-${userId}`
-const buildAiPromptMessage = ({ userMemory, sessionContext, message }) =>
-	[
-		userMemory ? `ИНСТРУКЦИЯ:\n${userMemory}` : '',
-		sessionContext ? `КОНТЕКСТ:\n${sessionContext}` : '',
-		`ВОПРОС:\n${message}`,
+const buildAiPromptMessage = ({ userMemory, sessionContext, message }) => {
+	const normalizedUserMemory = normalizeAiBlock(userMemory, AI_MEMORY_MAX_LENGTH)
+	const normalizedSessionContext = normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH)
+	const normalizedMessage = normalizeAiMessageContent(message)
+
+	return [
+		normalizedUserMemory ? `ИНСТРУКЦИЯ:\n${normalizedUserMemory}` : '',
+		normalizedSessionContext ? `КОНТЕКСТ:\n${normalizedSessionContext}` : '',
+		`ВОПРОС:\n${normalizedMessage}`,
 	]
 		.filter(Boolean)
 		.join('\n\n')
+}
 const buildAiRequestMessage = ({ userMemory, message }) => {
 	const normalizedMessage = normalizeAiMessageContent(message)
 	const blocks = [userMemory ? `ИНСТРУКЦИЯ:\n${userMemory}` : ''].filter(Boolean)
@@ -609,7 +615,7 @@ export const aiService = {
 		return aiClient.health()
 	},
 
-	async sendChat({ userId, conversationId, message, mode = 'context' }) {
+	async sendChat({ userId, conversationId, message, sessionContext = '', mode = 'context' }) {
 		const access = await assertSubscriptionActive(userId)
 		assertCapability(access, 'chat')
 		assertRemaining(access, 'chat')
@@ -617,10 +623,19 @@ export const aiService = {
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: chatMode })
 		const normalizedUserMessage = normalizeAiMessageContent(message)
 		const normalizedUserMemory = await getCachedAiMemory(userId)
-		const fullMessage = buildAiMemoryOnlyRequestMessage({
-			userMemory: normalizedUserMemory,
-			message: normalizedUserMessage,
-		})
+		const normalizedSessionContext =
+			chatMode === 'context' ? normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH) : ''
+		const fullMessage =
+			chatMode === 'simple'
+				? buildAiMemoryOnlyRequestMessage({
+						userMemory: normalizedUserMemory,
+						message: normalizedUserMessage,
+					})
+				: buildAiPromptMessage({
+						userMemory: normalizedUserMemory,
+						sessionContext: normalizedSessionContext,
+						message: normalizedUserMessage,
+					})
 		const conversation = await ensureAiConversation({
 			userId,
 			conversationKey: resolvedConversationId,

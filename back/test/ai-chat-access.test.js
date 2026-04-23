@@ -81,7 +81,7 @@ export const cases = [
 		},
 	},
 	{
-		name: 'POST /api/ai/chat passes with access and returns AI reply',
+		name: 'POST /api/ai/chat passes session context through route to AI service',
 		run: async () => {
 			const restores = [
 				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
@@ -122,6 +122,10 @@ export const cases = [
 				assert.equal(response.status, 200)
 				assert.equal(payload.reply, 'AI reply')
 				assert.equal(payload.conversation_id, 'conv-with-access')
+				assert.equal(
+					payload.upstream_message,
+					'ИНСТРУКЦИЯ:\npersistent memory\n\nКОНТЕКСТ:\ncurrent task\n\nВОПРОС:\nhello',
+				)
 			} finally {
 				restoreAll(restores)
 				await stopTestServer(server)
@@ -144,6 +148,7 @@ export const cases = [
 				})),
 				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...storedConversation, ...data })),
 				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_simple_1', ...data })),
+				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'persistent memory' })),
 				patchMethod(aiClient, 'simpleChat', async ({ message }) => ({
 					reply: `simple:${message}`,
 				})),
