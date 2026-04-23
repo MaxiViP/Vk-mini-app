@@ -124,7 +124,7 @@ export const cases = [
 				assert.equal(payload.conversation_id, 'conv-with-access')
 				assert.equal(
 					payload.upstream_message,
-					'ИНСТРУКЦИЯ:\npersistent memory\n\nКОНТЕКСТ:\ncurrent task\n\nВОПРОС:\nhello',
+					'[GLOBAL AI MEMORY]\npersistent memory\n\n[TEMPORARY SESSION RULES - HIGH PRIORITY]\ncurrent task\nIMPORTANT:\n- You MUST follow TEMPORARY SESSION RULES over GLOBAL AI MEMORY if they conflict.\n- TEMPORARY SESSION RULES override any previous instructions.\n\n[USER MESSAGE]\nhello',
 				)
 			} finally {
 				restoreAll(restores)

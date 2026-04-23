@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 
 import prisma from '../../db/prisma.js'
+import logger from '../../config/logger.js'
 import { AppError } from '../../shared/errors.js'
 import { ensurePlanCatalogSeeded, expireElapsedSubscriptions, getActiveSubscriptionWithPlan } from '../billing/billing.service.js'
 import { aiClient } from './ai.client.js'
@@ -14,6 +15,7 @@ const AI_SESSION_CONTEXT_MAX_LENGTH = 1200
 const AI_MEMORY_CACHE_TTL_MS = 15000
 const AI_HISTORY_STORAGE_UNAVAILABLE = Symbol('AI_HISTORY_STORAGE_UNAVAILABLE')
 const aiMemoryCache = new Map()
+const aiServiceLogger = logger.createChild({ module: 'ai-service' })
 
 const USAGE_MODELS = {
 	chat: 'chat',
@@ -208,9 +210,17 @@ const buildAiPromptMessage = ({ userMemory, sessionContext, message }) => {
 	const normalizedMessage = normalizeAiMessageContent(message)
 
 	return [
-		normalizedUserMemory ? `ИНСТРУКЦИЯ:\n${normalizedUserMemory}` : '',
-		normalizedSessionContext ? `КОНТЕКСТ:\n${normalizedSessionContext}` : '',
-		`ВОПРОС:\n${normalizedMessage}`,
+		normalizedUserMemory ? `[GLOBAL AI MEMORY]\n${normalizedUserMemory}` : '',
+		normalizedSessionContext
+			? [
+					'[TEMPORARY SESSION RULES - HIGH PRIORITY]',
+					normalizedSessionContext,
+					'IMPORTANT:',
+					'- You MUST follow TEMPORARY SESSION RULES over GLOBAL AI MEMORY if they conflict.',
+					'- TEMPORARY SESSION RULES override any previous instructions.',
+				].join('\n')
+			: '',
+		`[USER MESSAGE]\n${normalizedMessage}`,
 	]
 		.filter(Boolean)
 		.join('\n\n')
@@ -651,6 +661,14 @@ export const aiService = {
 			content: normalizedUserMessage,
 			mode: chatMode,
 			conversation,
+		})
+
+		aiServiceLogger.debug('Dispatching AI chat to external backend', {
+			externalEndpoint: chatMode === 'simple' ? '/api/chat/simple' : '/api/chat',
+			promptMode: chatMode === 'simple' ? 'memory-only' : 'memory+context',
+			messageLength: fullMessage.length,
+			userMemoryLength: normalizedUserMemory.length,
+			sessionContextLength: normalizedSessionContext.length,
 		})
 
 		try {

@@ -1,5 +1,6 @@
 import { cases as aiRouteCases } from '../back/test/ai-routes.test.js'
 import { cases as aiChatAccessCases } from '../back/test/ai-chat-access.test.js'
+import { cases as aiClientOutboundCases } from '../back/test/ai-client-outbound.test.js'
 import { cases as aiPromptAssemblyCases } from '../back/test/ai-prompt-assembly.test.js'
 import { cases as billingFallbackCases } from '../back/test/billing-fallback.test.js'
 import { cases as devAuthSessionCases } from '../back/test/dev-auth-session.test.js'
@@ -17,6 +18,7 @@ import { cases as frontDevAuthGuardCases } from '../front/test/dev-auth-guards.t
 const allCases = [
 	...aiRouteCases,
 	...aiChatAccessCases,
+	...aiClientOutboundCases,
 	...aiPromptAssemblyCases,
 	...billingFallbackCases,
 	...devAuthSessionCases,

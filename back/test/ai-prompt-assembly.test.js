@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 
+import logger from '../src/config/logger.js'
 import prisma from '../src/db/prisma.js'
 import { aiClient } from '../src/modules/ai/ai.client.js'
 import { aiService } from '../src/modules/ai/ai.service.js'
@@ -88,6 +89,23 @@ const buildRestores = ({
 		: []),
 ]
 
+const buildPriorityPrompt = ({ userMemory = '', sessionContext = '', message }) =>
+	[
+		userMemory ? `[GLOBAL AI MEMORY]\n${userMemory}` : '',
+		sessionContext
+			? [
+					'[TEMPORARY SESSION RULES - HIGH PRIORITY]',
+					sessionContext,
+					'IMPORTANT:',
+					'- You MUST follow TEMPORARY SESSION RULES over GLOBAL AI MEMORY if they conflict.',
+					'- TEMPORARY SESSION RULES override any previous instructions.',
+				].join('\n')
+			: '',
+		`[USER MESSAGE]\n${message}`,
+	]
+		.filter(Boolean)
+		.join('\n\n')
+
 export const cases = [
 	{
 		name: 'aiService context mode includes AI memory when session context is empty',
@@ -110,8 +128,14 @@ export const cases = [
 					sessionContext: '',
 				})
 
-				assert.equal(capturedMessage, 'ИНСТРУКЦИЯ:\nmemory\n\nВОПРОС:\nquestion')
-				assert.equal(capturedMessage.includes('КОНТЕКСТ:'), false)
+				assert.equal(
+					capturedMessage,
+					buildPriorityPrompt({
+						userMemory: 'memory',
+						message: 'question',
+					}),
+				)
+				assert.equal(capturedMessage.includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
 			} finally {
 				restoreAll(restores)
 			}
@@ -138,8 +162,14 @@ export const cases = [
 					sessionContext: 'context',
 				})
 
-				assert.equal(capturedMessage, 'КОНТЕКСТ:\ncontext\n\nВОПРОС:\nquestion')
-				assert.equal(capturedMessage.includes('ИНСТРУКЦИЯ:'), false)
+				assert.equal(
+					capturedMessage,
+					buildPriorityPrompt({
+						sessionContext: 'context',
+						message: 'question',
+					}),
+				)
+				assert.equal(capturedMessage.includes('[GLOBAL AI MEMORY]'), false)
 			} finally {
 				restoreAll(restores)
 			}
@@ -166,8 +196,155 @@ export const cases = [
 					sessionContext: 'context',
 				})
 
-				assert.equal(capturedMessage, 'ИНСТРУКЦИЯ:\nmemory\n\nКОНТЕКСТ:\ncontext\n\nВОПРОС:\nquestion')
+				assert.equal(
+					capturedMessage,
+					buildPriorityPrompt({
+						userMemory: 'memory',
+						sessionContext: 'context',
+						message: 'question',
+					}),
+				)
+				assert.ok(capturedMessage.indexOf('[TEMPORARY SESSION RULES - HIGH PRIORITY]') < capturedMessage.indexOf('[USER MESSAGE]'))
 				assert.equal(capturedMessage.includes('\n\n\n'), false)
+			} finally {
+				restoreAll(restores)
+			}
+		},
+	},
+	{
+		name: 'aiService context mode gives session context higher priority than AI memory',
+		run: async () => {
+			let capturedMessage = null
+			const restores = buildRestores({
+				aiMemory: 'reply in Russian',
+				onChat: ({ message }) => {
+					capturedMessage = message
+				},
+			})
+
+			try {
+				aiService.syncAiMemoryCache('prompt-user', 'reply in Russian')
+
+				await aiService.sendChat({
+					userId: 'prompt-user',
+					conversationId: 'conv-prompt',
+					message: 'Say hello',
+					sessionContext: 'reply in English',
+				})
+
+				assert.equal(
+					capturedMessage,
+					buildPriorityPrompt({
+						userMemory: 'reply in Russian',
+						sessionContext: 'reply in English',
+						message: 'Say hello',
+					}),
+				)
+				assert.ok(
+					capturedMessage.includes(
+						'- You MUST follow TEMPORARY SESSION RULES over GLOBAL AI MEMORY if they conflict.',
+					),
+				)
+				assert.ok(capturedMessage.includes('- TEMPORARY SESSION RULES override any previous instructions.'))
+			} finally {
+				restoreAll(restores)
+			}
+		},
+	},
+	{
+		name: 'aiService context mode can produce English reply when session context overrides AI memory',
+		run: async () => {
+			let capturedMessage = null
+			const restores = [
+				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
+				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
+				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
+				patchMethod(prisma.usageEvent, 'create', async data => ({ id: 'usage_prompt', ...data })),
+				patchMethod(prisma.aiConversation, 'findUnique', async () => null),
+				patchMethod(prisma.aiConversation, 'create', async () => storedConversation),
+				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...storedConversation, ...data })),
+				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_prompt', ...data })),
+				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'reply in Russian' })),
+				patchMethod(aiClient, 'chat', async payload => {
+					capturedMessage = payload.message
+					const reply = payload.message.includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]') &&
+						payload.message.includes('reply in English') &&
+						payload.message.includes('override any previous instructions.')
+						? 'Hello'
+						: 'Привет'
+
+					return {
+						reply,
+						user_id: 'prompt-user',
+						conversation_id: payload.conversationId,
+					}
+				}),
+			]
+
+			try {
+				aiService.syncAiMemoryCache('prompt-user', 'reply in Russian')
+
+				const response = await aiService.sendChat({
+					userId: 'prompt-user',
+					conversationId: 'conv-prompt',
+					message: 'Say hello',
+					sessionContext: 'reply in English',
+				})
+
+				assert.equal(
+					capturedMessage,
+					buildPriorityPrompt({
+						userMemory: 'reply in Russian',
+						sessionContext: 'reply in English',
+						message: 'Say hello',
+					}),
+				)
+				assert.equal(response.reply, 'Hello')
+			} finally {
+				restoreAll(restores)
+			}
+		},
+	},
+	{
+		name: 'aiService logs sanitized outbound diagnostics for context mode',
+		run: async () => {
+			const debugCalls = []
+			const restores = [
+				...buildRestores({
+					aiMemory: 'memory',
+					onChat: () => {},
+				}),
+				patchMethod(logger, 'debug', (message, meta) => {
+					debugCalls.push({ message, meta })
+				}),
+			]
+
+			try {
+				aiService.syncAiMemoryCache('prompt-user', 'memory')
+
+				await aiService.sendChat({
+					userId: 'prompt-user',
+					conversationId: 'conv-prompt',
+					message: 'question',
+					sessionContext: 'temporary context',
+				})
+
+				assert.equal(debugCalls.length, 1)
+				assert.equal(debugCalls[0].message, 'Dispatching AI chat to external backend')
+				assert.deepEqual(debugCalls[0].meta, {
+					module: 'ai-service',
+					externalEndpoint: '/api/chat',
+					promptMode: 'memory+context',
+					messageLength: buildPriorityPrompt({
+						userMemory: 'memory',
+						sessionContext: 'temporary context',
+						message: 'question',
+					}).length,
+					userMemoryLength: 'memory'.length,
+					sessionContextLength: 'temporary context'.length,
+				})
+				assert.equal(JSON.stringify(debugCalls[0].meta).includes('temporary context'), false)
+				assert.equal(JSON.stringify(debugCalls[0].meta).includes('question'), false)
 			} finally {
 				restoreAll(restores)
 			}
@@ -201,7 +378,54 @@ export const cases = [
 				})
 
 				assert.equal(capturedMessage, 'ИНСТРУКЦИЯ:\nmemory that should be used\n\nВОПРОС:\nquestion')
-				assert.equal(capturedMessage.includes('КОНТЕКСТ:'), false)
+				assert.equal(capturedMessage.includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
+			} finally {
+				restoreAll(restores)
+			}
+		},
+	},
+	{
+		name: 'aiService logs sanitized outbound diagnostics for simple mode',
+		run: async () => {
+			const debugCalls = []
+			const restores = [
+				...buildRestores({
+					aiMemory: 'memory that should be used',
+					conversation: {
+						...storedConversation,
+						conversationKey: 'aivk-simple-prompt-user',
+						mode: 'simple',
+					},
+					onSimpleChat: () => {},
+				}),
+				patchMethod(logger, 'debug', (message, meta) => {
+					debugCalls.push({ message, meta })
+				}),
+			]
+
+			try {
+				aiService.syncAiMemoryCache('prompt-user', 'memory that should be used')
+
+				await aiService.sendChat({
+					userId: 'prompt-user',
+					conversationId: 'conv-prompt',
+					message: 'question',
+					sessionContext: 'temporary context',
+					mode: 'simple',
+				})
+
+				assert.equal(debugCalls.length, 1)
+				assert.equal(debugCalls[0].message, 'Dispatching AI chat to external backend')
+				assert.deepEqual(debugCalls[0].meta, {
+					module: 'ai-service',
+					externalEndpoint: '/api/chat/simple',
+					promptMode: 'memory-only',
+					messageLength: 'ИНСТРУКЦИЯ:\nmemory that should be used\n\nВОПРОС:\nquestion'.length,
+					userMemoryLength: 'memory that should be used'.length,
+					sessionContextLength: 0,
+				})
+				assert.equal(JSON.stringify(debugCalls[0].meta).includes('temporary context'), false)
+				assert.equal(JSON.stringify(debugCalls[0].meta).includes('question'), false)
 			} finally {
 				restoreAll(restores)
 			}
@@ -232,12 +456,19 @@ export const cases = [
 					sessionContext: 'temporary context',
 				})
 
-				assert.equal(capturedMessage, 'ИНСТРУКЦИЯ:\nmemory\n\nКОНТЕКСТ:\ntemporary context\n\nВОПРОС:\nquestion')
+				assert.equal(
+					capturedMessage,
+					buildPriorityPrompt({
+						userMemory: 'memory',
+						sessionContext: 'temporary context',
+						message: 'question',
+					}),
+				)
 				assert.equal(persistedMessages.length, 2)
 				assert.equal(persistedMessages[0].data.content, 'question')
 				assert.equal(persistedMessages[1].data.content, 'ok')
 				assert.equal(JSON.stringify(persistedMessages).includes('temporary context'), false)
-				assert.equal(JSON.stringify(persistedMessages).includes('КОНТЕКСТ:'), false)
+				assert.equal(JSON.stringify(persistedMessages).includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
 			} finally {
 				restoreAll(restores)
 			}
