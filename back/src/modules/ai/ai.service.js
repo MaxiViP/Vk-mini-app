@@ -10,7 +10,6 @@ const AI_PRODUCT_TYPE = 'ai'
 const AI_PROVIDER = 'vk_ai'
 const AI_HISTORY_PROVIDER = 'aivk'
 const AI_MEMORY_MAX_LENGTH = 1200
-const AI_SESSION_CONTEXT_MAX_LENGTH = 1200
 const AI_MEMORY_CACHE_TTL_MS = 15000
 const AI_HISTORY_STORAGE_UNAVAILABLE = Symbol('AI_HISTORY_STORAGE_UNAVAILABLE')
 const aiMemoryCache = new Map()
@@ -210,18 +209,26 @@ const buildAiPromptMessage = ({ userMemory, sessionContext, message }) =>
 	]
 		.filter(Boolean)
 		.join('\n\n')
-const buildAiRequestMessage = ({ userMemory, sessionContext, message }) => {
+const buildAiRequestMessage = ({ userMemory, message }) => {
 	const normalizedMessage = normalizeAiMessageContent(message)
-	const blocks = [
-		userMemory ? `ИНСТРУКЦИЯ:\n${userMemory}` : '',
-		sessionContext ? `КОНТЕКСТ:\n${sessionContext}` : '',
-	].filter(Boolean)
+	const blocks = [userMemory ? `ИНСТРУКЦИЯ:\n${userMemory}` : ''].filter(Boolean)
 
 	if (blocks.length === 0) {
 		return normalizedMessage
 	}
 
 	return [...blocks, `ВОПРОС:\n${normalizedMessage}`].join('\n\n')
+}
+
+const buildAiMemoryOnlyRequestMessage = ({ userMemory, message }) => {
+	const normalizedMessage = normalizeAiMessageContent(message)
+	const normalizedUserMemory = normalizeAiBlock(userMemory, AI_MEMORY_MAX_LENGTH)
+
+	if (!normalizedUserMemory) {
+		return normalizedMessage
+	}
+
+	return `ИНСТРУКЦИЯ:\n${normalizedUserMemory}\n\nВОПРОС:\n${normalizedMessage}`
 }
 
 const getCachedAiMemory = async userId => {
@@ -602,18 +609,16 @@ export const aiService = {
 		return aiClient.health()
 	},
 
-	async sendChat({ userId, conversationId, message, sessionContext = '', mode = 'context' }) {
+	async sendChat({ userId, conversationId, message, mode = 'context' }) {
 		const access = await assertSubscriptionActive(userId)
 		assertCapability(access, 'chat')
 		assertRemaining(access, 'chat')
 		const chatMode = normalizeAiChatMode(mode)
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: chatMode })
 		const normalizedUserMessage = normalizeAiMessageContent(message)
-		const normalizedSessionContext = normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH)
 		const normalizedUserMemory = await getCachedAiMemory(userId)
-		const fullMessage = buildAiRequestMessage({
+		const fullMessage = buildAiMemoryOnlyRequestMessage({
 			userMemory: normalizedUserMemory,
-			sessionContext: chatMode === 'context' ? normalizedSessionContext : '',
 			message: normalizedUserMessage,
 		})
 		const conversation = await ensureAiConversation({
@@ -631,10 +636,6 @@ export const aiService = {
 			content: normalizedUserMessage,
 			mode: chatMode,
 			conversation,
-			metadata:
-				chatMode === 'context' && normalizedSessionContext
-					? { sessionContext: normalizedSessionContext }
-					: undefined,
 		})
 
 		try {
@@ -647,7 +648,6 @@ export const aiService = {
 					userId: toExternalUserId(userId),
 					conversationId: resolvedConversationId,
 					message: fullMessage,
-					sessionContext: normalizedSessionContext || undefined,
 				})
 			}
 		} catch (error) {

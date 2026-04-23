@@ -47,7 +47,7 @@ const storedConversation = {
 
 export const cases = [
 	{
-		name: 'aiService prompt assembly preserves block order and joins with double newlines',
+		name: 'aiService prompt assembly keeps only AI memory before the user message',
 		run: async () => {
 			let capturedMessage = null
 
@@ -81,7 +81,7 @@ export const cases = [
 					sessionContext: 'context',
 				})
 
-				assert.equal(capturedMessage, 'ИНСТРУКЦИЯ:\nmemory\n\nКОНТЕКСТ:\ncontext\n\nВОПРОС:\nquestion')
+				assert.equal(capturedMessage, 'ИНСТРУКЦИЯ:\nmemory\n\nВОПРОС:\nquestion')
 				assert.equal(capturedMessage.includes('\n\n\n'), false)
 			} finally {
 				restoreAll(restores)
