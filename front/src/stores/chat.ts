@@ -578,13 +578,19 @@ export const useChatStore = defineStore('chat', () => {
 
 		try {
 			if (isExternalBackend.value) {
-				const sessionContext = readSessionContext()
+				const sessionContext = readSessionContext().trim()
+				const hasContext = Boolean(sessionContext)
+
 				const response = await vkAiApi.chat({
 					accessToken: getExternalAccessToken(),
 					conversationId: conversationId.value,
 					message: text,
-					sessionContext: vkAiChatMode === 'context' ? sessionContext.trim() || undefined : undefined,
-					mode: vkAiChatMode,
+
+					// ВСЕГДА передаём если есть
+					sessionContext: hasContext ? sessionContext : undefined,
+
+					// ГЛАВНОЕ ИСПРАВЛЕНИЕ
+					mode: hasContext ? 'context' : 'context',
 				})
 
 				addSystemMessage(response.reply, {
