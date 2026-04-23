@@ -698,6 +698,7 @@ export const aiService = {
 					userId: toExternalUserId(userId),
 					conversationId: resolvedConversationId,
 					message: fullMessage,
+					sessionContext: normalizedSessionContext || undefined,
 				})
 			}
 		} catch (error) {
