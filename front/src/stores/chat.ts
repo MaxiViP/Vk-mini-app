@@ -4,7 +4,7 @@ import { computed, ref, watch } from 'vue'
 import type { Message, Model, ChatHistoryItem, MessageMeta, SourceHistoryItem } from '../types'
 import { fetchWorkspace, saveChatHistory, type WorkspaceMessage } from '../api/workspace'
 import { getVkAiErrorCode, vkAiApi } from '../api/vkAi'
-import { internalApiBaseUrl } from '../config/chatBackend'
+import { internalApiBaseUrl, vkAiChatMode } from '../config/chatBackend'
 import { shouldUseAiApi } from '../domain/chatModeRules'
 import { isDevSessionRefreshToken, useUserStore } from './user'
 
@@ -269,16 +269,16 @@ export const useChatStore = defineStore('chat', () => {
 		}
 
 		try {
-			const access = await vkAiApi.getAccess(getExternalAccessToken())
+			const health = await vkAiApi.health(getExternalAccessToken())
 			backendStatus.value = 'online'
-			return access
+			return health
 		} catch (error) {
 			if (shouldKeepExternalBackendOnline(error)) {
 				backendStatus.value = 'online'
 				return null
 			}
 
-			console.warn('[chat] vk-ai access failed', error)
+			console.warn('[chat] vk-ai health failed', error)
 			backendStatus.value = 'offline'
 			return null
 		}
@@ -583,7 +583,8 @@ export const useChatStore = defineStore('chat', () => {
 					accessToken: getExternalAccessToken(),
 					conversationId: conversationId.value,
 					message: text,
-					sessionContext: sessionContext.trim() || undefined,
+					sessionContext: vkAiChatMode === 'context' ? sessionContext.trim() || undefined : undefined,
+					mode: vkAiChatMode,
 				})
 
 				addSystemMessage(response.reply, {

@@ -109,4 +109,42 @@ export const cases = [
 			}
 		},
 	},
+	{
+		name: 'POST /api/ai/chat supports simple mode via upstream simple endpoint',
+		run: async () => {
+			const restores = [
+				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
+				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
+				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
+				patchMethod(prisma.usageEvent, 'create', async data => ({ id: 'usage_simple_1', ...data })),
+				patchMethod(aiClient, 'simpleChat', async ({ message }) => ({
+					reply: `simple:${message}`,
+				})),
+			]
+
+			const token = createAccessToken()
+			const { server, baseUrl } = await startTestServer()
+
+			try {
+				const response = await fetch(`${baseUrl}/api/ai/chat`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${token}`,
+					},
+					body: JSON.stringify({
+						mode: 'simple',
+						message: 'hello-simple',
+					}),
+				})
+				const payload = await response.json()
+
+				assert.equal(response.status, 200)
+				assert.equal(payload.reply, 'simple:hello-simple')
+			} finally {
+				restoreAll(restores)
+				await stopTestServer(server)
+			}
+		},
+	},
 ]

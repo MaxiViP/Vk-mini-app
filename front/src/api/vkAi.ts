@@ -8,8 +8,8 @@ export interface VkAiSource {
 
 export interface VkAiChatResponse {
 	reply: string
-	user_id: string
-	conversation_id: string
+	user_id?: string
+	conversation_id?: string
 	source_type?: string
 	sources?: VkAiSource[]
 	message_count?: number
@@ -41,6 +41,10 @@ export interface VkAiUploadResponse {
 	filename: string
 	status: string
 	extracted_chars?: number
+}
+
+export interface VkAiHealthResponse {
+	status: string
 }
 
 type VkAiError = Error & {
@@ -130,11 +134,26 @@ export const vkAiApi = {
 		return response.json() as Promise<AiAccessResponse>
 	},
 
-	async chat(payload: { accessToken: string; conversationId: string; message: string; sessionContext?: string }) {
+	async health(accessToken: string) {
+		const response = await fetch(`${apiBaseUrl}/api/ai/health`, {
+			headers: createHeaders(accessToken),
+		})
+		await ensureOk(response)
+		return response.json() as Promise<VkAiHealthResponse>
+	},
+
+	async chat(payload: {
+		accessToken: string
+		conversationId: string
+		message: string
+		sessionContext?: string
+		mode?: 'context' | 'simple'
+	}) {
 		const response = await fetch(`${apiBaseUrl}/api/ai/chat`, {
 			method: 'POST',
 			headers: createHeaders(payload.accessToken, { 'Content-Type': 'application/json' }),
 			body: JSON.stringify({
+				mode: payload.mode,
 				conversationId: payload.conversationId,
 				message: payload.message,
 				sessionContext: payload.sessionContext,

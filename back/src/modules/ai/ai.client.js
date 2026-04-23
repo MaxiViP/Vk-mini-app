@@ -171,6 +171,19 @@ export const aiClient = {
 		return requestJson('/api/health')
 	},
 
+	keyCheck() {
+		return requestJson('/api/key/check')
+	},
+
+	simpleChat({ message }) {
+		return requestJson('/api/chat/simple', {
+			method: 'POST',
+			body: {
+				message,
+			},
+		})
+	},
+
 	chat({ userId, conversationId, message, sessionContext }) {
 		void sessionContext
 		return requestJson('/api/chat', {
@@ -188,7 +201,7 @@ export const aiClient = {
 		formData.set('user_id', userId)
 		formData.set('conversation_id', conversationId)
 		formData.set('file', file, file.name || 'upload.bin')
-		return requestFormData('/api/files/upload', formData)
+		return requestFormData('/api/upload', formData)
 	},
 
 	voice({ userId, conversationId, file }) {
@@ -200,15 +213,14 @@ export const aiClient = {
 	},
 
 	getConversation({ userId, conversationId }) {
-		return requestJson(`/api/conversations/${encodeURIComponent(conversationId)}`, {
-			query: { user_id: userId },
-		})
+		void userId
+		return requestJson(`/api/conversations/${encodeURIComponent(conversationId)}`)
 	},
 
 	resetConversation({ userId, conversationId }) {
+		void userId
 		return requestJson(`/api/conversations/${encodeURIComponent(conversationId)}/reset`, {
 			method: 'POST',
-			query: { user_id: userId },
 		})
 	},
 }

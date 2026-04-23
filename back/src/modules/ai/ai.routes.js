@@ -69,15 +69,30 @@ router.get('/access', async (req, res, next) => {
 	}
 })
 
+router.get('/health', async (_req, res, next) => {
+	try {
+		const result = await aiService.getBackendHealth()
+		res.json(result)
+	} catch (error) {
+		next(error)
+	}
+})
+
 router.post('/chat', async (req, res, next) => {
 	try {
-		requireFields(req.body, ['conversationId', 'message'])
+		const mode = String(req.body?.mode || 'context').toLowerCase() === 'simple' ? 'simple' : 'context'
+		if (mode === 'context') {
+			requireFields(req.body, ['conversationId', 'message'])
+		} else {
+			requireFields(req.body, ['message'])
+		}
 
 		const result = await aiService.sendChat({
 			userId: req.user.id,
-			conversationId: String(req.body.conversationId),
+			conversationId: typeof req.body.conversationId === 'string' ? String(req.body.conversationId) : '',
 			message: String(req.body.message),
 			sessionContext: typeof req.body.sessionContext === 'string' ? req.body.sessionContext : '',
+			mode,
 		})
 
 		res.json(result)

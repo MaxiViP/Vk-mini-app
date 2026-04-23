@@ -70,4 +70,38 @@ export const cases = [
 			}
 		},
 	},
+	{
+		name: 'aiService simple mode sends raw message without prompt assembly',
+		run: async () => {
+			let capturedMessage = null
+
+			const restores = [
+				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
+				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
+				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
+				patchMethod(prisma.usageEvent, 'create', async data => ({ id: 'usage_simple_prompt', ...data })),
+				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'memory that should not be used' })),
+				patchMethod(aiClient, 'simpleChat', async ({ message }) => {
+					capturedMessage = message
+					return {
+						reply: 'ok',
+					}
+				}),
+			]
+
+			try {
+				await aiService.sendChat({
+					userId: 'prompt-user',
+					conversationId: 'conv-prompt',
+					message: 'question',
+					sessionContext: 'context',
+					mode: 'simple',
+				})
+
+				assert.equal(capturedMessage, 'question')
+			} finally {
+				restoreAll(restores)
+			}
+		},
+	},
 ]

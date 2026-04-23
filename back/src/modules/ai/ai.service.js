@@ -190,6 +190,7 @@ const createUsageEvent = ({ userId, subscription, modelName }) =>
 
 const toExternalUserId = userId => String(userId)
 const normalizeAiBlock = (value, maxLength) => String(value || '').slice(0, maxLength).trim()
+const normalizeAiChatMode = value => (String(value || '').toLowerCase() === 'simple' ? 'simple' : 'context')
 const buildAiPromptMessage = ({ userMemory, sessionContext, message }) =>
 	[
 		userMemory ? `ИНСТРУКЦИЯ:\n${userMemory}` : '',
@@ -252,24 +253,37 @@ export const aiService = {
 		}
 	},
 
-	async sendChat({ userId, conversationId, message, sessionContext = '' }) {
+	async getBackendHealth() {
+		return aiClient.health()
+	},
+
+	async sendChat({ userId, conversationId, message, sessionContext = '', mode = 'context' }) {
 		const access = await assertSubscriptionActive(userId)
 		assertCapability(access, 'chat')
 		assertRemaining(access, 'chat')
-		const normalizedSessionContext = normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH)
-		const normalizedUserMemory = await getCachedAiMemory(userId)
-		const fullMessage = buildAiPromptMessage({
-			userMemory: normalizedUserMemory,
-			sessionContext: normalizedSessionContext,
-			message,
-		})
+		const chatMode = normalizeAiChatMode(mode)
+		let response
 
-		const response = await aiClient.chat({
-			userId: toExternalUserId(userId),
-			conversationId,
-			message: fullMessage,
-			sessionContext: normalizedSessionContext || undefined,
-		})
+		if (chatMode === 'simple') {
+			response = await aiClient.simpleChat({
+				message: String(message || ''),
+			})
+		} else {
+			const normalizedSessionContext = normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH)
+			const normalizedUserMemory = await getCachedAiMemory(userId)
+			const fullMessage = buildAiPromptMessage({
+				userMemory: normalizedUserMemory,
+				sessionContext: normalizedSessionContext,
+				message,
+			})
+
+			response = await aiClient.chat({
+				userId: toExternalUserId(userId),
+				conversationId,
+				message: fullMessage,
+				sessionContext: normalizedSessionContext || undefined,
+			})
+		}
 
 		await createUsageEvent({
 			userId,
