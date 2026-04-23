@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 
 import prisma from '../src/db/prisma.js'
 import { createAccessToken, startTestServer, stopTestServer } from './helpers/http.js'
-import { patchValue, restoreAll } from './helpers/patch.js'
+import { patchMethod, patchValue, restoreAll } from './helpers/patch.js'
 
 export const cases = [
 	{
@@ -61,6 +61,73 @@ export const cases = [
 				assert.equal(response.status, 401)
 				assert.equal(payload.message, 'Unauthorized')
 			} finally {
+				await stopTestServer(server)
+			}
+		},
+	},
+	{
+		name: 'GET /api/workspace/me/ai-memory reads aiMemory from users table',
+		run: async () => {
+			const restores = [
+				patchMethod(prisma.user, 'findUnique', async () => ({
+					aiMemory: 'remember from user row',
+					updatedAt: new Date('2026-04-23T10:00:00.000Z'),
+				})),
+			]
+			const token = createAccessToken({ sub: 'workspace-memory-user' })
+			const { server, baseUrl } = await startTestServer()
+
+			try {
+				const response = await fetch(`${baseUrl}/api/workspace/me/ai-memory`, {
+					headers: { Authorization: `Bearer ${token}` },
+				})
+				const payload = await response.json()
+
+				assert.equal(response.status, 200)
+				assert.equal(payload.aiMemory, 'remember from user row')
+				assert.equal(typeof payload.updatedAt, 'string')
+			} finally {
+				restoreAll(restores)
+				await stopTestServer(server)
+			}
+		},
+	},
+	{
+		name: 'PUT /api/workspace/me/ai-memory stores aiMemory in users table',
+		run: async () => {
+			let capturedUpdate = null
+			const restores = [
+				patchMethod(prisma.user, 'upsert', async payload => {
+					capturedUpdate = payload
+					return {
+						aiMemory: payload.update.aiMemory,
+						updatedAt: new Date('2026-04-23T10:05:00.000Z'),
+					}
+				}),
+			]
+			const token = createAccessToken({ sub: 'workspace-memory-save-user' })
+			const { server, baseUrl } = await startTestServer()
+
+			try {
+				const response = await fetch(`${baseUrl}/api/workspace/me/ai-memory`, {
+					method: 'PUT',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${token}`,
+					},
+					body: JSON.stringify({
+						aiMemory: 'store this in users.aiMemory',
+					}),
+				})
+				const payload = await response.json()
+
+				assert.equal(response.status, 200)
+				assert.equal(payload.aiMemory, 'store this in users.aiMemory')
+				assert.equal(capturedUpdate.where.id, 'workspace-memory-save-user')
+				assert.equal(capturedUpdate.update.aiMemory, 'store this in users.aiMemory')
+				assert.equal(typeof payload.updatedAt, 'string')
+			} finally {
+				restoreAll(restores)
 				await stopTestServer(server)
 			}
 		},

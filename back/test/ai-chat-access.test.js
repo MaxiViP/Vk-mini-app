@@ -167,7 +167,7 @@ export const cases = [
 				const payload = await response.json()
 
 				assert.equal(response.status, 200)
-				assert.equal(payload.reply, 'simple:hello-simple')
+				assert.equal(payload.reply, 'simple:ИНСТРУКЦИЯ:\npersistent memory\n\nВОПРОС:\nhello-simple')
 			} finally {
 				restoreAll(restores)
 				await stopTestServer(server)

@@ -210,6 +210,20 @@ const buildAiPromptMessage = ({ userMemory, sessionContext, message }) =>
 	]
 		.filter(Boolean)
 		.join('\n\n')
+const buildAiRequestMessage = ({ userMemory, sessionContext, message }) => {
+	const normalizedMessage = normalizeAiMessageContent(message)
+	const blocks = [
+		userMemory ? `ИНСТРУКЦИЯ:\n${userMemory}` : '',
+		sessionContext ? `КОНТЕКСТ:\n${sessionContext}` : '',
+	].filter(Boolean)
+
+	if (blocks.length === 0) {
+		return normalizedMessage
+	}
+
+	return [...blocks, `ВОПРОС:\n${normalizedMessage}`].join('\n\n')
+}
+
 const getCachedAiMemory = async userId => {
 	const key = String(userId)
 	const now = Date.now()
@@ -595,6 +609,13 @@ export const aiService = {
 		const chatMode = normalizeAiChatMode(mode)
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: chatMode })
 		const normalizedUserMessage = normalizeAiMessageContent(message)
+		const normalizedSessionContext = normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH)
+		const normalizedUserMemory = await getCachedAiMemory(userId)
+		const fullMessage = buildAiRequestMessage({
+			userMemory: normalizedUserMemory,
+			sessionContext: chatMode === 'context' ? normalizedSessionContext : '',
+			message: normalizedUserMessage,
+		})
 		const conversation = await ensureAiConversation({
 			userId,
 			conversationKey: resolvedConversationId,
@@ -611,25 +632,17 @@ export const aiService = {
 			mode: chatMode,
 			conversation,
 			metadata:
-				chatMode === 'context' && typeof sessionContext === 'string' && sessionContext.trim()
-					? { sessionContext: normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH) }
+				chatMode === 'context' && normalizedSessionContext
+					? { sessionContext: normalizedSessionContext }
 					: undefined,
 		})
 
 		try {
 			if (chatMode === 'simple') {
 				response = await aiClient.simpleChat({
-					message: normalizedUserMessage,
+					message: fullMessage,
 				})
 			} else {
-				const normalizedSessionContext = normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH)
-				const normalizedUserMemory = await getCachedAiMemory(userId)
-				const fullMessage = buildAiPromptMessage({
-					userMemory: normalizedUserMemory,
-					sessionContext: normalizedSessionContext,
-					message: normalizedUserMessage,
-				})
-
 				response = await aiClient.chat({
 					userId: toExternalUserId(userId),
 					conversationId: resolvedConversationId,

@@ -72,6 +72,8 @@ export const cases = [
 			]
 
 			try {
+				aiService.syncAiMemoryCache('prompt-user', 'memory')
+
 				await aiService.sendChat({
 					userId: 'prompt-user',
 					conversationId: 'conv-prompt',
@@ -79,10 +81,7 @@ export const cases = [
 					sessionContext: 'context',
 				})
 
-				assert.equal(
-					capturedMessage,
-					'ИНСТРУКЦИЯ:\nmemory\n\nКОНТЕКСТ:\ncontext\n\nВОПРОС:\nquestion',
-				)
+				assert.equal(capturedMessage, 'ИНСТРУКЦИЯ:\nmemory\n\nКОНТЕКСТ:\ncontext\n\nВОПРОС:\nquestion')
 				assert.equal(capturedMessage.includes('\n\n\n'), false)
 			} finally {
 				restoreAll(restores)
@@ -90,7 +89,7 @@ export const cases = [
 		},
 	},
 	{
-		name: 'aiService simple mode sends raw message without prompt assembly',
+		name: 'aiService simple mode prepends AI memory before user message',
 		run: async () => {
 			let capturedMessage = null
 
@@ -107,7 +106,7 @@ export const cases = [
 				})),
 				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...storedConversation, ...data })),
 				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_simple_prompt', ...data })),
-				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'memory that should not be used' })),
+				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'memory that should be used' })),
 				patchMethod(aiClient, 'simpleChat', async ({ message }) => {
 					capturedMessage = message
 					return {
@@ -117,6 +116,8 @@ export const cases = [
 			]
 
 			try {
+				aiService.syncAiMemoryCache('prompt-user', 'memory that should be used')
+
 				await aiService.sendChat({
 					userId: 'prompt-user',
 					conversationId: 'conv-prompt',
@@ -125,7 +126,7 @@ export const cases = [
 					mode: 'simple',
 				})
 
-				assert.equal(capturedMessage, 'question')
+				assert.equal(capturedMessage, 'ИНСТРУКЦИЯ:\nmemory that should be used\n\nВОПРОС:\nquestion')
 			} finally {
 				restoreAll(restores)
 			}

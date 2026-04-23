@@ -113,6 +113,7 @@ model User {
   firstName  String?    @map("first_name")
   lastName   String?    @map("last_name")
   avatarUrl  String?    @map("avatar_url")
+  aiMemory   String?    @map("ai_memory") @db.Text
   status     UserStatus @default(active)
   createdAt  DateTime   @default(now()) @map("created_at")
   updatedAt  DateTime   @updatedAt @map("updated_at")

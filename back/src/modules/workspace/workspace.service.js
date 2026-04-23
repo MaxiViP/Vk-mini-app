@@ -25,6 +25,20 @@ const isWorkspaceStorageUnavailable = error => {
 	)
 }
 
+const isUserAiMemoryStorageUnavailable = error => {
+	if (!error) return false
+	if (error.code === 'P2021' || error.code === 'P2022' || error.code === 'P1001') return true
+	const message = String(error.message || '').toLowerCase()
+	return (
+		(message.includes('users') && (message.includes('does not exist') || message.includes("doesn't exist"))) ||
+		(message.includes('ai_memory') && (message.includes('unknown') || message.includes('does not exist'))) ||
+		message.includes("can't reach database server") ||
+		message.includes('connection refused') ||
+		message.includes('econnrefused') ||
+		message.includes('prisma client is not initialized')
+	)
+}
+
 const toMessage = item => ({
 	role: item.role,
 	content: item.content,
@@ -178,22 +192,61 @@ export const workspaceService = {
 	},
 
 	async getAiMemory(userId) {
-		const workspace = await getOrCreateWorkspaceRecord(userId)
+		try {
+			const user = await prisma.user.findUnique({
+				where: { id: userId },
+				select: {
+					aiMemory: true,
+					updatedAt: true,
+				},
+			})
 
-		return {
-			aiMemory: normalizeAiMemory(workspace?.notesPayload?.aiMemory),
-			updatedAt: workspace?.updatedAt || new Date(),
+			return {
+				aiMemory: normalizeAiMemory(user?.aiMemory),
+				updatedAt: user?.updatedAt || new Date(),
+			}
+		} catch (error) {
+			if (isUserAiMemoryStorageUnavailable(error)) {
+				return {
+					aiMemory: '',
+					updatedAt: new Date(),
+				}
+			}
+			throw error
 		}
 	},
 
 	async saveAiMemory(userId, aiMemory) {
-		const currentWorkspace = await getOrCreateWorkspaceRecord(userId)
-		const mergedNotesPayload = mergeNotesPayload(currentWorkspace?.notesPayload, { aiMemory })
-		const workspace = await persistWorkspace(userId, { notesPayload: mergedNotesPayload })
+		const normalizedAiMemory = normalizeAiMemory(aiMemory)
 
-		return {
-			aiMemory: normalizeAiMemory(workspace?.notesPayload?.aiMemory),
-			updatedAt: workspace.updatedAt,
+		try {
+			const user = await prisma.user.upsert({
+				where: { id: userId },
+				update: {
+					aiMemory: normalizedAiMemory || null,
+				},
+				create: {
+					id: userId,
+					aiMemory: normalizedAiMemory || null,
+				},
+				select: {
+					aiMemory: true,
+					updatedAt: true,
+				},
+			})
+
+			return {
+				aiMemory: normalizeAiMemory(user?.aiMemory),
+				updatedAt: user.updatedAt,
+			}
+		} catch (error) {
+			if (isUserAiMemoryStorageUnavailable(error)) {
+				return {
+					aiMemory: normalizedAiMemory,
+					updatedAt: new Date(),
+				}
+			}
+			throw error
 		}
 	},
 }
