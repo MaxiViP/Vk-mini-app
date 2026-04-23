@@ -15,7 +15,7 @@ export const cases = [
 		name: 'chatMode=ai uses /api/ai/* transport',
 		run: async () => {
 			assert.equal(shouldUseAiApi('ai'), true)
-			assert.equal(getChatHistorySource('ai'), 'ai-backend')
+			assert.equal(getChatHistorySource('ai'), 'backend-db')
 		},
 	},
 	{
@@ -25,7 +25,7 @@ export const cases = [
 			const aiHistorySource = getChatHistorySource('ai')
 
 			assert.equal(coreHistorySource, 'workspace')
-			assert.equal(aiHistorySource, 'ai-backend')
+			assert.equal(aiHistorySource, 'backend-db')
 			assert.notEqual(coreHistorySource, aiHistorySource)
 
 			assert.equal(shouldUseAiApi('core'), false)

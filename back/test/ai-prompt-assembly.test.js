@@ -30,6 +30,21 @@ const activeAiSubscription = {
 	},
 }
 
+const storedConversation = {
+	id: 'ai_conv_prompt',
+	userId: 'prompt-user',
+	conversationKey: 'conv-prompt',
+	title: 'question',
+	provider: 'aivk',
+	mode: 'context',
+	status: 'active',
+	source: 'vk_ai',
+	messageCount: 0,
+	lastMessageAt: null,
+	createdAt: new Date('2026-04-01T00:00:00.000Z'),
+	updatedAt: new Date('2026-04-01T00:00:00.000Z'),
+}
+
 export const cases = [
 	{
 		name: 'aiService prompt assembly preserves block order and joins with double newlines',
@@ -41,6 +56,10 @@ export const cases = [
 				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
 				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
 				patchMethod(prisma.usageEvent, 'create', async data => ({ id: 'usage_prompt', ...data })),
+				patchMethod(prisma.aiConversation, 'findUnique', async () => null),
+				patchMethod(prisma.aiConversation, 'create', async () => storedConversation),
+				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...storedConversation, ...data })),
+				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_prompt', ...data })),
 				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'memory' })),
 				patchMethod(aiClient, 'chat', async ({ message }) => {
 					capturedMessage = message
@@ -80,6 +99,14 @@ export const cases = [
 				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
 				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
 				patchMethod(prisma.usageEvent, 'create', async data => ({ id: 'usage_simple_prompt', ...data })),
+				patchMethod(prisma.aiConversation, 'findUnique', async () => null),
+				patchMethod(prisma.aiConversation, 'create', async () => ({
+					...storedConversation,
+					conversationKey: 'aivk-simple-prompt-user',
+					mode: 'simple',
+				})),
+				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...storedConversation, ...data })),
+				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_simple_prompt', ...data })),
 				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'memory that should not be used' })),
 				patchMethod(aiClient, 'simpleChat', async ({ message }) => {
 					capturedMessage = message

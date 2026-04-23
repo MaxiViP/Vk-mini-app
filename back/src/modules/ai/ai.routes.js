@@ -139,6 +139,18 @@ router.post('/voice', async (req, res, next) => {
 	}
 })
 
+router.get('/conversations', async (req, res, next) => {
+	try {
+		const result = await aiService.listConversations({
+			userId: req.user.id,
+		})
+
+		res.json(result)
+	} catch (error) {
+		next(error)
+	}
+})
+
 router.get('/conversations/:conversationId', async (req, res, next) => {
 	try {
 		const conversationId = String(req.params.conversationId || '').trim()
@@ -155,7 +167,39 @@ router.get('/conversations/:conversationId', async (req, res, next) => {
 	}
 })
 
+router.get('/history/:conversationId', async (req, res, next) => {
+	try {
+		const conversationId = String(req.params.conversationId || '').trim()
+		if (!conversationId) throw new AppError('Missing required fields: conversationId', 400)
+
+		const result = await aiService.getConversation({
+			userId: req.user.id,
+			conversationId,
+		})
+
+		res.json(result)
+	} catch (error) {
+		next(error)
+	}
+})
+
 router.post('/conversations/:conversationId/reset', async (req, res, next) => {
+	try {
+		const conversationId = String(req.params.conversationId || '').trim()
+		if (!conversationId) throw new AppError('Missing required fields: conversationId', 400)
+
+		const result = await aiService.resetConversation({
+			userId: req.user.id,
+			conversationId,
+		})
+
+		res.json(result)
+	} catch (error) {
+		next(error)
+	}
+})
+
+router.post('/history/:conversationId/reset', async (req, res, next) => {
 	try {
 		const conversationId = String(req.params.conversationId || '').trim()
 		if (!conversationId) throw new AppError('Missing required fields: conversationId', 400)

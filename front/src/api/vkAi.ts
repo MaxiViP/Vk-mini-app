@@ -192,7 +192,7 @@ export const vkAiApi = {
 	},
 
 	async getConversation(payload: { accessToken: string; conversationId: string }) {
-		const response = await fetch(`${apiBaseUrl}/api/ai/conversations/${encodeURIComponent(payload.conversationId)}`, {
+		const response = await fetch(`${apiBaseUrl}/api/ai/history/${encodeURIComponent(payload.conversationId)}`, {
 			headers: createHeaders(payload.accessToken),
 		})
 		await ensureOk(response)
@@ -200,7 +200,7 @@ export const vkAiApi = {
 	},
 
 	async resetConversation(payload: { accessToken: string; conversationId: string }) {
-		const response = await fetch(`${apiBaseUrl}/api/ai/conversations/${encodeURIComponent(payload.conversationId)}/reset`, {
+		const response = await fetch(`${apiBaseUrl}/api/ai/history/${encodeURIComponent(payload.conversationId)}/reset`, {
 			method: 'POST',
 			headers: createHeaders(payload.accessToken),
 		})

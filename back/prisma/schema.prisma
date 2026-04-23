@@ -83,6 +83,29 @@ enum UsageStatus {
   reversed
 }
 
+enum AiMessageRole {
+  user
+  assistant
+  system
+}
+
+enum AiChatMode {
+  simple
+  context
+}
+
+enum AiConversationStatus {
+  active
+  archived
+  deleted
+}
+
+enum AiConversationSource {
+  vk_ai
+  internal_ai
+  other
+}
+
 model User {
   id         String     @id @default(uuid()) @db.Char(36)
   email      String?    @unique
@@ -105,6 +128,8 @@ model User {
   usageEvents         UsageEvent[]
   auditActions        AuditLog[]           @relation("ActorUserAuditLog")
   workspace           UserWorkspace?
+  aiConversations     AiConversation[]
+  aiMessages          AiMessage[]
 
   @@map("users")
 }
@@ -119,6 +144,50 @@ model UserWorkspace {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_workspaces")
+}
+
+model AiConversation {
+  id              String               @id @default(uuid()) @db.Char(36)
+  userId          String               @map("user_id") @db.Char(36)
+  conversationKey String               @unique @map("conversation_key") @db.VarChar(191)
+  title           String?              @db.VarChar(255)
+  provider        String               @default("aivk") @db.VarChar(50)
+  mode            AiChatMode           @default(simple)
+  status          AiConversationStatus @default(active)
+  source          AiConversationSource @default(vk_ai)
+  messageCount    Int                  @default(0) @map("message_count")
+  lastMessageAt   DateTime?            @map("last_message_at")
+  metadataJson    Json?                @map("metadata_json")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages AiMessage[]
+
+  @@index([userId, updatedAt])
+  @@index([userId, lastMessageAt])
+  @@map("ai_conversations")
+}
+
+model AiMessage {
+  id             String        @id @default(uuid()) @db.Char(36)
+  userId         String        @map("user_id") @db.Char(36)
+  conversationId String        @map("conversation_id") @db.Char(36)
+  role           AiMessageRole
+  content        String        @db.Text
+  mode           AiChatMode
+  provider       String        @default("aivk")
+  status         String?       @default("completed")
+  metadataJson   Json?         @map("metadata_json")
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, conversationId, createdAt])
+  @@index([conversationId, createdAt])
+  @@index([userId, createdAt])
+  @@map("ai_messages")
 }
 
 model AuthIdentity {

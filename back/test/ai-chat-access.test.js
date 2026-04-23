@@ -30,6 +30,21 @@ const activeAiSubscription = {
 	},
 }
 
+const storedConversation = {
+	id: 'ai_conv_1',
+	userId: 'test-user',
+	conversationKey: 'conv-with-access',
+	title: 'hello',
+	provider: 'aivk',
+	mode: 'context',
+	status: 'active',
+	source: 'vk_ai',
+	messageCount: 0,
+	lastMessageAt: null,
+	createdAt: new Date('2026-04-01T00:00:00.000Z'),
+	updatedAt: new Date('2026-04-01T00:00:00.000Z'),
+}
+
 export const cases = [
 	{
 		name: 'POST /api/ai/chat returns controlled error when AI access is missing',
@@ -73,6 +88,10 @@ export const cases = [
 				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
 				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
 				patchMethod(prisma.usageEvent, 'create', async data => ({ id: 'usage_1', ...data })),
+				patchMethod(prisma.aiConversation, 'findUnique', async () => null),
+				patchMethod(prisma.aiConversation, 'create', async () => storedConversation),
+				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...storedConversation, ...data })),
+				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_1', ...data })),
 				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'persistent memory' })),
 				patchMethod(aiClient, 'chat', async ({ userId, conversationId, message }) => ({
 					reply: 'AI reply',
@@ -117,6 +136,14 @@ export const cases = [
 				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
 				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
 				patchMethod(prisma.usageEvent, 'create', async data => ({ id: 'usage_simple_1', ...data })),
+				patchMethod(prisma.aiConversation, 'findUnique', async () => null),
+				patchMethod(prisma.aiConversation, 'create', async () => ({
+					...storedConversation,
+					conversationKey: 'aivk-simple-test-user',
+					mode: 'simple',
+				})),
+				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...storedConversation, ...data })),
+				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_simple_1', ...data })),
 				patchMethod(aiClient, 'simpleChat', async ({ message }) => ({
 					reply: `simple:${message}`,
 				})),
@@ -141,6 +168,138 @@ export const cases = [
 
 				assert.equal(response.status, 200)
 				assert.equal(payload.reply, 'simple:hello-simple')
+			} finally {
+				restoreAll(restores)
+				await stopTestServer(server)
+			}
+		},
+	},
+	{
+		name: 'GET /api/ai/history/:conversationId returns DB-backed AI history',
+		run: async () => {
+			const restores = [
+				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
+				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
+				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
+				patchMethod(prisma.aiConversation, 'findFirst', async () => ({
+					...storedConversation,
+					conversationKey: 'conv-db',
+				})),
+				patchMethod(prisma.aiMessage, 'findMany', async () => [
+					{
+						id: 'msg_1',
+						role: 'user',
+						content: 'hello',
+						metadataJson: null,
+					},
+					{
+						id: 'msg_2',
+						role: 'assistant',
+						content: 'AI reply',
+						metadataJson: null,
+					},
+				]),
+			]
+
+			const token = createAccessToken()
+			const { server, baseUrl } = await startTestServer()
+
+			try {
+				const response = await fetch(`${baseUrl}/api/ai/history/conv-db`, {
+					headers: {
+						Authorization: `Bearer ${token}`,
+					},
+				})
+				const payload = await response.json()
+
+				assert.equal(response.status, 200)
+				assert.equal(payload.conversation_id, 'conv-db')
+				assert.equal(payload.message_count, 2)
+				assert.equal(payload.messages[0].content, 'hello')
+				assert.equal(payload.messages[1].content, 'AI reply')
+			} finally {
+				restoreAll(restores)
+				await stopTestServer(server)
+			}
+		},
+	},
+	{
+		name: 'GET /api/ai/conversations returns DB-backed conversation list',
+		run: async () => {
+			const restores = [
+				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
+				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
+				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
+				patchMethod(prisma.aiConversation, 'findMany', async () => [
+					{
+						...storedConversation,
+						conversationKey: 'conv-db',
+						messageCount: 2,
+						lastMessageAt: new Date('2026-04-02T00:00:00.000Z'),
+					},
+				]),
+			]
+
+			const token = createAccessToken()
+			const { server, baseUrl } = await startTestServer()
+
+			try {
+				const response = await fetch(`${baseUrl}/api/ai/conversations`, {
+					headers: {
+						Authorization: `Bearer ${token}`,
+					},
+				})
+				const payload = await response.json()
+
+				assert.equal(response.status, 200)
+				assert.equal(Array.isArray(payload), true)
+				assert.equal(payload[0].conversation_key, 'conv-db')
+				assert.equal(payload[0].message_count, 2)
+			} finally {
+				restoreAll(restores)
+				await stopTestServer(server)
+			}
+		},
+	},
+	{
+		name: 'POST /api/ai/history/:conversationId/reset clears DB-backed AI history',
+		run: async () => {
+			const restores = [
+				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
+				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
+				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
+				patchMethod(prisma.aiConversation, 'findFirst', async () => ({
+					...storedConversation,
+					conversationKey: 'conv-db',
+				})),
+				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({
+					...storedConversation,
+					conversationKey: 'conv-db',
+					...data,
+				})),
+				patchMethod(prisma.aiMessage, 'deleteMany', async () => ({ count: 2 })),
+				patchMethod(aiClient, 'resetConversation', async ({ userId, conversationId }) => ({
+					status: 'ok',
+					user_id: userId,
+					conversation_id: conversationId,
+				})),
+			]
+
+			const token = createAccessToken()
+			const { server, baseUrl } = await startTestServer()
+
+			try {
+				const response = await fetch(`${baseUrl}/api/ai/history/conv-db/reset`, {
+					method: 'POST',
+					headers: {
+						Authorization: `Bearer ${token}`,
+					},
+				})
+				const payload = await response.json()
+
+				assert.equal(response.status, 200)
+				assert.equal(payload.status, 'ok')
+				assert.equal(payload.conversation_id, 'conv-db')
 			} finally {
 				restoreAll(restores)
 				await stopTestServer(server)
