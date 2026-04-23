@@ -680,12 +680,12 @@ export const aiService = {
 			conversation,
 		})
 
-		aiServiceLogger.debug('Dispatching AI chat to external backend', {
-			externalEndpoint: chatMode === 'simple' ? '/api/chat/simple' : '/api/chat',
-			promptMode: chatMode === 'simple' ? 'memory-only' : 'memory+context',
-			messageLength: fullMessage.length,
-			userMemoryLength: normalizedUserMemory.length,
+		aiServiceLogger.debug('AI chat runtime check', {
+			chatMode,
+			hasSessionContext: Boolean(normalizedSessionContext),
 			sessionContextLength: normalizedSessionContext.length,
+			userMemoryLength: normalizedUserMemory.length,
+			externalEndpoint: chatMode === 'simple' ? '/api/chat/simple' : '/api/chat',
 		})
 
 		try {
