@@ -12,7 +12,6 @@ import type {
 	User,
 	YooKassaPaymentSession,
 } from '../types'
-import { internalApiBaseUrl } from '../config/chatBackend'
 import { getVkAiErrorCode, vkAiApi } from '../api/vkAi'
 import { billingApi } from '../api/billing'
 import {
@@ -21,16 +20,15 @@ import {
 	previewYooKassaPaymentRequest,
 } from '../api/payments'
 import { authApi, type OAuthProvider, type UserProfileResponse } from '../services/auth'
+import {
+	BILLING_STORAGE_KEY,
+	REFRESH_TOKEN_STORAGE_KEY,
+	TOKEN_STORAGE_KEY,
+	USER_STORAGE_KEY,
+	isDevSessionRefreshToken,
+} from '../services/authSession'
 import { clearOAuthCallbackFromLocation, readOAuthCallbackFromLocation } from '../utils/oauthCallback'
 
-const backendStorageScope = String(internalApiBaseUrl || 'same-origin')
-	.trim()
-	.toLowerCase()
-	.replace(/[^a-z0-9]+/g, '_')
-const TOKEN_STORAGE_KEY = `token:${backendStorageScope}`
-const REFRESH_TOKEN_STORAGE_KEY = `refresh_token:${backendStorageScope}`
-const USER_STORAGE_KEY = `user_profile:${backendStorageScope}`
-const BILLING_STORAGE_KEY = `billing_summary:${backendStorageScope}`
 const LEGACY_STORAGE_KEYS = ['token', 'refresh_token', 'user_profile', 'billing_summary']
 
 const safeParse = <T>(raw: string | null): T | null => {
@@ -44,7 +42,7 @@ const safeParse = <T>(raw: string | null): T | null => {
 
 const getHttpStatus = (error: unknown) => (error as { response?: { status?: number } })?.response?.status || null
 const isUnauthorizedError = (error: unknown) => getHttpStatus(error) === 401
-export const isDevSessionRefreshToken = (token?: string | null) => Boolean(token?.startsWith('dev-refresh-'))
+export { isDevSessionRefreshToken }
 
 const emptyAiCounters = () => ({
 	chat: 0,
@@ -170,6 +168,7 @@ export const useUserStore = defineStore('user', () => {
 	const pendingPhone = ref<string | null>(null)
 	const authPending = ref(false)
 	const phoneChallenge = ref<{ challengeId: string; expiresInSec: number; testCode: string | null } | null>(null)
+	let sessionEventsBound = false
 
 	const isAuthenticated = computed(() => Boolean(token.value && user.value))
 	const activeSubscription = computed(() => billing.value?.activeSubscription || null)
@@ -204,6 +203,19 @@ export const useUserStore = defineStore('user', () => {
 		pendingPhone.value = null
 		phoneChallenge.value = null
 		clearAuthState()
+	}
+
+	const syncTokensFromStorage = () => {
+		token.value = localStorage.getItem(TOKEN_STORAGE_KEY)
+		refreshToken.value = localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)
+	}
+
+	const bindSessionEvents = () => {
+		if (sessionEventsBound || typeof window === 'undefined') return
+
+		window.addEventListener('auth-session-updated', syncTokensFromStorage)
+		window.addEventListener('auth-session-cleared', dropLocalSession)
+		sessionEventsBound = true
 	}
 
 	const applyBillingSummary = (summary: BillingSummary | null) => {
@@ -368,6 +380,8 @@ export const useUserStore = defineStore('user', () => {
 	}
 
 	function hydrateAuth() {
+		bindSessionEvents()
+
 		if (!localStorage.getItem(TOKEN_STORAGE_KEY) && !localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY)) {
 			clearLegacyAuthState()
 		}

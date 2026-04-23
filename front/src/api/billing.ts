@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { authorizedAxiosRequest, unwrapAxiosData } from '../services/authSession'
 
 import type { BillingSummary, SubscriptionPurchasePreview, SubscriptionPurchaseResult } from '../types'
 
@@ -6,44 +7,50 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 export const billingApi = {
 	getSummary(accessToken: string) {
-		return axios
-			.get<BillingSummary>(`${API_BASE_URL}/api/billing/summary`, {
-				headers: { Authorization: `Bearer ${accessToken}` },
-			})
-			.then(response => response.data)
+		return unwrapAxiosData(
+			authorizedAxiosRequest<BillingSummary>(
+				{
+					method: 'GET',
+					url: `${API_BASE_URL}/api/billing/summary`,
+				},
+				{ accessToken },
+			),
+		)
 	},
 
 	previewSubscriptionPurchase(planCode: string, accessToken: string, promoCode?: string) {
-		return axios
-			.post<SubscriptionPurchasePreview>(
-				`${API_BASE_URL}/api/billing/subscriptions/preview`,
+		return unwrapAxiosData(
+			authorizedAxiosRequest<SubscriptionPurchasePreview>(
 				{
-					planCode,
-					promoCode,
+					method: 'POST',
+					url: `${API_BASE_URL}/api/billing/subscriptions/preview`,
+					data: {
+						planCode,
+						promoCode,
+					},
 				},
-				{
-					headers: { Authorization: `Bearer ${accessToken}` },
-				},
-			)
-			.then(response => response.data)
+				{ accessToken },
+			),
+		)
 	},
 
 	purchaseSubscription(planCode: string, accessToken: string, idempotencyKey: string, promoCode?: string) {
-		return axios
-			.post<SubscriptionPurchaseResult>(
-				`${API_BASE_URL}/api/billing/subscriptions/purchase`,
+		return unwrapAxiosData(
+			authorizedAxiosRequest<SubscriptionPurchaseResult>(
 				{
-					planCode,
-					promoCode,
-					idempotencyKey,
-				},
-				{
+					method: 'POST',
+					url: `${API_BASE_URL}/api/billing/subscriptions/purchase`,
+					data: {
+						planCode,
+						promoCode,
+						idempotencyKey,
+					},
 					headers: {
-						Authorization: `Bearer ${accessToken}`,
 						'Idempotency-Key': idempotencyKey,
 					},
 				},
-			)
-			.then(response => response.data)
+				{ accessToken },
+			),
+		)
 	},
 }

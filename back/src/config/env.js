@@ -18,6 +18,8 @@ const env = {
 	port: toInt(process.env.PORT, 3000),
 	databaseUrl: process.env.DATABASE_URL || '',
 	jwtSecret: process.env.JWT_SECRET || 'change_me_in_prod',
+	accessTokenTtl: process.env.ACCESS_TOKEN_TTL || '24h',
+	refreshTokenTtlDays: toInt(process.env.REFRESH_TOKEN_TTL_DAYS, 30),
 	openaiApiKey: process.env.OPENAI_API_KEY || '',
 	vkAiBackendUrl: process.env.VK_AI_BACKEND_URL || '',
 	vkAiBackendApiKey: process.env.VK_AI_BACKEND_API_KEY || '',

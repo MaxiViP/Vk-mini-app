@@ -4,8 +4,8 @@ import jwt from 'jsonwebtoken'
 import env from '../../config/env.js'
 import { AppError } from '../../shared/errors.js'
 
-const DEV_ACCESS_TOKEN_TTL = '15m'
-const DEV_REFRESH_TOKEN_TTL_DAYS = 30
+const DEV_ACCESS_TOKEN_TTL = env.accessTokenTtl
+const DEV_REFRESH_TOKEN_TTL_DAYS = env.refreshTokenTtlDays
 
 const devRefreshSessions = new Map()
 

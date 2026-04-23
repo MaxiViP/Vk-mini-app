@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import crypto from 'node:crypto'
+import jwt from 'jsonwebtoken'
 
 import prisma from '../src/db/prisma.js'
 import { authService } from '../src/modules/auth/auth.service.js'
@@ -88,6 +89,17 @@ const createRegularPhoneFlowMocks = user => {
 			sessions.set(session.id, session)
 			return session
 		}),
+		patchMethod(prisma.session, 'updateMany', async ({ where, data }) => {
+			let count = 0
+			for (const [id, session] of sessions.entries()) {
+				if (session.userId !== where.userId) continue
+				if (session.revokedAt !== null) continue
+				if (!(session.expiresAt > new Date())) continue
+				sessions.set(id, { ...session, ...data })
+				count += 1
+			}
+			return { count }
+		}),
 		patchMethod(prisma.session, 'findFirst', async ({ where, include }) => {
 			const session =
 				Array.from(sessions.values()).find(
@@ -166,6 +178,42 @@ export const cases = [
 				assert.equal(profileAfterRefresh.firstName, 'User')
 				assert.equal(typeof profileBeforeRefresh.wallet?.balanceMinor, 'number')
 				assert.equal(typeof profileAfterRefresh.wallet?.balanceMinor, 'number')
+			} finally {
+				restoreAll(restores)
+				await stopTestServer(server)
+			}
+		},
+	},
+	{
+		name: 'regular auth issues 24h access token and long-lived refresh token',
+		run: async () => {
+			phoneSequence += 1
+			const adminPhone = '+79057353580'
+			const user = {
+				id: `user_regular_ttl_${phoneSequence}`,
+				email: 'admin@example.com',
+				phoneE164: adminPhone,
+				firstName: 'Backend',
+				lastName: 'Admin',
+				avatarUrl: null,
+				status: 'active',
+			}
+			const restores = createRegularPhoneFlowMocks(user)
+			const { server, baseUrl } = await startTestServer()
+
+			try {
+				const loginResult = await createPhoneSession(baseUrl, `+7905${String(phoneSequence).padStart(7, '0')}`)
+				const payload = jwt.decode(loginResult.accessToken)
+
+				assert.equal(typeof payload?.iat, 'number')
+				assert.equal(typeof payload?.exp, 'number')
+				assert.ok(payload.exp - payload.iat >= 23 * 60 * 60)
+				assert.ok(payload.exp - payload.iat <= 25 * 60 * 60)
+
+				const refreshExpiresAtMs = new Date(loginResult.refreshTokenExpiresAt).getTime()
+				const refreshTtlDays = (refreshExpiresAtMs - Date.now()) / (24 * 60 * 60 * 1000)
+				assert.ok(refreshTtlDays >= 29)
+				assert.ok(refreshTtlDays <= 31)
 			} finally {
 				restoreAll(restores)
 				await stopTestServer(server)

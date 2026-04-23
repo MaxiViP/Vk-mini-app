@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { authorizedAxiosRequest, unwrapAxiosData } from './authSession'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
@@ -80,10 +81,14 @@ export const authApi = {
 	},
 
 	getMe(accessToken: string) {
-		return axios
-			.get<UserProfileResponse>(`${API_BASE_URL}/api/users/me`, {
-				headers: { Authorization: `Bearer ${accessToken}` },
-			})
-			.then(response => response.data)
+		return unwrapAxiosData(
+			authorizedAxiosRequest<UserProfileResponse>(
+				{
+					method: 'GET',
+					url: `${API_BASE_URL}/api/users/me`,
+				},
+				{ accessToken },
+			),
+		)
 	},
 }

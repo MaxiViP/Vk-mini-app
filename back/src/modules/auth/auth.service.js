@@ -8,8 +8,8 @@ import { AppError } from '../../shared/errors.js'
 import { isAdminUser } from '../../shared/access.js'
 import { isDevRefreshToken, refreshDevAuthResult, revokeDevRefreshToken } from './dev-session.store.js'
 
-const ACCESS_TOKEN_TTL = '15m'
-const REFRESH_TOKEN_TTL_DAYS = 30
+const ACCESS_TOKEN_TTL = env.accessTokenTtl
+const REFRESH_TOKEN_TTL_DAYS = env.refreshTokenTtlDays
 
 function hashValue(value) {
 	return crypto.createHash('sha256').update(value).digest('hex')
@@ -31,10 +31,24 @@ const isProviderPayloadSchemaError = error => {
 	)
 }
 
-const createSession = async ({ userId, userAgent, ip }) => {
+const revokeActiveSessions = userId =>
+	prisma.session.updateMany({
+		where: {
+			userId,
+			revokedAt: null,
+			expiresAt: { gt: new Date() },
+		},
+		data: { revokedAt: new Date() },
+	})
+
+const createSession = async ({ userId, userAgent, ip, revokeExistingSessions = false }) => {
 	const refreshToken = createRefreshToken()
 	const refreshTokenHash = hashValue(refreshToken)
 	const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000)
+
+	if (revokeExistingSessions) {
+		await revokeActiveSessions(userId)
+	}
 
 	const session = await prisma.session.create({
 		data: {
@@ -75,14 +89,14 @@ const normalizePhone = rawPhone => {
 export const authService = {
 	hashValue,
 
-	async issueTokens({ user, userAgent, ip }) {
+	async issueTokens({ user, userAgent, ip, revokeExistingSessions = true }) {
 		if (user.status !== 'active') {
 			throw new AppError('User is not active', 403)
 		}
 
 		await ensureWalletExists(user.id)
 		const accessToken = signAccessToken(user)
-		const sessionData = await createSession({ userId: user.id, userAgent, ip })
+		const sessionData = await createSession({ userId: user.id, userAgent, ip, revokeExistingSessions })
 		const admin = await isAdminUser(user.id)
 
 		return {
@@ -121,7 +135,7 @@ export const authService = {
 			data: { revokedAt: new Date() },
 		})
 
-		return this.issueTokens({ user: existingSession.user, userAgent, ip })
+		return this.issueTokens({ user: existingSession.user, userAgent, ip, revokeExistingSessions: false })
 	},
 
 	async logoutSession({ refreshToken }) {

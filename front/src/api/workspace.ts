@@ -1,4 +1,5 @@
 import { internalApiBaseUrl } from '../config/chatBackend'
+import { authorizedFetch } from '../services/authSession'
 
 const API_BASE_URL = internalApiBaseUrl
 
@@ -42,13 +43,13 @@ const authHeaders = (token: string) => ({
 })
 
 async function requestWorkspace<TResponse>(path: string, token: string, init?: RequestInit): Promise<TResponse> {
-	const response = await fetch(`${API_BASE_URL}${path}`, {
+	const response = await authorizedFetch(`${API_BASE_URL}${path}`, {
 		...init,
 		headers: {
 			...(init?.body ? authHeaders(token) : { Authorization: `Bearer ${token}` }),
 			...(init?.headers || {}),
 		},
-	})
+	}, { accessToken: token })
 
 	if (!response.ok) {
 		throw new Error(`Workspace request failed: ${init?.method || 'GET'} ${path} returned HTTP ${response.status}`)

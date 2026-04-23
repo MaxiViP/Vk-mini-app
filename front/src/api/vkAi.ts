@@ -1,4 +1,5 @@
 import { internalApiBaseUrl } from '../config/chatBackend'
+import { authorizedFetch } from '../services/authSession'
 import type { AiAccessPlan, AiAccessResponse } from '../types'
 
 export interface VkAiSource {
@@ -119,25 +120,37 @@ export const getVkAiErrorCode = (error: unknown) =>
 
 export const vkAiApi = {
 	async getPlans(accessToken: string) {
-		const response = await fetch(`${apiBaseUrl}/api/ai/plans`, {
-			headers: createHeaders(accessToken),
-		})
+		const response = await authorizedFetch(
+			`${apiBaseUrl}/api/ai/plans`,
+			{
+				headers: createHeaders(accessToken),
+			},
+			{ accessToken },
+		)
 		await ensureOk(response)
 		return response.json() as Promise<AiAccessPlan[]>
 	},
 
 	async getAccess(accessToken: string) {
-		const response = await fetch(`${apiBaseUrl}/api/ai/access`, {
-			headers: createHeaders(accessToken),
-		})
+		const response = await authorizedFetch(
+			`${apiBaseUrl}/api/ai/access`,
+			{
+				headers: createHeaders(accessToken),
+			},
+			{ accessToken },
+		)
 		await ensureOk(response)
 		return response.json() as Promise<AiAccessResponse>
 	},
 
 	async health(accessToken: string) {
-		const response = await fetch(`${apiBaseUrl}/api/ai/health`, {
-			headers: createHeaders(accessToken),
-		})
+		const response = await authorizedFetch(
+			`${apiBaseUrl}/api/ai/health`,
+			{
+				headers: createHeaders(accessToken),
+			},
+			{ accessToken },
+		)
 		await ensureOk(response)
 		return response.json() as Promise<VkAiHealthResponse>
 	},
@@ -149,7 +162,7 @@ export const vkAiApi = {
 		sessionContext?: string
 		mode?: 'context' | 'simple'
 	}) {
-		const response = await fetch(`${apiBaseUrl}/api/ai/chat`, {
+		const response = await authorizedFetch(`${apiBaseUrl}/api/ai/chat`, {
 			method: 'POST',
 			headers: createHeaders(payload.accessToken, { 'Content-Type': 'application/json' }),
 			body: JSON.stringify({
@@ -158,7 +171,7 @@ export const vkAiApi = {
 				message: payload.message,
 				sessionContext: payload.sessionContext,
 			}),
-		})
+		}, { accessToken: payload.accessToken })
 		await ensureOk(response)
 		return response.json() as Promise<VkAiChatResponse>
 	},
@@ -168,11 +181,11 @@ export const vkAiApi = {
 		formData.set('conversationId', payload.conversationId)
 		formData.set('file', payload.file)
 
-		const response = await fetch(`${apiBaseUrl}/api/ai/files/upload`, {
+		const response = await authorizedFetch(`${apiBaseUrl}/api/ai/files/upload`, {
 			method: 'POST',
 			headers: createHeaders(payload.accessToken),
 			body: formData,
-		})
+		}, { accessToken: payload.accessToken })
 		await ensureOk(response)
 		return response.json() as Promise<VkAiUploadResponse>
 	},
@@ -182,28 +195,36 @@ export const vkAiApi = {
 		formData.set('conversationId', payload.conversationId)
 		formData.set('audio', payload.audio)
 
-		const response = await fetch(`${apiBaseUrl}/api/ai/voice`, {
+		const response = await authorizedFetch(`${apiBaseUrl}/api/ai/voice`, {
 			method: 'POST',
 			headers: createHeaders(payload.accessToken),
 			body: formData,
-		})
+		}, { accessToken: payload.accessToken })
 		await ensureOk(response)
 		return response.json() as Promise<VkAiVoiceResponse>
 	},
 
 	async getConversation(payload: { accessToken: string; conversationId: string }) {
-		const response = await fetch(`${apiBaseUrl}/api/ai/history/${encodeURIComponent(payload.conversationId)}`, {
-			headers: createHeaders(payload.accessToken),
-		})
+		const response = await authorizedFetch(
+			`${apiBaseUrl}/api/ai/history/${encodeURIComponent(payload.conversationId)}`,
+			{
+				headers: createHeaders(payload.accessToken),
+			},
+			{ accessToken: payload.accessToken },
+		)
 		await ensureOk(response)
 		return response.json() as Promise<VkAiConversationResponse>
 	},
 
 	async resetConversation(payload: { accessToken: string; conversationId: string }) {
-		const response = await fetch(`${apiBaseUrl}/api/ai/history/${encodeURIComponent(payload.conversationId)}/reset`, {
-			method: 'POST',
-			headers: createHeaders(payload.accessToken),
-		})
+		const response = await authorizedFetch(
+			`${apiBaseUrl}/api/ai/history/${encodeURIComponent(payload.conversationId)}/reset`,
+			{
+				method: 'POST',
+				headers: createHeaders(payload.accessToken),
+			},
+			{ accessToken: payload.accessToken },
+		)
 		await ensureOk(response)
 		return response.json() as Promise<{ status: string; user_id: string; conversation_id: string }>
 	},

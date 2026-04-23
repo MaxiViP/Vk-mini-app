@@ -9,8 +9,13 @@ export const cases = [
 	{
 		name: 'user store defines dev refresh token helper',
 		run: async () => {
-			const source = readSource('front/src/stores/user.ts')
-			assert.match(source, /isDevSessionRefreshToken = \(token\?: string \| null\) => Boolean\(token\?\.startsWith\('dev-refresh-'\)\)/)
+			const storeSource = readSource('front/src/stores/user.ts')
+			const sessionSource = readSource('front/src/services/authSession.ts')
+			assert.match(storeSource, /export \{ isDevSessionRefreshToken \}/)
+			assert.match(
+				sessionSource,
+				/export const isDevSessionRefreshToken = \(token\?: string \| null\) => Boolean\(token\?\.startsWith\('dev-refresh-'\)\)/,
+			)
 		},
 	},
 	{
@@ -36,6 +41,24 @@ export const cases = [
 			const source = readSource('front/src/stores/user.ts')
 			assert.match(source, /refreshToken\.value && !isDevSessionRefreshToken\(refreshToken\.value\)/)
 			assert.match(source, /if \(isDevSessionRefreshToken\(refreshToken\.value\)\) return null/)
+		},
+	},
+	{
+		name: 'auth session helper retries protected fetch requests through refresh flow',
+		run: async () => {
+			const source = readSource('front/src/services/authSession.ts')
+			assert.match(source, /authorizedFetch/)
+			assert.match(source, /response\.status !== 401 \|\| !retryOn401/)
+			assert.match(source, /refreshAccessToken\(\)/)
+		},
+	},
+	{
+		name: 'auth session helper retries protected axios requests through refresh flow',
+		run: async () => {
+			const source = readSource('front/src/services/authSession.ts')
+			assert.match(source, /authorizedAxiosRequest/)
+			assert.match(source, /status !== 401 \|\| !retryOn401/)
+			assert.match(source, /Authorization: `Bearer \$\{nextAccessToken\}`/)
 		},
 	},
 ]
