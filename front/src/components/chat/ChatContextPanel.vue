@@ -8,7 +8,7 @@
 							<h3>Контекст диалога</h3>
 							<p>{{ chat.backendLabel }}</p>
 						</div>
-						<button class="context-close" @click="close" type="button">x</button>
+						<button class="context-close" @click="close" type="button">×</button>
 					</div>
 
 					<div class="context-body">
@@ -50,7 +50,8 @@
 						<section class="context-section">
 							<h4>Память AI</h4>
 							<label class="context-label" for="user-memory-textarea">
-								Память AI — используется во всех AI-чатах. Сюда можно сохранить постоянные инструкции: как отвечать, что учитывать о вас, какой стиль держать.
+								Память AI используется во всех AI-чатах. Сюда можно сохранить постоянные инструкции:
+								как отвечать, что учитывать о вас и какой стиль держать.
 							</label>
 							<div class="context-presets">
 								<span class="context-presets__label">Шаблоны памяти</span>
@@ -76,6 +77,14 @@
 								:maxlength="USER_MEMORY_MAX_LENGTH"
 							></textarea>
 							<div class="context-inline-actions">
+								<button
+									class="context-inline-btn"
+									type="button"
+									@click="saveUserMemoryDraft"
+									:disabled="userMemoryStatus === 'saving' || !isUserMemoryDirty || !userStore.token"
+								>
+									Сохранить память
+								</button>
 								<button class="context-inline-btn" type="button" @click="clearUserMemory" :disabled="userMemoryStatus === 'saving'">
 									Очистить память
 								</button>
@@ -85,6 +94,7 @@
 								<span v-if="userMemoryStatus === 'saving'">• сохраняется...</span>
 								<span v-else-if="userMemoryStatus === 'saved'">• сохранено</span>
 								<span v-else-if="userMemoryStatus === 'error'">• ошибка сохранения</span>
+								<span v-else-if="isUserMemoryDirty">• есть несохранённые изменения</span>
 							</p>
 							<p class="context-hint">Память будет применяться ко всем новым AI-ответам.</p>
 						</section>
@@ -92,7 +102,7 @@
 						<section class="context-section">
 							<h4>Контекст для AI</h4>
 							<label class="context-label" for="session-context-textarea">
-								Контекст для AI — действует только в текущей сессии. Подходит для временных правил и текущих задач.
+								Контекст для AI действует только в текущей сессии. Подходит для временных правил и текущих задач.
 							</label>
 							<textarea
 								id="session-context-textarea"
@@ -161,7 +171,7 @@
 </template>
 
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { fetchAiMemory, saveAiMemory } from '../../api/workspace'
 import { useChatStore } from '../../stores/chat'
 import { useUserStore } from '../../stores/user'
@@ -179,6 +189,14 @@ const userMemoryPresets = [
 		value: 'Отвечай структурно и по делу. Делай упор на практическую реализацию, код, риски и короткие примеры.',
 	},
 	{
+		label: 'Юрист',
+		value: 'Отвечай как практикующий юрист: структурируй ответ по нормам, рискам, вариантам действий и ограничениям. Если вопрос зависит от юрисдикции или документов, сначала укажи это и перечисли, что нужно уточнить.',
+	},
+	{
+		label: 'Экономист',
+		value: 'Отвечай как экономист: опирайся на причинно-следственные связи, цифры, допущения, сценарии и метрики. Показывай, какие факторы влияют на результат, и где нужны дополнительные данные для корректного вывода.',
+	},
+	{
 		label: 'Маркетолог',
 		value: 'Отвечай с фокусом на аудиторию, оффер, позиционирование, воронку, метрики и маркетинговые гипотезы.',
 	},
@@ -186,35 +204,41 @@ const userMemoryPresets = [
 		label: 'Копирайтер',
 		value: 'Пиши ясно, живо и убедительно. Предлагай сильные формулировки, заголовки и несколько стилистических вариантов.',
 	},
+	{
+		label: 'Программист',
+		value: 'Отвечай как сильный программист и техлид: сначала проясняй требования, затем предлагай минимально-инвазивное решение, отмечай риски, граничные случаи и давай короткие примеры кода или структуры данных, если это помогает.',
+	},
+	{
+		label: 'Агроном',
+		value: 'Отвечай как агроном-практик: учитывай культуру, фазу роста, почву, климат, влагу, питание и риски заболеваний. Давай прикладные рекомендации по диагностике, уходу и очередности действий.',
+	},
 ]
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const isRecording = ref(false)
 const sessionContext = ref('')
 const userMemory = ref('')
+const savedUserMemory = ref('')
 const userMemoryStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const isHydratingUserMemory = ref(false)
+const normalizeLimitedText = (value: string, maxLength: number) => String(value || '').slice(0, maxLength)
+const normalizePersistedUserMemory = (value: string) => normalizeLimitedText(value, USER_MEMORY_MAX_LENGTH).trim()
+const isUserMemoryDirty = computed(() => normalizePersistedUserMemory(userMemory.value) !== savedUserMemory.value)
 let mediaRecorder: MediaRecorder | null = null
 let mediaStream: MediaStream | null = null
 let recordedChunks: Blob[] = []
-let saveUserMemoryTimer: number | null = null
 
 const close = () => emit('update:visible', false)
 const formatDate = (value: number) => new Date(value).toLocaleString()
-const normalizeLimitedText = (value: string, maxLength: number) => String(value || '').slice(0, maxLength)
+
 const loadSessionContext = () => {
 	sessionContext.value = chat.readSessionContext(userStore.user?.vkId, chat.conversationId)
-}
-const clearSaveUserMemoryTimer = () => {
-	if (saveUserMemoryTimer) {
-		window.clearTimeout(saveUserMemoryTimer)
-		saveUserMemoryTimer = null
-	}
 }
 
 const loadUserMemory = async () => {
 	if (!userStore.token) {
 		userMemory.value = ''
+		savedUserMemory.value = ''
 		userMemoryStatus.value = 'idle'
 		return
 	}
@@ -222,7 +246,9 @@ const loadUserMemory = async () => {
 	isHydratingUserMemory.value = true
 	try {
 		const payload = await fetchAiMemory(userStore.token)
-		userMemory.value = normalizeLimitedText(payload.aiMemory || '', USER_MEMORY_MAX_LENGTH)
+		const normalized = normalizeLimitedText(payload.aiMemory || '', USER_MEMORY_MAX_LENGTH)
+		userMemory.value = normalized
+		savedUserMemory.value = normalizePersistedUserMemory(normalized)
 		userMemoryStatus.value = 'idle'
 	} catch (error) {
 		userMemoryStatus.value = 'error'
@@ -237,25 +263,34 @@ const persistUserMemory = async (value: string) => {
 
 	userMemoryStatus.value = 'saving'
 	try {
-		const payload = await saveAiMemory(userStore.token, value)
-		userMemory.value = normalizeLimitedText(payload.aiMemory || '', USER_MEMORY_MAX_LENGTH)
+		const payload = await saveAiMemory(userStore.token, normalizePersistedUserMemory(value))
+		const normalized = normalizeLimitedText(payload.aiMemory || '', USER_MEMORY_MAX_LENGTH)
+		userMemory.value = normalized
+		savedUserMemory.value = normalizePersistedUserMemory(normalized)
 		userMemoryStatus.value = 'saved'
 	} catch (error) {
 		userMemoryStatus.value = 'error'
 		console.warn('Failed to save AI memory', error)
 	}
 }
-const applyUserMemoryPreset = (value: string) => {
-	const normalized = normalizeLimitedText(value, USER_MEMORY_MAX_LENGTH)
-	userMemory.value = normalized
-	clearSaveUserMemoryTimer()
-	void persistUserMemory(normalized.trim())
+
+const saveUserMemoryDraft = () => {
+	if (userMemoryStatus.value === 'saving' || !userStore.token || !isUserMemoryDirty.value) return
+	void persistUserMemory(userMemory.value)
 }
+
+const applyUserMemoryPreset = (value: string) => {
+	userMemory.value = normalizeLimitedText(value, USER_MEMORY_MAX_LENGTH)
+	if (userMemoryStatus.value !== 'saving') {
+		userMemoryStatus.value = 'idle'
+	}
+}
+
 const clearUserMemory = () => {
 	userMemory.value = ''
-	clearSaveUserMemoryTimer()
 	void persistUserMemory('')
 }
+
 const clearSessionContext = () => {
 	sessionContext.value = ''
 	chat.writeSessionContext('', userStore.user?.vkId, chat.conversationId)
@@ -367,16 +402,7 @@ watch(userMemory, value => {
 		return
 	}
 
-	if (isHydratingUserMemory.value || !props.visible || !userStore.token) return
-
-	clearSaveUserMemoryTimer()
-	saveUserMemoryTimer = window.setTimeout(() => {
-		void persistUserMemory(normalized.trim())
-	}, 400)
-})
-
-onBeforeUnmount(() => {
-	clearSaveUserMemoryTimer()
+	if (isHydratingUserMemory.value || userMemoryStatus.value === 'saving') return
+	userMemoryStatus.value = isUserMemoryDirty.value ? 'idle' : 'saved'
 })
 </script>
-
