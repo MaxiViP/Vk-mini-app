@@ -9,6 +9,10 @@
 	gap: 12px;
 }
 
+.context-primary {
+	display: none;
+}
+
 .chat-mode-switch {
 	display: inline-flex;
 	gap: 8px;
@@ -61,7 +65,7 @@
 }
 
 .chat-context-bar--ai {
-	min-height: 182px;
+	/* min-height: 182px; */
 	border-color: var(--mode-accent-border);
 	background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent), var(--mode-panel-bg-strong);
 	box-shadow:
@@ -138,14 +142,14 @@
 	color: var(--mode-accent-strong);
 }
 
-.chat .context-primary,
+/* .chat .context-primary,
 .chat .context-secondary,
 .chat .context-chips {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
 	align-items: center;
-}
+} */
 
 .chat .context-status,
 .chat .context-pill,
@@ -1483,7 +1487,7 @@
 	}
 
 	.chat .ai-status-head {
-		flex-direction: column;
+		/* flex-direction: column; */
 		align-items: flex-start;
 	}
 
@@ -1491,14 +1495,27 @@
 		grid-template-columns: 1fr;
 	} */
 
+	/* .chat .context-primary,
+	.chat .context-secondary,
+	.chat .context-chips {
+		display: flex;
+		flex-wrap: nowrap;
+	} */
+
+	.context-secondary {
+		display: flex;
+		flex-wrap: nowrap;
+		gap: 8px;
+	}
+
 	.chat-context-bar {
 		padding: 10px 12px;
 		border-radius: 16px;
 	}
 
-	.chat-context-bar--ai {
+	/* .chat-context-bar--ai {
 		min-height: 286px;
-	}
+	} */
 
 	.chat .context-status,
 	.chat .context-pill,
