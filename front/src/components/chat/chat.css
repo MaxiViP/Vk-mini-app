@@ -9,8 +9,13 @@
 	gap: 12px;
 }
 
-.context-primary {
-	display: none;
+.chat .context-primary,
+.chat .context-secondary,
+.chat .context-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
 }
 
 .chat-mode-switch {
@@ -1491,9 +1496,9 @@
 		align-items: flex-start;
 	}
 
-	/* .chat .ai-limit-grid {
+	.chat .ai-limit-grid {
 		grid-template-columns: 1fr;
-	} */
+	}
 
 	/* .chat .context-primary,
 	.chat .context-secondary,

@@ -37,12 +37,14 @@
 				</div>
 			</div>
 
-			<div v-if="!aiLimitItems.length" class="context-primary">
+			<div v-if="!aiLimitItems.length" v-show="isContextPrimaryOpen" class="context-primary">
 				<span class="context-pill context-pill--highlight">{{ aiAccessSummary }}</span>
 			</div>
 
-			<div class="context-primary">
-				<span v-for="pill in aiCapabilityPills" :key="pill" class="context-pill context-pill--highlight">{{ pill }}</span>
+			<div v-show="isContextPrimaryOpen" class="context-primary">
+				<span v-for="pill in aiCapabilityPills" :key="pill" class="context-pill context-pill--highlight">{{
+					pill
+				}}</span>
 				<span class="context-pill">Сессия: {{ chat.conversationId }}</span>
 				<span v-if="chat.contextFiles.length" class="context-pill">Файлы: {{ chat.contextFiles.length }}</span>
 				<span v-if="chat.voiceRecords.length" class="context-pill">Голос: {{ chat.voiceRecords.length }}</span>
@@ -50,14 +52,22 @@
 			</div>
 
 			<div class="context-secondary">
+				<button class="context-action" @click="toggleContextPanel">Контекст</button>
+				<button
+					type="button"
+					class="context-action"
+					:aria-expanded="isContextPrimaryOpen"
+					@click="toggleContextPrimary"
+				>
+					{{ isContextPrimaryOpen ? 'Скрыть' : 'Показать' }}
+				</button>
 				<button
 					class="context-action"
 					@click="chat.resetConversation"
 					:disabled="chat.isLoading || chat.isUploadingFile"
 				>
-					Сбросить контекст
+					Сбросить
 				</button>
-				<button class="context-action" @click="toggleContextPanel">Открыть панель контекста</button>
 			</div>
 
 			<div v-if="chat.contextFiles.length" class="context-chips">
@@ -139,6 +149,7 @@ const chat = useChatStore()
 const modelsStore = useModelsStore()
 const userStore = useUserStore()
 const showContextPanel = ref(false)
+const isContextPrimaryOpen = ref(false)
 const messagesContainerRef = ref<HTMLElement | null>(null)
 const scrollTop = ref(0)
 const viewportHeight = ref(0)
@@ -324,8 +335,7 @@ const updateViewportMetrics = () => {
 
 	scrollTop.value = container.scrollTop
 	viewportHeight.value = container.clientHeight
-	isNearBottom.value =
-		container.scrollTop + container.clientHeight >= container.scrollHeight - AUTO_SCROLL_THRESHOLD_PX
+	isNearBottom.value = container.scrollTop + container.clientHeight >= container.scrollHeight - AUTO_SCROLL_THRESHOLD_PX
 }
 
 const scrollToBottom = (behavior: ScrollBehavior = 'auto') => {
@@ -405,6 +415,10 @@ const toggleContextPanel = () => {
 	showContextPanel.value = !showContextPanel.value
 }
 
+const toggleContextPrimary = () => {
+	isContextPrimaryOpen.value = !isContextPrimaryOpen.value
+}
+
 const handleToggleChatContext = (event: Event) => {
 	const customEvent = event as CustomEvent<{ open?: boolean }>
 	if (typeof customEvent.detail?.open === 'boolean') {
@@ -449,8 +463,7 @@ const toChatHistoryItem = (message: ChatMessage): ChatHistoryItem => ({
 	content: message.content,
 })
 
-const getHistoryBeforeIndex = (index: number) =>
-	chat.messages.slice(0, Math.max(index, 0)).map(toChatHistoryItem)
+const getHistoryBeforeIndex = (index: number) => chat.messages.slice(0, Math.max(index, 0)).map(toChatHistoryItem)
 
 async function sendWithFallback(messageText: string, options: DispatchMessageOptions = {}) {
 	if (chat.isLoading) return
@@ -555,6 +568,13 @@ function handleVoiceError(message: string) {
 }
 
 watch(showContextPanel, emitChatContextState, { immediate: true })
+
+watch(
+	() => chat.isAiMode,
+	isAiMode => {
+		if (!isAiMode) isContextPrimaryOpen.value = false
+	},
+)
 
 watch(
 	() => [chat.isAiMode, userStore.isAuthenticated] as const,
