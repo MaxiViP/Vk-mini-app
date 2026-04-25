@@ -53,6 +53,7 @@
 								Память AI используется во всех AI-чатах. Сюда можно сохранить постоянные инструкции:
 								как отвечать, что учитывать о вас и какой стиль держать.
 							</label>
+
 							<div class="context-presets">
 								<span class="context-presets__label">Шаблоны памяти</span>
 								<div class="context-presets__list">
@@ -68,6 +69,7 @@
 									</button>
 								</div>
 							</div>
+
 							<textarea
 								id="user-memory-textarea"
 								v-model="userMemory"
@@ -76,6 +78,7 @@
 								rows="5"
 								:maxlength="USER_MEMORY_MAX_LENGTH"
 							></textarea>
+
 							<div class="context-inline-actions">
 								<button
 									class="context-inline-btn"
@@ -83,12 +86,19 @@
 									@click="saveUserMemoryDraft"
 									:disabled="userMemoryStatus === 'saving' || !isUserMemoryDirty || !userStore.token"
 								>
-									Сохранить память
+									{{ userMemoryStatus === 'saving' ? 'Сохраняем...' : 'Сохранить память' }}
 								</button>
-								<button class="context-inline-btn" type="button" @click="clearUserMemory" :disabled="userMemoryStatus === 'saving'">
+
+								<button
+									class="context-inline-btn"
+									type="button"
+									@click="clearUserMemory"
+									:disabled="userMemoryStatus === 'saving'"
+								>
 									Очистить память
 								</button>
 							</div>
+
 							<p class="context-hint">
 								{{ userMemory.length }}/{{ USER_MEMORY_MAX_LENGTH }}
 								<span v-if="userMemoryStatus === 'saving'">• сохраняется...</span>
@@ -96,6 +106,7 @@
 								<span v-else-if="userMemoryStatus === 'error'">• ошибка сохранения</span>
 								<span v-else-if="isUserMemoryDirty">• есть несохранённые изменения</span>
 							</p>
+
 							<p class="context-hint">Память будет применяться ко всем новым AI-ответам.</p>
 						</section>
 
@@ -104,6 +115,7 @@
 							<label class="context-label" for="session-context-textarea">
 								Контекст для AI действует только в текущей сессии. Подходит для временных правил и текущих задач.
 							</label>
+
 							<textarea
 								id="session-context-textarea"
 								v-model="sessionContext"
@@ -112,11 +124,32 @@
 								rows="5"
 								:maxlength="SESSION_CONTEXT_MAX_LENGTH"
 							></textarea>
+
 							<div class="context-inline-actions">
-								<button class="context-inline-btn" type="button" @click="clearSessionContext">Очистить контекст</button>
+								<button
+									class="context-inline-btn"
+									type="button"
+									@click="saveSessionContext"
+									:disabled="!isSessionContextDirty"
+								>
+									Применить контекст
+								</button>
+
+								<button class="context-inline-btn" type="button" @click="clearSessionContext">
+									Очистить контекст
+								</button>
 							</div>
-							<p class="context-hint">{{ sessionContext.length }}/{{ SESSION_CONTEXT_MAX_LENGTH }}</p>
-							<p class="context-hint">Контекст применяется только к текущей AI-сессии.</p>
+
+							<p class="context-hint">
+								{{ sessionContext.length }}/{{ SESSION_CONTEXT_MAX_LENGTH }}
+								<span v-if="sessionContextStatus === 'applied'">• контекст применён</span>
+								<span v-else-if="sessionContextStatus === 'dirty'">• есть неприменённые изменения</span>
+								<span v-else-if="sessionContextStatus === 'empty'">• контекст пуст</span>
+							</p>
+
+							<p class="context-hint">
+								AI использует только применённый контекст. После изменения нажми “Применить контекст”.
+							</p>
 						</section>
 
 						<section class="context-section">
@@ -152,15 +185,22 @@
 										<span class="source-type">{{ item.sourceType || 'unknown' }}</span>
 										<time>{{ formatDate(item.timestamp) }}</time>
 									</div>
+
 									<p v-if="item.transcript" class="source-transcript">Voice: {{ item.transcript }}</p>
 									<p class="source-preview">{{ item.replyPreview }}</p>
+
 									<div class="source-chip-list">
-										<span v-for="source in item.sources" :key="`${item.id}-${source.type}-${source.name}`" class="source-chip">
+										<span
+											v-for="source in item.sources"
+											:key="`${item.id}-${source.type}-${source.name}`"
+											class="source-chip"
+										>
 											{{ source.type }} · {{ source.name }}
 										</span>
 									</div>
 								</div>
 							</div>
+
 							<p v-else class="context-empty">История источников появится после первых ответов backend.</p>
 						</section>
 					</div>
@@ -183,6 +223,7 @@ const userStore = useUserStore()
 
 const SESSION_CONTEXT_MAX_LENGTH = 1200
 const USER_MEMORY_MAX_LENGTH = 1200
+
 const userMemoryPresets = [
 	{
 		label: 'Разработчик',
@@ -216,14 +257,26 @@ const userMemoryPresets = [
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const isRecording = ref(false)
+
 const sessionContext = ref('')
+const savedSessionContext = ref('')
+const sessionContextStatus = ref<'empty' | 'dirty' | 'applied'>('empty')
+
 const userMemory = ref('')
 const savedUserMemory = ref('')
 const userMemoryStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const isHydratingUserMemory = ref(false)
+
 const normalizeLimitedText = (value: string, maxLength: number) => String(value || '').slice(0, maxLength)
 const normalizePersistedUserMemory = (value: string) => normalizeLimitedText(value, USER_MEMORY_MAX_LENGTH).trim()
+const normalizePersistedSessionContext = (value: string) => normalizeLimitedText(value, SESSION_CONTEXT_MAX_LENGTH).trim()
+
 const isUserMemoryDirty = computed(() => normalizePersistedUserMemory(userMemory.value) !== savedUserMemory.value)
+
+const isSessionContextDirty = computed(
+	() => normalizePersistedSessionContext(sessionContext.value) !== savedSessionContext.value,
+)
+
 let mediaRecorder: MediaRecorder | null = null
 let mediaStream: MediaStream | null = null
 let recordedChunks: Blob[] = []
@@ -232,7 +285,46 @@ const close = () => emit('update:visible', false)
 const formatDate = (value: number) => new Date(value).toLocaleString()
 
 const loadSessionContext = () => {
-	sessionContext.value = chat.readSessionContext(userStore.user?.vkId, chat.conversationId)
+	const stored = chat.readSessionContext(userStore.user?.vkId, chat.conversationId)
+	const normalized = normalizePersistedSessionContext(stored)
+
+	sessionContext.value = normalized
+	savedSessionContext.value = normalized
+	sessionContextStatus.value = normalized ? 'applied' : 'empty'
+
+	console.log('[ai-session-context] loaded', {
+		conversationId: chat.conversationId,
+		length: normalized.length,
+		applied: Boolean(normalized),
+		preview: normalized.slice(0, 160),
+	})
+}
+
+const saveSessionContext = () => {
+	const normalized = normalizePersistedSessionContext(sessionContext.value)
+
+	sessionContext.value = normalized
+	savedSessionContext.value = normalized
+	chat.writeSessionContext(normalized, userStore.user?.vkId, chat.conversationId)
+	sessionContextStatus.value = normalized ? 'applied' : 'empty'
+
+	console.log('[ai-session-context] applied', {
+		conversationId: chat.conversationId,
+		length: normalized.length,
+		applied: Boolean(normalized),
+		preview: normalized.slice(0, 160),
+	})
+}
+
+const clearSessionContext = () => {
+	sessionContext.value = ''
+	savedSessionContext.value = ''
+	sessionContextStatus.value = 'empty'
+	chat.writeSessionContext('', userStore.user?.vkId, chat.conversationId)
+
+	console.log('[ai-session-context] cleared', {
+		conversationId: chat.conversationId,
+	})
 }
 
 const loadUserMemory = async () => {
@@ -250,6 +342,11 @@ const loadUserMemory = async () => {
 		userMemory.value = normalized
 		savedUserMemory.value = normalizePersistedUserMemory(normalized)
 		userMemoryStatus.value = 'idle'
+
+		console.log('[ai-memory] loaded', {
+			length: normalized.length,
+			preview: normalized.slice(0, 160),
+		})
 	} catch (error) {
 		userMemoryStatus.value = 'error'
 		console.warn('Failed to load AI memory', error)
@@ -268,6 +365,11 @@ const persistUserMemory = async (value: string) => {
 		userMemory.value = normalized
 		savedUserMemory.value = normalizePersistedUserMemory(normalized)
 		userMemoryStatus.value = 'saved'
+
+		console.log('[ai-memory] saved', {
+			length: normalized.length,
+			preview: normalized.slice(0, 160),
+		})
 	} catch (error) {
 		userMemoryStatus.value = 'error'
 		console.warn('Failed to save AI memory', error)
@@ -281,19 +383,20 @@ const saveUserMemoryDraft = () => {
 
 const applyUserMemoryPreset = (value: string) => {
 	userMemory.value = normalizeLimitedText(value, USER_MEMORY_MAX_LENGTH)
+
 	if (userMemoryStatus.value !== 'saving') {
 		userMemoryStatus.value = 'idle'
 	}
+
+	console.log('[ai-memory] preset selected', {
+		length: userMemory.value.length,
+		preview: userMemory.value.slice(0, 160),
+	})
 }
 
 const clearUserMemory = () => {
 	userMemory.value = ''
 	void persistUserMemory('')
-}
-
-const clearSessionContext = () => {
-	sessionContext.value = ''
-	chat.writeSessionContext('', userStore.user?.vkId, chat.conversationId)
 }
 
 const stopRecordingTracks = () => {
@@ -383,7 +486,12 @@ watch(sessionContext, value => {
 		return
 	}
 
-	chat.writeSessionContext(normalized, userStore.user?.vkId, chat.conversationId)
+	if (isSessionContextDirty.value) {
+		sessionContextStatus.value = 'dirty'
+		return
+	}
+
+	sessionContextStatus.value = savedSessionContext.value ? 'applied' : 'empty'
 })
 
 watch(
