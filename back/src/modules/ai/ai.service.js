@@ -18,7 +18,7 @@ const AI_MEMORY_MAX_LENGTH = 1200
 const AI_SESSION_CONTEXT_MAX_LENGTH = 1200
 const AI_LOCAL_HISTORY_MAX_MESSAGES = 20
 const AI_LOCAL_HISTORY_MAX_CHARS = 12000
-const AI_MEMORY_CACHE_TTL_MS = 15000
+const AI_MEMORY_CACHE_TTL_MS = 0
 const AI_HISTORY_STORAGE_UNAVAILABLE = Symbol('AI_HISTORY_STORAGE_UNAVAILABLE')
 const aiMemoryCache = new Map()
 const aiServiceLogger = logger.createChild({ module: 'ai-service' })
@@ -238,26 +238,40 @@ const buildAiRequestMessageWithLocalContext = ({ userMemory, sessionContext, his
 		.slice(-AI_LOCAL_HISTORY_MAX_CHARS)
 		.trim()
 
-	const prompt = [
-		`СИСТЕМНЫЕ ПРАВИЛА:
+	const systemRules = `СИСТЕМНЫЕ ПРАВИЛА:
 Ты AI-помощник.
-У тебя есть постоянная память, временный контекст сессии, история диалога и текущий вопрос.
 
-ПРИОРИТЕТЫ ОБЯЗАТЕЛЬНЫ:
-1. ВРЕМЕННЫЙ КОНТЕКСТ СЕССИИ важнее постоянной памяти.
-2. ТЕКУЩИЙ ВОПРОС важнее истории диалога.
-3. ПОСТОЯННАЯ ПАМЯТЬ задаёт стиль и роль, но не должна отменять временный контекст.
-4. Если память и временный контекст противоречат друг другу — выполняй временный контекст.
-5. Не игнорируй временный контекст, даже если память задаёт роль: юрист, программист, агроном и т.д.`,
+У тебя есть 4 источника данных:
+1. Постоянная память пользователя.
+2. Временный контекст текущей сессии.
+3. История диалога.
+4. Текущий вопрос пользователя.
 
-		normalizedSessionContext
-			? `ВРЕМЕННЫЙ КОНТЕКСТ СЕССИИ — ВЫСШИЙ ПРИОРИТЕТ:
-${normalizedSessionContext}`
-			: '',
+ОБЯЗАТЕЛЬНО:
+- Используй постоянную память ВСЕГДА, если она есть.
+- Используй временный контекст ВСЕГДА, если он есть.
+- Не выбирай между памятью и контекстом. Объединяй их.
+- Память задаёт роль, стиль, предпочтения и постоянные правила.
+- Контекст задаёт текущую задачу, временные вводные и ограничения.
+- Если память и контекст не противоречат друг другу, применяй оба.
+- Если есть прямое противоречие, сначала выполни временный контекст, но сохрани стиль и роль из памяти.
+- Текущий вопрос пользователя — основная задача ответа.
+- История диалога нужна только для продолжения разговора.
+
+Нельзя игнорировать память только потому, что есть контекст.
+Нельзя игнорировать контекст только потому, что есть память.`
+
+	const prompt = [
+		systemRules,
 
 		normalizedUserMemory
-			? `ПОСТОЯННАЯ ПАМЯТЬ ПОЛЬЗОВАТЕЛЯ — НИЖЕ ПО ПРИОРИТЕТУ:
+			? `ПОСТОЯННАЯ ПАМЯТЬ ПОЛЬЗОВАТЕЛЯ:
 ${normalizedUserMemory}`
+			: '',
+
+		normalizedSessionContext
+			? `ВРЕМЕННЫЙ КОНТЕКСТ ТЕКУЩЕЙ СЕССИИ:
+${normalizedSessionContext}`
 			: '',
 
 		historyText
@@ -272,18 +286,17 @@ ${normalizedMessage}`,
 		.join('\n\n')
 
 	console.log('[ai-context] built prompt', {
-		hasSessionContext: Boolean(normalizedSessionContext),
 		hasUserMemory: Boolean(normalizedUserMemory),
+		hasSessionContext: Boolean(normalizedSessionContext),
 		historyMessages: historyRows.length,
-		sessionContextLength: normalizedSessionContext.length,
 		userMemoryLength: normalizedUserMemory.length,
+		sessionContextLength: normalizedSessionContext.length,
 		promptLength: prompt.length,
 		promptPreview: prompt.slice(0, 800),
 	})
 
 	return prompt
 }
-
 const getCachedAiMemory = async userId => {
 	const key = String(userId)
 	const now = Date.now()
