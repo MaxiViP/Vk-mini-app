@@ -238,15 +238,50 @@ const buildAiRequestMessageWithLocalContext = ({ userMemory, sessionContext, his
 		.slice(-AI_LOCAL_HISTORY_MAX_CHARS)
 		.trim()
 
-	return [
-		'Ты AI-помощник. Используй память, временный контекст и историю диалога ниже. История хранится на нашем backend, внешний AI backend не должен быть источником памяти.',
-		normalizedUserMemory ? `ПОСТОЯННАЯ ПАМЯТЬ ПОЛЬЗОВАТЕЛЯ:\n${normalizedUserMemory}` : '',
-		normalizedSessionContext ? `ВРЕМЕННЫЙ КОНТЕКСТ ТЕКУЩЕЙ СЕССИИ:\n${normalizedSessionContext}` : '',
-		historyText ? `ЛОКАЛЬНАЯ ИСТОРИЯ ДИАЛОГА:\n${historyText}` : '',
-		`ТЕКУЩИЙ ВОПРОС ПОЛЬЗОВАТЕЛЯ:\n${normalizedMessage}`,
+	const prompt = [
+		`СИСТЕМНЫЕ ПРАВИЛА:
+Ты AI-помощник.
+У тебя есть постоянная память, временный контекст сессии, история диалога и текущий вопрос.
+
+ПРИОРИТЕТЫ ОБЯЗАТЕЛЬНЫ:
+1. ВРЕМЕННЫЙ КОНТЕКСТ СЕССИИ важнее постоянной памяти.
+2. ТЕКУЩИЙ ВОПРОС важнее истории диалога.
+3. ПОСТОЯННАЯ ПАМЯТЬ задаёт стиль и роль, но не должна отменять временный контекст.
+4. Если память и временный контекст противоречат друг другу — выполняй временный контекст.
+5. Не игнорируй временный контекст, даже если память задаёт роль: юрист, программист, агроном и т.д.`,
+
+		normalizedSessionContext
+			? `ВРЕМЕННЫЙ КОНТЕКСТ СЕССИИ — ВЫСШИЙ ПРИОРИТЕТ:
+${normalizedSessionContext}`
+			: '',
+
+		normalizedUserMemory
+			? `ПОСТОЯННАЯ ПАМЯТЬ ПОЛЬЗОВАТЕЛЯ — НИЖЕ ПО ПРИОРИТЕТУ:
+${normalizedUserMemory}`
+			: '',
+
+		historyText
+			? `ЛОКАЛЬНАЯ ИСТОРИЯ ДИАЛОГА:
+${historyText}`
+			: '',
+
+		`ТЕКУЩИЙ ВОПРОС ПОЛЬЗОВАТЕЛЯ:
+${normalizedMessage}`,
 	]
 		.filter(Boolean)
 		.join('\n\n')
+
+	console.log('[ai-context] built prompt', {
+		hasSessionContext: Boolean(normalizedSessionContext),
+		hasUserMemory: Boolean(normalizedUserMemory),
+		historyMessages: historyRows.length,
+		sessionContextLength: normalizedSessionContext.length,
+		userMemoryLength: normalizedUserMemory.length,
+		promptLength: prompt.length,
+		promptPreview: prompt.slice(0, 800),
+	})
+
+	return prompt
 }
 
 const getCachedAiMemory = async userId => {
