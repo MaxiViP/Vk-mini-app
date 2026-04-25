@@ -1496,9 +1496,9 @@
 		align-items: flex-start;
 	}
 
-	.chat .ai-limit-grid {
+	/* .chat .ai-limit-grid {
 		grid-template-columns: 1fr;
-	}
+	} */
 
 	/* .chat .context-primary,
 	.chat .context-secondary,
