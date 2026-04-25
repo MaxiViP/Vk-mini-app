@@ -1487,9 +1487,9 @@
 		align-items: flex-start;
 	}
 
-	.chat .ai-limit-grid {
+	/* .chat .ai-limit-grid {
 		grid-template-columns: 1fr;
-	}
+	} */
 
 	.chat-context-bar {
 		padding: 10px 12px;
