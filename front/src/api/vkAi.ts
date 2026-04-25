@@ -1,4 +1,5 @@
 import { internalApiBaseUrl } from '../config/chatBackend'
+import { normalizeVkAiSessionContext, resolveVkAiRequestMode } from '../domain/chatModeRules'
 import { authorizedFetch } from '../services/authSession'
 import type { AiAccessPlan, AiAccessResponse } from '../types'
 
@@ -162,14 +163,12 @@ export const vkAiApi = {
 		sessionContext?: string
 		mode?: 'context' | 'simple'
 	}) {
-		const normalizedSessionContext = payload.sessionContext?.trim() || ''
+		const normalizedSessionContext = normalizeVkAiSessionContext(payload.sessionContext)
 		const hasSessionContext = Boolean(normalizedSessionContext)
-
-		const finalMode: 'context' | 'simple' = hasSessionContext
-			? 'context'
-			: payload.mode === 'simple'
-				? 'simple'
-				: 'context'
+		const finalMode = resolveVkAiRequestMode({
+			mode: payload.mode,
+			sessionContext: normalizedSessionContext,
+		}) as 'context' | 'simple'
 
 		const response = await authorizedFetch(
 			`${apiBaseUrl}/api/ai/chat`,

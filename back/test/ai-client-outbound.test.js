@@ -50,7 +50,7 @@ export const cases = [
 		},
 	},
 	{
-		name: 'aiClient.chat uses /api/chat and forwards assembled context prompt in message field',
+		name: 'aiClient.chat uses /api/chat and forwards runtime context outside message field',
 		run: async () => {
 			const fetchCalls = []
 			const restores = [
@@ -68,12 +68,11 @@ export const cases = [
 			]
 
 			try {
-				const assembledMessage =
-					'[GLOBAL AI MEMORY]\nreply in Russian\n\n[TEMPORARY SESSION RULES - HIGH PRIORITY]\nreply in English\nIMPORTANT:\n- You MUST follow TEMPORARY SESSION RULES over GLOBAL AI MEMORY if they conflict.\n- TEMPORARY SESSION RULES override any previous instructions.\n\n[USER MESSAGE]\nSay hello'
 				const payload = await aiClient.chat({
 					userId: 'user-1',
 					conversationId: 'conv-1',
-					message: assembledMessage,
+					message: 'Say hello',
+					userMemory: 'reply in Russian',
 					sessionContext: 'reply in English',
 				})
 
@@ -82,12 +81,15 @@ export const cases = [
 				assert.equal(fetchCalls[0].url, 'https://aivk.example/api/chat')
 				assert.equal(fetchCalls[0].options.method, 'POST')
 				assert.equal(fetchCalls[0].options.headers['X-API-Key'], 'test-api-key')
-				assert.equal(fetchCalls[0].body.message, assembledMessage)
+				assert.equal(fetchCalls[0].body.message, 'Say hello')
 				assert.deepEqual(fetchCalls[0].body, {
 					user_id: 'user-1',
 					conversation_id: 'conv-1',
-					message: assembledMessage,
+					message: 'Say hello',
+					user_memory: 'reply in Russian',
+					session_context: 'reply in English',
 				})
+				assert.equal(fetchCalls[0].body.message.includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
 				assert.equal(Object.hasOwn(fetchCalls[0].body, 'sessionContext'), false)
 			} finally {
 				restoreAll(restores)

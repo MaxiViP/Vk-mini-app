@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 
 import { canBuyPlanFromWallet } from '../src/domain/billingRules.js'
-import { getChatHistorySource, shouldUseAiApi } from '../src/domain/chatModeRules.js'
+import { getChatHistorySource, resolveVkAiRequestMode, shouldUseAiApi } from '../src/domain/chatModeRules.js'
 
 export const cases = [
 	{
@@ -42,6 +42,20 @@ export const cases = [
 			})
 
 			assert.equal(canBuy, false)
+		},
+	},
+	{
+		name: 'empty AI session context defaults VK AI chat request to simple mode',
+		run: async () => {
+			assert.equal(resolveVkAiRequestMode({ sessionContext: '' }), 'simple')
+			assert.equal(resolveVkAiRequestMode({ sessionContext: '   ' }), 'simple')
+		},
+	},
+	{
+		name: 'VK AI chat request uses context mode for session or explicit external context',
+		run: async () => {
+			assert.equal(resolveVkAiRequestMode({ sessionContext: 'current task' }), 'context')
+			assert.equal(resolveVkAiRequestMode({ mode: 'context', sessionContext: '' }), 'context')
 		},
 	},
 ]

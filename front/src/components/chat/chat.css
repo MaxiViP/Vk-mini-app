@@ -41,7 +41,9 @@
 	background: var(--mode-accent-soft);
 	border-color: var(--mode-accent-border);
 	color: var(--mode-accent-strong);
-	box-shadow: 0 0 0 1px var(--mode-accent-soft), 0 12px 30px rgba(0, 0, 0, 0.16);
+	box-shadow:
+		0 0 0 1px var(--mode-accent-soft),
+		0 12px 30px rgba(0, 0, 0, 0.16);
 }
 
 .chat-context-bar {
@@ -61,9 +63,7 @@
 .chat-context-bar--ai {
 	min-height: 182px;
 	border-color: var(--mode-accent-border);
-	background:
-		linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent),
-		var(--mode-panel-bg-strong);
+	background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent), var(--mode-panel-bg-strong);
 	box-shadow:
 		0 0 0 1px rgba(255, 255, 255, 0.02),
 		0 18px 40px rgba(0, 0, 0, 0.18);
@@ -335,36 +335,95 @@
 	accent-color: var(--mode-accent);
 }
 
-/* ===== SAVE BUTTON ===== */
-.messages .save-note {
-	width: 25px;
-	height: 25px;
+/* ===== MESSAGE ACTIONS ===== */
+.messages .message-actions {
 	display: flex;
-	align-items: center;
-	justify-content: center;
-	flex-shrink: 0;
-	align-self: center;
-	padding: 2px;
-	margin-left: -30px;
-	margin-top: -10px;
-	margin-bottom: auto;
-	border: 1px solid var(--color-text);
-	border-radius: 50%;
-	background: var(--color-warning);
-	color: #111;
-	font-size: 22px;
-	cursor: pointer;
-	opacity: 0.7;
-	transition:
-		opacity var(--transition-base),
-		transform 0.1s ease,
-		background var(--transition-base);
+	justify-content: flex-end;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin-top: 10px;
 }
 
-.messages .save-note:hover {
-	opacity: 1;
+.messages .message.user .message-actions {
+	justify-content: flex-end;
+}
+
+.messages .message-action,
+.messages .message-edit-btn {
+	min-height: 28px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 5px 9px;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.06);
+	color: var(--color-text-soft);
+	font: inherit;
+	font-size: 12px;
+	line-height: 1.2;
+	cursor: pointer;
+	transition:
+		opacity var(--transition-base),
+		transform var(--transition-fast),
+		background var(--transition-base),
+		border-color var(--transition-base);
+}
+
+.messages .message-action:hover:not(:disabled),
+.messages .message-edit-btn:hover:not(:disabled) {
+	transform: translateY(-1px);
+	background: rgba(255, 255, 255, 0.1);
+	border-color: rgba(255, 255, 255, 0.16);
+}
+
+.messages .message-action:disabled,
+.messages .message-edit-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.messages .save-note {
+	background: var(--color-warning);
+	color: #111;
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+.messages .save-note:hover:not(:disabled) {
 	background: var(--color-warning-hover);
-	transform: scale(1.05);
+}
+
+.messages .message-edit-form {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.messages .message-edit-textarea {
+	width: min(520px, 100%);
+	min-height: 92px;
+	padding: 10px 12px;
+	border-radius: var(--radius-lg);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	background: rgba(255, 255, 255, 0.04);
+	color: var(--color-text);
+	font: inherit;
+	line-height: 1.45;
+	resize: vertical;
+	box-sizing: border-box;
+	outline: none;
+}
+
+.messages .message-edit-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.messages .message-edit-btn--primary {
+	background: var(--mode-accent, var(--color-primary));
+	border-color: var(--mode-accent-border, var(--color-primary));
+	color: #04261f;
 }
 
 /* ===== MARKDOWN ===== */
@@ -447,9 +506,7 @@
 
 .chat .input-inner--ai {
 	border: 1px solid var(--mode-accent-border);
-	background:
-		linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent),
-		var(--mode-panel-bg-strong);
+	background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent), var(--mode-panel-bg-strong);
 	box-shadow:
 		0 0 0 1px rgba(255, 255, 255, 0.02),
 		0 16px 40px rgba(0, 0, 0, 0.24);
@@ -632,9 +689,7 @@
 }
 
 .messages .typing-indicator--ai {
-	background:
-		linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent),
-		var(--mode-accent-soft);
+	background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent), var(--mode-accent-soft);
 	border: 1px solid var(--mode-accent-border);
 	box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
 	gap: 10px;
@@ -1294,6 +1349,98 @@
 	}
 }
 
+/* ===== MESSAGE ACTION FEEDBACK ===== */
+.messages .message-action {
+	gap: 5px;
+	white-space: nowrap;
+	will-change: transform;
+}
+
+.messages .message-action:active:not(:disabled),
+.messages .message-edit-btn:active:not(:disabled) {
+	transform: scale(0.94);
+}
+
+.messages .message-action--success {
+	background: var(--mode-accent-soft);
+	border-color: var(--mode-accent-border);
+	color: var(--mode-accent-strong);
+}
+
+.messages .message-action__icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	line-height: 1;
+	animation: messageActionPop 0.24s ease-out;
+}
+
+.messages .message-edit-form {
+	padding: 10px;
+	border-radius: var(--radius-lg);
+	background: rgba(255, 255, 255, 0.035);
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	animation: messageEditIn 0.18s ease-out;
+}
+
+.messages .message-edit-textarea:focus {
+	border-color: var(--mode-accent-border, rgba(16, 163, 127, 0.35));
+	box-shadow: 0 0 0 3px var(--mode-accent-soft, rgba(16, 163, 127, 0.12));
+	background: rgba(255, 255, 255, 0.055);
+}
+
+.messages .message-edit-btn {
+	gap: 5px;
+}
+
+.messages .message-edit-btn--primary:not(:disabled) {
+	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.14);
+}
+
+@keyframes messageActionPop {
+	0% {
+		opacity: 0.5;
+		transform: scale(0.72);
+	}
+
+	65% {
+		opacity: 1;
+		transform: scale(1.16);
+	}
+
+	100% {
+		opacity: 1;
+		transform: scale(1);
+	}
+}
+
+@keyframes messageEditIn {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.messages .message-action,
+	.messages .message-action__icon,
+	.messages .message-edit-form,
+	.messages .message-edit-btn {
+		animation: none;
+		transition: none;
+	}
+
+	.messages .message-action:active:not(:disabled),
+	.messages .message-edit-btn:active:not(:disabled) {
+		transform: none;
+	}
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
 	.notes-overlay {
@@ -1328,10 +1475,11 @@
 		padding: 8px 12px;
 	}
 
-	.messages .save-note {
-		width: 32px;
-		height: 32px;
-		font-size: 18px;
+	.messages .message-action,
+	.messages .message-edit-btn {
+		min-height: 26px;
+		padding: 5px 8px;
+		font-size: 11px;
 	}
 
 	.chat .ai-status-head {

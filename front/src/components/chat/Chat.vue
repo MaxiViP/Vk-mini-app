@@ -74,7 +74,13 @@
 		<div ref="messagesContainerRef" class="messages" @scroll="handleMessagesScroll">
 			<div v-if="topSpacerHeight > 0" aria-hidden="true" :style="{ height: `${topSpacerHeight}px` }"></div>
 			<div v-for="item in visibleMessages" :key="item.key" :ref="setMessageRowRef(item.index)">
-				<Message :message="item.message" />
+				<Message
+					:message="item.message"
+					:index="item.index"
+					:actions-disabled="chat.isLoading"
+					@edit-message="handleEditMessage"
+					@resend-message="handleResendMessage"
+				/>
 			</div>
 			<div v-if="bottomSpacerHeight > 0" aria-hidden="true" :style="{ height: `${bottomSpacerHeight}px` }"></div>
 			<div v-if="chat.isLoading" class="message assistant">
@@ -116,7 +122,7 @@
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 
-import type { Message as ChatMessage, Model } from '../../types'
+import type { ChatHistoryItem, Message as ChatMessage, Model } from '../../types'
 import { useChatStore } from '../../stores/chat'
 import { useModelsStore } from '../../stores/models'
 import { useUserStore } from '../../stores/user'
@@ -428,16 +434,35 @@ function stopGeneration() {
 	chat.abortRequest()
 }
 
-async function sendWithFallback(messageText: string) {
+type MessageActionPayload = {
+	index: number
+	content: string
+}
+
+type DispatchMessageOptions = {
+	appendUserMessage?: boolean
+	history?: ChatHistoryItem[]
+}
+
+const toChatHistoryItem = (message: ChatMessage): ChatHistoryItem => ({
+	role: message.role,
+	content: message.content,
+})
+
+const getHistoryBeforeIndex = (index: number) =>
+	chat.messages.slice(0, Math.max(index, 0)).map(toChatHistoryItem)
+
+async function sendWithFallback(messageText: string, options: DispatchMessageOptions = {}) {
 	if (chat.isLoading) return
+	const appendUserMessage = options.appendUserMessage !== false
 
 	if (chat.isExternalBackend) {
-		chat.addUserMessage(messageText)
+		if (appendUserMessage) chat.addUserMessage(messageText)
 		try {
 			await chat.sendMessage(
 				messageText,
 				fallbackExternalModel,
-				chat.messages.map(m => ({ role: m.role, content: m.content })),
+				options.history ?? chat.messages.map(toChatHistoryItem),
 			)
 		} catch (error) {
 			const typedError = error as Error
@@ -459,8 +484,8 @@ async function sendWithFallback(messageText: string) {
 	const startIndex = allModels.findIndex(model => model.id === currentModel.id)
 	const orderedModels = [...allModels.slice(startIndex), ...allModels.slice(0, startIndex)]
 
-	const baseHistory = chat.messages.map(message => ({ role: message.role, content: message.content }))
-	chat.addUserMessage(messageText)
+	const baseHistory = options.history ?? chat.messages.map(toChatHistoryItem)
+	if (appendUserMessage) chat.addUserMessage(messageText)
 
 	let lastError: Error | null = null
 
@@ -491,6 +516,22 @@ async function sendWithFallback(messageText: string) {
 	}
 
 	chat.addSystemMessage(`Не удалось получить ответ. Последняя ошибка: ${lastError?.message}`)
+}
+
+async function handleEditMessage(payload: MessageActionPayload) {
+	if (chat.isLoading || payload.index < 0 || !payload.content.trim()) return
+
+	const history = getHistoryBeforeIndex(payload.index)
+	if (!chat.updateMessageContent(payload.index, payload.content)) return
+	await sendWithFallback(payload.content, {
+		appendUserMessage: false,
+		history,
+	})
+}
+
+async function handleResendMessage(payload: MessageActionPayload) {
+	if (chat.isLoading || !payload.content.trim()) return
+	await sendWithFallback(payload.content, { appendUserMessage: true })
 }
 
 async function uploadFile(file: File) {

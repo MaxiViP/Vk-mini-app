@@ -213,41 +213,6 @@ const normalizeAiConversationTitle = value => {
 const resolveConversationKey = ({ userId, conversationId, mode = 'context' }) =>
 	String(conversationId || '').trim() || `aivk-${normalizeAiChatMode(mode)}-${userId}`
 
-const buildAiPromptMessage = ({ userMemory, sessionContext, message }) => {
-	const normalizedUserMemory = normalizeAiBlock(userMemory, AI_MEMORY_MAX_LENGTH)
-	const normalizedSessionContext = normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH)
-	const normalizedMessage = normalizeAiMessageContent(message)
-
-	return [
-		normalizedUserMemory ? `[GLOBAL AI MEMORY]\n${normalizedUserMemory}` : '',
-		normalizedSessionContext
-			? [
-					'[TEMPORARY SESSION RULES - HIGH PRIORITY]',
-					normalizedSessionContext,
-					'IMPORTANT:',
-					'- You MUST follow TEMPORARY SESSION RULES over GLOBAL AI MEMORY if they conflict.',
-					'- TEMPORARY SESSION RULES override any previous instructions.',
-					'- If TEMPORARY SESSION RULES specify a response language, you MUST respond in that language.',
-					'- Do not default to the language of the user message if it conflicts with TEMPORARY SESSION RULES.',
-				].join('\n')
-			: '',
-		`[USER MESSAGE]\n${normalizedMessage}`,
-	]
-		.filter(Boolean)
-		.join('\n\n')
-}
-
-const buildAiRequestMessage = ({ userMemory, message }) => {
-	const normalizedMessage = normalizeAiMessageContent(message)
-	const blocks = [userMemory ? `ИНСТРУКЦИЯ:\n${userMemory}` : ''].filter(Boolean)
-
-	if (blocks.length === 0) {
-		return normalizedMessage
-	}
-
-	return [...blocks, `ВОПРОС:\n${normalizedMessage}`].join('\n\n')
-}
-
 const buildAiMemoryOnlyRequestMessage = ({ userMemory, message }) => {
 	const normalizedMessage = normalizeAiMessageContent(message)
 	const normalizedUserMemory = normalizeAiBlock(userMemory, AI_MEMORY_MAX_LENGTH)
@@ -650,17 +615,25 @@ export const aiService = {
 		const normalizedSessionContext =
 			chatMode === 'context' ? normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH) : ''
 
-		const fullMessage =
+		const requestMessage =
 			chatMode === 'simple'
 				? buildAiMemoryOnlyRequestMessage({
 						userMemory: normalizedUserMemory,
 						message: normalizedUserMessage,
 					})
-				: buildAiPromptMessage({
-						userMemory: normalizedUserMemory,
-						sessionContext: normalizedSessionContext,
-						message: normalizedUserMessage,
-					})
+				: normalizedUserMessage
+		const promptMode =
+			chatMode === 'simple'
+				? normalizedUserMemory
+					? 'memory-only'
+					: 'plain'
+				: normalizedUserMemory && normalizedSessionContext
+					? 'memory+context'
+					: normalizedSessionContext
+						? 'context-only'
+						: normalizedUserMemory
+							? 'memory-only'
+							: 'plain'
 
 		const conversation = await ensureAiConversation({
 			userId,
@@ -680,24 +653,25 @@ export const aiService = {
 			conversation,
 		})
 
-		aiServiceLogger.debug('AI chat runtime check', {
-			chatMode,
-			hasSessionContext: Boolean(normalizedSessionContext),
-			sessionContextLength: normalizedSessionContext.length,
-			userMemoryLength: normalizedUserMemory.length,
+		aiServiceLogger.debug('Dispatching AI chat to external backend', {
 			externalEndpoint: chatMode === 'simple' ? '/api/chat/simple' : '/api/chat',
+			promptMode,
+			messageLength: requestMessage.length,
+			userMemoryLength: normalizedUserMemory.length,
+			sessionContextLength: normalizedSessionContext.length,
 		})
 
 		try {
 			if (chatMode === 'simple') {
 				response = await aiClient.simpleChat({
-					message: fullMessage,
+					message: requestMessage,
 				})
 			} else {
 				response = await aiClient.chat({
 					userId: toExternalUserId(userId),
 					conversationId: resolvedConversationId,
-					message: fullMessage,
+					message: requestMessage,
+					userMemory: normalizedUserMemory || undefined,
 					sessionContext: normalizedSessionContext || undefined,
 				})
 			}

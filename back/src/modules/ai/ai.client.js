@@ -10,6 +10,7 @@ const sanitizeUrl = value =>
 	String(value || '')
 		.trim()
 		.replace(/\/+$/, '')
+const normalizeOptionalText = value => String(value || '').trim()
 const getBaseUrl = () => sanitizeUrl(env.vkAiBackendUrl)
 const getApiKey = () => String(env.vkAiBackendApiKey || '').trim()
 
@@ -266,14 +267,18 @@ export const aiClient = {
 		})
 	},
 
-	chat({ userId, conversationId, message, sessionContext }) {
-		void sessionContext
+	chat({ userId, conversationId, message, userMemory, sessionContext }) {
+		const normalizedUserMemory = normalizeOptionalText(userMemory)
+		const normalizedSessionContext = normalizeOptionalText(sessionContext)
+
 		return requestJson('/api/chat', {
 			method: 'POST',
 			body: {
 				user_id: userId,
 				conversation_id: conversationId,
 				message,
+				...(normalizedUserMemory ? { user_memory: normalizedUserMemory } : {}),
+				...(normalizedSessionContext ? { session_context: normalizedSessionContext } : {}),
 			},
 			retryAttempts: CHAT_RETRY_ATTEMPTS,
 		})

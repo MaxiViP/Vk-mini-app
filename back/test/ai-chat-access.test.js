@@ -93,11 +93,13 @@ export const cases = [
 				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...storedConversation, ...data })),
 				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_1', ...data })),
 				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'persistent memory' })),
-				patchMethod(aiClient, 'chat', async ({ userId, conversationId, message }) => ({
+				patchMethod(aiClient, 'chat', async ({ userId, conversationId, message, userMemory, sessionContext }) => ({
 					reply: 'AI reply',
 					user_id: userId,
 					conversation_id: conversationId,
 					upstream_message: message,
+					upstream_user_memory: userMemory,
+					upstream_session_context: sessionContext,
 				})),
 			]
 
@@ -122,10 +124,10 @@ export const cases = [
 				assert.equal(response.status, 200)
 				assert.equal(payload.reply, 'AI reply')
 				assert.equal(payload.conversation_id, 'conv-with-access')
-				assert.equal(
-					payload.upstream_message,
-					'[GLOBAL AI MEMORY]\npersistent memory\n\n[TEMPORARY SESSION RULES - HIGH PRIORITY]\ncurrent task\nIMPORTANT:\n- You MUST follow TEMPORARY SESSION RULES over GLOBAL AI MEMORY if they conflict.\n- TEMPORARY SESSION RULES override any previous instructions.\n\n[USER MESSAGE]\nhello',
-				)
+				assert.equal(payload.upstream_message, 'hello')
+				assert.equal(payload.upstream_user_memory, 'persistent memory')
+				assert.equal(payload.upstream_session_context, 'current task')
+				assert.equal(payload.upstream_message.includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
 			} finally {
 				restoreAll(restores)
 				await stopTestServer(server)

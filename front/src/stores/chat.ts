@@ -475,6 +475,15 @@ export const useChatStore = defineStore('chat', () => {
 		})
 	}
 
+	function updateMessageContent(index: number, content: string) {
+		const target = messages.value[index]
+		if (!target || !content.trim()) return false
+
+		target.content = content.trim()
+		target.timestamp = Date.now()
+		return true
+	}
+
 	function abortRequest() {
 		abortController?.abort()
 		abortController = null
@@ -579,18 +588,15 @@ export const useChatStore = defineStore('chat', () => {
 		try {
 			if (isExternalBackend.value) {
 				const sessionContext = readSessionContext().trim()
-				const hasContext = Boolean(sessionContext)
+				const hasSessionContext = Boolean(sessionContext)
+				const hasExternalContext = contextFiles.value.length > 0 || voiceRecords.value.length > 0
 
 				const response = await vkAiApi.chat({
 					accessToken: getExternalAccessToken(),
 					conversationId: conversationId.value,
 					message: text,
-
-					// ВСЕГДА передаём если есть
-					sessionContext: hasContext ? sessionContext : undefined,
-
-					// ГЛАВНОЕ ИСПРАВЛЕНИЕ
-					mode: hasContext ? 'context' : 'context',
+					sessionContext: hasSessionContext ? sessionContext : undefined,
+					mode: hasSessionContext || hasExternalContext ? 'context' : 'simple',
 				})
 
 				addSystemMessage(response.reply, {
@@ -773,6 +779,7 @@ export const useChatStore = defineStore('chat', () => {
 		sendVoiceMessage,
 		addSystemMessage,
 		addUserMessage,
+		updateMessageContent,
 		setChatMode,
 		clearHistory: resetConversation,
 		syncWithServer,
