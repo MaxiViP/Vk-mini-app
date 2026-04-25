@@ -861,24 +861,43 @@ export const aiService = {
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
 
-		const upstreamReset = await aiClient.resetConversation({
-			userId: toExternalUserId(userId),
-			conversationId: resolvedConversationId,
-		})
+		let upstreamReset = null
+
+		try {
+			upstreamReset = await aiClient.resetConversation({
+				userId: toExternalUserId(userId),
+				conversationId: resolvedConversationId,
+			})
+		} catch (error) {
+			aiServiceLogger.warn('AI upstream reset failed, continuing with local reset', {
+				userId: String(userId),
+				conversationId: resolvedConversationId,
+				status: error?.statusCode || error?.details?.upstreamStatus || null,
+				message: error?.message || 'Unknown AI reset error',
+				code: error?.details?.code || error?.code || null,
+			})
+		}
 
 		const deletedConversation = await deleteStoredConversation({
 			userId,
 			conversationId: resolvedConversationId,
 		})
 
-		if (deletedConversation === AI_HISTORY_STORAGE_UNAVAILABLE) {
-			return upstreamReset
+		if (deletedConversation !== AI_HISTORY_STORAGE_UNAVAILABLE) {
+			return {
+				status: upstreamReset?.status || 'ok',
+				user_id: upstreamReset?.user_id || String(userId),
+				conversation_id: upstreamReset?.conversation_id || resolvedConversationId,
+				upstreamResetOk: Boolean(upstreamReset),
+			}
 		}
 
 		return {
-			...upstreamReset,
+			status: upstreamReset?.status || 'ok',
 			user_id: upstreamReset?.user_id || String(userId),
 			conversation_id: upstreamReset?.conversation_id || resolvedConversationId,
+			upstreamResetOk: Boolean(upstreamReset),
+			localResetSkipped: true,
 		}
 	},
 }
