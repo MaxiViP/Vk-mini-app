@@ -25,9 +25,19 @@
 					<span class="ai-status-subtitle">{{ aiAccessSummary }}</span>
 				</div>
 
-				<span :class="['context-status', `context-status--${chat.backendStatus}`]">
-					{{ backendStatusLabel }}
-				</span>
+				<div class="ai-status">
+					<button
+						type="button"
+						class="context-action"
+						:aria-expanded="isContextPrimaryOpen"
+						@click="toggleContextPrimary"
+					>
+						{{ isContextPrimaryOpen ? 'Скрыть' : 'Данные' }}
+					</button>
+					<span :class="['context-status', `context-status--${chat.backendStatus}`]">
+						{{ backendStatusLabel }}
+					</span>
+				</div>
 			</div>
 
 			<div v-if="aiLimitItems.length" class="ai-limit-grid">
@@ -53,14 +63,7 @@
 
 			<div class="context-secondary">
 				<button class="context-action" @click="toggleContextPanel">Контекст</button>
-				<button
-					type="button"
-					class="context-action"
-					:aria-expanded="isContextPrimaryOpen"
-					@click="toggleContextPrimary"
-				>
-					{{ isContextPrimaryOpen ? 'Скрыть' : 'Показать' }}
-				</button>
+
 				<button
 					class="context-action"
 					@click="chat.resetConversation"
