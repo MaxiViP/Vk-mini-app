@@ -18,9 +18,9 @@
 		</div>
 
 		<div :class="['bubble', { 'bubble--editing': isEditing }]">
-			<div v-if="metaSummary.length" class="meta-row">
+			<!-- <div v-if="metaSummary.length" class="meta-row">
 				<span v-for="item in metaSummary" :key="item" class="meta-chip">{{ item }}</span>
-			</div>
+			</div> -->
 
 			<div v-if="message.meta?.transcript" class="meta-transcript">Распознано: {{ message.meta.transcript }}</div>
 
@@ -58,11 +58,11 @@
 
 			<div v-else class="content" v-html="renderedContent"></div>
 
-			<div v-if="message.meta?.sources?.length" class="source-list">
+			<!-- <div v-if="message.meta?.sources?.length" class="source-list">
 				<span v-for="source in message.meta.sources" :key="`${source.type}:${source.name}`" class="source-chip">
 					{{ source.type }} · {{ source.name }}
 				</span>
-			</div>
+			</div> -->
 
 			<audio
 				v-if="resolvedAudioReplyUrl"
