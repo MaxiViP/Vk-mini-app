@@ -22,9 +22,7 @@
 				<span v-for="item in metaSummary" :key="item" class="meta-chip">{{ item }}</span>
 			</div>
 
-			<div v-if="message.meta?.transcript" class="meta-transcript">
-				Распознано: {{ message.meta.transcript }}
-			</div>
+			<div v-if="message.meta?.transcript" class="meta-transcript">Распознано: {{ message.meta.transcript }}</div>
 
 			<form v-if="isEditing" class="message-edit-form" @submit.prevent="confirmEdit">
 				<textarea
@@ -66,7 +64,13 @@
 				</span>
 			</div>
 
-			<audio v-if="resolvedAudioReplyUrl" ref="audioReplyRef" class="audio-reply" controls :src="resolvedAudioReplyUrl"></audio>
+			<audio
+				v-if="resolvedAudioReplyUrl"
+				ref="audioReplyRef"
+				class="audio-reply"
+				controls
+				:src="resolvedAudioReplyUrl"
+			></audio>
 
 			<div v-if="!isEditing" :class="['message-actions', { 'message-actions--open': areActionsOpen }]">
 				<button
@@ -231,15 +235,18 @@ const escapeHtml = (value: string) =>
 const renderPlainText = (value: string) => escapeHtml(value).replaceAll('\n', '<br>')
 const looksLikeMarkdown = (message: Message) => message.role === 'assistant' && MARKDOWN_PATTERN.test(message.content)
 
-const props = withDefaults(defineProps<{
-	message: Message
-	index?: number
-	showLimits?: boolean
-	actionsDisabled?: boolean
-}>(), {
-	index: -1,
-	actionsDisabled: false,
-})
+const props = withDefaults(
+	defineProps<{
+		message: Message
+		index?: number
+		showLimits?: boolean
+		actionsDisabled?: boolean
+	}>(),
+	{
+		index: -1,
+		actionsDisabled: false,
+	},
+)
 
 const emit = defineEmits<{
 	(e: 'edit-message', payload: { index: number; content: string }): void
@@ -307,7 +314,9 @@ const copyTitle = computed(() => (copyStatus.value === 'copied' ? 'Скопир�
 const copyAriaLabel = computed(() => (copyStatus.value === 'copied' ? 'Сообщение скопировано' : 'Копировать сообщение'))
 
 const resendTitle = computed(() => (resendStatus.value === 'sent' ? 'Отправлено заново' : 'Отправить заново'))
-const resendAriaLabel = computed(() => (resendStatus.value === 'sent' ? 'Сообщение отправлено заново' : 'Отправить сообщение заново'))
+const resendAriaLabel = computed(() =>
+	resendStatus.value === 'sent' ? 'Сообщение отправлено заново' : 'Отправить сообщение заново',
+)
 
 const canConfirmEdit = computed(() => {
 	const normalized = editText.value.trim()
@@ -441,3 +450,8 @@ onBeforeUnmount(() => {
 	if (resendStatusTimer) window.clearTimeout(resendStatusTimer)
 })
 </script>
+<style scoped>
+.meta-row .source-list {
+	display: none;
+}
+</style>
