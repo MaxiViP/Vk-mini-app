@@ -450,8 +450,3 @@ onBeforeUnmount(() => {
 	if (resendStatusTimer) window.clearTimeout(resendStatusTimer)
 })
 </script>
-<style scoped>
-.meta-row .source-list {
-	display: none;
-}
-</style>
