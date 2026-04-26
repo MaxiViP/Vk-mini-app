@@ -223,11 +223,7 @@ const buildAiMemoryOnlyRequestMessage = ({ userMemory, message }) => {
 		return normalizedMessage
 	}
 
-	return `ИНСТРУКЦИЯ:
-${normalizedUserMemory}
-
-ВОПРОС:
-${normalizedMessage}`
+	return `ИНСТРУКЦИЯ:\n${normalizedUserMemory}\n\nВОПРОС:\n${normalizedMessage}`
 }
 
 const buildAiRequestMessageWithLocalContext = ({ userMemory, sessionContext, historyRows, message }) => {
@@ -301,7 +297,6 @@ ${normalizedMessage}`,
 
 	return prompt
 }
-
 const getCachedAiMemory = async userId => {
 	const key = String(userId)
 	const now = Date.now()
@@ -784,11 +779,14 @@ export const aiService = {
 						message: normalizedUserMessage,
 					})
 
+		const externalConversationId = `stateless-${crypto.randomUUID()}`
+
 		console.log('[ai-context] sendChat:start', {
 			userId: String(userId),
 			mode: chatMode,
 			promptMode,
 			localConversationId: resolvedConversationId,
+			externalConversationId,
 			localHistoryMessages: localHistoryRows.length,
 			userMemoryLength: normalizedUserMemory.length,
 			sessionContextLength: normalizedSessionContext.length,
@@ -796,9 +794,10 @@ export const aiService = {
 		})
 
 		aiServiceLogger.debug('Dispatching AI chat to external backend with local context', {
-			externalEndpoint: '/api/chat/simple',
+			externalEndpoint: chatMode === 'simple' ? '/api/chat/simple' : '/api/chat',
 			promptMode,
 			localConversationId: resolvedConversationId,
+			externalConversationId,
 			messageLength: requestMessage.length,
 			localHistoryMessages: localHistoryRows.length,
 			userMemoryLength: normalizedUserMemory.length,
@@ -806,12 +805,21 @@ export const aiService = {
 		})
 
 		try {
-			response = await aiClient.simpleChat({
-				message: requestMessage,
-			})
+			if (chatMode === 'simple') {
+				response = await aiClient.simpleChat({
+					message: requestMessage,
+				})
+			} else {
+				response = await aiClient.chat({
+					userId: toExternalUserId(userId),
+					conversationId: externalConversationId,
+					message: requestMessage,
+				})
+			}
 
 			console.log('[ai-context] sendChat:external_response', {
 				localConversationId: resolvedConversationId,
+				externalConversationId,
 				hasReply: Boolean(response?.reply),
 				replyLength: String(response?.reply || '').length,
 				externalMessageCount: response?.message_count ?? null,
@@ -819,6 +827,7 @@ export const aiService = {
 		} catch (error) {
 			console.error('[ai-context] sendChat:external_error', {
 				localConversationId: resolvedConversationId,
+				externalConversationId,
 				message: error?.message || 'AI request failed',
 				code: error?.details?.code || error?.code || null,
 				upstreamStatus: error?.details?.upstreamStatus || null,
@@ -837,6 +846,7 @@ export const aiService = {
 					upstreamStatus: error?.details?.upstreamStatus || null,
 					upstreamMessage: error?.details?.upstreamMessage || error?.message || null,
 					localConversationId: resolvedConversationId,
+					externalConversationId,
 				},
 			})
 			throw error
@@ -856,6 +866,7 @@ export const aiService = {
 				transcript: response?.transcript || null,
 				message_count: response?.message_count ?? null,
 				localConversationId: resolvedConversationId,
+				externalConversationId,
 				promptMode,
 				localHistoryMessages: localHistoryRows.length,
 			},
@@ -869,6 +880,7 @@ export const aiService = {
 
 		console.log('[ai-context] sendChat:done', {
 			localConversationId: resolvedConversationId,
+			externalConversationId,
 			savedToLocalDb: true,
 		})
 
@@ -877,7 +889,7 @@ export const aiService = {
 			user_id: response?.user_id || toExternalUserId(userId),
 			conversation_id: resolvedConversationId,
 			local_conversation_id: resolvedConversationId,
-			external_conversation_id: null,
+			external_conversation_id: externalConversationId,
 		}
 	},
 
@@ -895,7 +907,7 @@ export const aiService = {
 		})
 
 		const response = await aiClient.uploadFile({
-			userId: String(userId),
+			userId: toExternalUserId(userId),
 			conversationId: resolvedConversationId,
 			file,
 		})
@@ -938,7 +950,7 @@ export const aiService = {
 		})
 
 		const response = await aiClient.voice({
-			userId: String(userId),
+			userId: toExternalUserId(userId),
 			conversationId: resolvedConversationId,
 			file,
 		})
