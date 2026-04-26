@@ -8,7 +8,7 @@
 							<h3>Контекст диалога</h3>
 							<p>{{ chat.backendLabel }}</p>
 						</div>
-						<button class="context-close" @click="close" type="button">×</button>
+						<button class="context-close" @click="close" type="button">✕</button>
 					</div>
 
 					<div class="context-body">
@@ -50,8 +50,8 @@
 						<section class="context-section">
 							<h4>Память AI</h4>
 							<label class="context-label" for="user-memory-textarea">
-								Память AI используется во всех AI-чатах. Сюда можно сохранить постоянные инструкции:
-								как отвечать, что учитывать о вас и какой стиль держать.
+								Память AI используется во всех AI-чатах. Сюда можно сохранить постоянные инструкции: как отвечать, что
+								учитывать о вас и какой стиль держать.
 							</label>
 
 							<div class="context-presets">
@@ -74,7 +74,7 @@
 								id="user-memory-textarea"
 								v-model="userMemory"
 								class="context-textarea"
-								placeholder="Например: обращайся ко мне на ты, отвечай по делу, учитывай, что я backend-разработчик..."
+								placeholder="Например: обращайся ко мне на вы, отвечай по делу, учитывай, что я требовательный заказчик..."
 								rows="5"
 								:maxlength="USER_MEMORY_MAX_LENGTH"
 							></textarea>
@@ -120,7 +120,7 @@
 								id="session-context-textarea"
 								v-model="sessionContext"
 								class="context-textarea"
-								placeholder="Например: отвечай кратко, учитывай, что я разработчик..."
+								placeholder="Например: отвечай кратко, или в стихах на 5 строчек"
 								rows="5"
 								:maxlength="SESSION_CONTEXT_MAX_LENGTH"
 							></textarea>
@@ -135,9 +135,7 @@
 									Применить контекст
 								</button>
 
-								<button class="context-inline-btn" type="button" @click="clearSessionContext">
-									Очистить контекст
-								</button>
+								<button class="context-inline-btn" type="button" @click="clearSessionContext">Очистить контекст</button>
 							</div>
 
 							<p class="context-hint">
@@ -231,11 +229,13 @@ const userMemoryPresets = [
 	},
 	{
 		label: 'Юрист',
-		value: 'Отвечай как практикующий юрист: структурируй ответ по нормам, рискам, вариантам действий и ограничениям. Если вопрос зависит от юрисдикции или документов, сначала укажи это и перечисли, что нужно уточнить.',
+		value:
+			'Отвечай как практикующий юрист: структурируй ответ по нормам, рискам, вариантам действий и ограничениям. Если вопрос зависит от юрисдикции или документов, сначала укажи это и перечисли, что нужно уточнить.',
 	},
 	{
 		label: 'Экономист',
-		value: 'Отвечай как экономист: опирайся на причинно-следственные связи, цифры, допущения, сценарии и метрики. Показывай, какие факторы влияют на результат, и где нужны дополнительные данные для корректного вывода.',
+		value:
+			'Отвечай как экономист: опирайся на причинно-следственные связи, цифры, допущения, сценарии и метрики. Показывай, какие факторы влияют на результат, и где нужны дополнительные данные для корректного вывода.',
 	},
 	{
 		label: 'Маркетолог',
@@ -243,15 +243,18 @@ const userMemoryPresets = [
 	},
 	{
 		label: 'Копирайтер',
-		value: 'Пиши ясно, живо и убедительно. Предлагай сильные формулировки, заголовки и несколько стилистических вариантов.',
+		value:
+			'Пиши ясно, живо и убедительно. Предлагай сильные формулировки, заголовки и несколько стилистических вариантов.',
 	},
 	{
 		label: 'Программист',
-		value: 'Отвечай как сильный программист и техлид: сначала проясняй требования, затем предлагай минимально-инвазивное решение, отмечай риски, граничные случаи и давай короткие примеры кода или структуры данных, если это помогает.',
+		value:
+			'Отвечай как сильный программист и техлид: сначала проясняй требования, затем предлагай минимально-инвазивное решение, отмечай риски, граничные случаи и давай короткие примеры кода или структуры данных, если это помогает.',
 	},
 	{
 		label: 'Агроном',
-		value: 'Отвечай как агроном-практик: учитывай культуру, фазу роста, почву, климат, влагу, питание и риски заболеваний. Давай прикладные рекомендации по диагностике, уходу и очередности действий.',
+		value:
+			'Отвечай как агроном-практик: учитывай культуру, фазу роста, почву, климат, влагу, питание и риски заболеваний. Давай прикладные рекомендации по диагностике, уходу и очередности действий.',
 	},
 ]
 
@@ -269,7 +272,8 @@ const isHydratingUserMemory = ref(false)
 
 const normalizeLimitedText = (value: string, maxLength: number) => String(value || '').slice(0, maxLength)
 const normalizePersistedUserMemory = (value: string) => normalizeLimitedText(value, USER_MEMORY_MAX_LENGTH).trim()
-const normalizePersistedSessionContext = (value: string) => normalizeLimitedText(value, SESSION_CONTEXT_MAX_LENGTH).trim()
+const normalizePersistedSessionContext = (value: string) =>
+	normalizeLimitedText(value, SESSION_CONTEXT_MAX_LENGTH).trim()
 
 const isUserMemoryDirty = computed(() => normalizePersistedUserMemory(userMemory.value) !== savedUserMemory.value)
 

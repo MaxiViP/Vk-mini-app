@@ -24,8 +24,8 @@
 
 .modal-close {
 	position: absolute;
-	top: 0;
-	right: 0;
+	top: 16px;
+	right: 23px;
 	transform: translate(50%, -50%);
 	width: 32px;
 	height: 32px;
@@ -210,11 +210,11 @@
 		padding-bottom: max(8px, env(safe-area-inset-bottom));
 	}
 
-	.modal-close {
+	/* .modal-close {
 		top: 8px;
 		right: 8px;
 		transform: none;
-	}
+	} */
 
 	.modal-container--recharge {
 		padding: 18px 16px;

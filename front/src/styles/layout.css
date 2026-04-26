@@ -1,79 +1,95 @@
+/* база */
 body {
 	font-family: var(--font-sans);
 	background: var(--color-bg);
 	color: var(--color-text);
+
 	min-height: 100vh;
 	min-height: var(--viewport-height);
+
+	overscroll-behavior-y: none;
 }
 
+/* контейнер */
 .app-container {
 	max-width: var(--container-width);
 	margin: 0 auto;
 	width: 100%;
+
 	min-height: 100vh;
 	min-height: var(--viewport-height);
+
 	display: flex;
 	flex-direction: column;
 	gap: var(--section-gap);
-	padding: max(12px, env(safe-area-inset-top)) var(--app-gutter) calc(120px + var(--input-bottom-safe));
+
+	padding: 0 var(--app-gutter) calc(120px + var(--input-bottom-safe));
+
 	box-sizing: border-box;
 }
 
+/* top bar */
 .top-bar {
-	display: flex;
-	justify-content: space-between;
+	position: sticky;
+	top: 0;
+	z-index: 20;
+
+	display: grid;
+	grid-template-columns: auto 1fr auto;
 	align-items: center;
-	align-content: flex-start;
-	gap: 10px 14px;
-	flex-wrap: wrap;
-	min-height: calc(var(--top-bar-height) + 12px);
-	margin: 0;
-	padding: 6px 0 2px;
+	gap: 8px;
+
+	min-height: var(--top-bar-height);
+
+	padding: max(8px, env(safe-area-inset-top)) 0 8px;
+
+	background: linear-gradient(to bottom, rgba(33, 33, 33, 0.96) 72%, rgba(33, 33, 33, 0));
+
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
 }
 
 .top-bar > * {
 	min-width: 0;
 }
 
-.top-bar-left {
+.top-bar-actions {
 	display: flex;
+	align-items: center;
 	justify-content: flex-end;
 	gap: 8px;
-	flex-wrap: wrap;
-	align-items: center;
-	min-width: 0;
-	flex: 1 1 240px;
 }
-.top-bar-right {
+
+/* горизонтальное меню */
+.top-bar-nav {
+	grid-column: 1 / -1;
+
 	display: flex;
-	justify-self: flex-end;
-	gap: 8px;
-	flex-wrap: wrap;
 	align-items: center;
-	min-width: 0;
-	flex: 1 1 240px;
+	gap: 8px;
+
+	overflow-x: auto;
+	white-space: nowrap;
+
+	-webkit-overflow-scrolling: touch;
+	overscroll-behavior-inline: contain;
+
+	scrollbar-width: none;
 }
 
-.top-bar-left .pill-btn {
-	min-width: 0;
+.top-bar-nav::-webkit-scrollbar {
+	display: none;
 }
 
-.top-bar > .pill-btn:last-child {
-	flex: 0 1 auto;
+.top-bar-nav .pill-btn {
+	flex: 0 0 auto;
 }
 
-.top-bar-right {
-	justify-content: flex-end;
-}
-
+/* адаптив */
 @media (max-width: 768px) {
 	.app-container {
 		padding-bottom: calc(132px + var(--input-bottom-safe));
 	}
-
-	/* .top-bar {
-		align-items: stretch;
-	} */
 }
 
 @media (max-width: 560px) {
@@ -82,23 +98,19 @@ body {
 		padding-bottom: calc(148px + var(--input-bottom-safe));
 	}
 
-	/* .top-bar {
-		display: grid;
-		grid-template-columns: 1fr auto;
-		align-items: center;
+	.top-bar-nav {
+		margin-inline: -12px;
+		padding-inline: 12px;
 	}
-
-	.top-bar-left {
-		flex: initial;
-	} */
 }
 
 @media (max-width: 420px) {
 	.top-bar {
-		gap: 5px 2px;
+		gap: 6px;
 	}
 
-	.top-bar-left {
-		gap: 4px;
+	.top-bar-actions,
+	.top-bar-nav {
+		gap: 6px;
 	}
 }

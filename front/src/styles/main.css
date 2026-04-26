@@ -4,5 +4,6 @@
 @import './components.css';
 @import './modal.css';
 @import '../components/chat/chat.css';
+@import '../components/chat/message.css';
 @import '../components/profile/profile.css';
 @import '../components/auth/auth.css';

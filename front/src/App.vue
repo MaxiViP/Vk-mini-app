@@ -1,11 +1,16 @@
 <template>
 	<div :class="['app-container', chatModeClass]">
-		<div class="top-bar">
+		<header class="top-bar">
 			<AILogo />
-			<button v-if="userStore.user?.isAdmin" class="pill-btn" @click="showAdmin = true">Админка</button>
- 
-			<ProfileTrigger @click="showProfile = true" />
-			<div class="top-bar-left">
+
+			<div class="top-bar-spacer" aria-hidden="true"></div>
+
+			<div class="top-bar-actions">
+				<button v-if="userStore.user?.isAdmin" class="pill-btn" @click="showAdmin = true">Админка</button>
+				<ProfileTrigger @click="showProfile = true" />
+			</div>
+
+			<nav class="top-bar-nav" aria-label="Действия чата">
 				<button
 					v-if="!isVkAiBackend"
 					:class="['pill-btn', { 'pill-btn--active': isModelSelectorOpen }]"
@@ -17,9 +22,8 @@
 					Контекст
 				</button>
 				<button class="pill-btn" @click="showNotes = true">Заметки</button>
-			</div>
-			<!-- <div class="top-bar-right"></div> -->
-		</div>
+			</nav>
+		</header>
 
 		<ModelSelector v-if="!isVkAiBackend && isModelSelectorOpen" />
 		<Chat />
@@ -29,7 +33,7 @@
 		<Transition name="modal">
 			<div v-if="showProfile" class="modal-overlay" @click.self="showProfile = false">
 				<div class="modal-container">
-					<button class="modal-close" @click="showProfile = false">x</button>
+					<button class="modal-close" @click="showProfile = false">✕</button>
 					<Profile />
 				</div>
 			</div>
@@ -40,7 +44,7 @@
 		<Transition name="modal">
 			<div v-if="showAdmin" class="modal-overlay" @click.self="showAdmin = false">
 				<div class="modal-container">
-					<button class="modal-close" @click="showAdmin = false">x</button>
+					<button class="modal-close" @click="showAdmin = false">✕</button>
 					<AdminPanel />
 				</div>
 			</div>
@@ -202,6 +206,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+
 .app-container {
 	--mode-accent: #6ea9ff;
 	--mode-accent-soft: rgba(110, 169, 255, 0.16);
@@ -241,5 +246,32 @@ onUnmounted(() => {
 		radial-gradient(circle at top right, rgba(0, 255, 194, 0.2), transparent 34%),
 		radial-gradient(circle at bottom left, rgba(63, 114, 255, 0.18), transparent 30%),
 		linear-gradient(180deg, rgba(6, 24, 28, 0.98) 0%, rgba(4, 12, 18, 1) 100%);
+}
+
+@media (max-width: 768px) {
+	.top-bar {
+		gap: 7px;
+	}
+}
+
+@media (max-width: 560px) {
+	.top-bar-nav {
+		margin-inline: -12px;
+		padding-inline: 12px;
+	}
+}
+
+@media (max-width: 420px) {
+	.top-bar {
+		gap: 6px;
+	}
+
+	.top-bar-actions {
+		gap: 6px;
+	}
+
+	.top-bar-nav {
+		gap: 6px;
+	}
 }
 </style>

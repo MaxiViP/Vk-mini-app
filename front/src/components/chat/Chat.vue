@@ -28,11 +28,11 @@
 				<div class="ai-status">
 					<button
 						type="button"
-						class="context-action"
+						class="context-action_toggle"
 						:aria-expanded="isContextPrimaryOpen"
 						@click="toggleContextPrimary"
 					>
-						{{ isContextPrimaryOpen ? 'Скрыть' : 'Данные' }}
+						{{ isContextPrimaryOpen ? '⬆️' : '⬇️' }}
 					</button>
 					<span :class="['context-status', `context-status--${chat.backendStatus}`]">
 						{{ backendStatusLabel }}
@@ -97,7 +97,17 @@
 			</div>
 			<div v-if="bottomSpacerHeight > 0" aria-hidden="true" :style="{ height: `${bottomSpacerHeight}px` }"></div>
 			<div v-if="chat.isLoading" class="message assistant">
-				<div class="avatar">🤖</div>
+				<div class="avatar avatar--assistant" aria-hidden="true">
+					<svg class="avatar__icon avatar__icon--assistant" viewBox="0 0 24 24">
+						<rect x="5" y="7" width="14" height="11" rx="4" />
+						<path d="M12 3v4" />
+						<path d="M8.5 12h.01" />
+						<path d="M15.5 12h.01" />
+						<path d="M9.5 15.5c1.35 1 3.65 1 5 0" />
+						<path d="M4 12h1" />
+						<path d="M19 12h1" />
+					</svg>
+				</div>
 				<div :class="['bubble', 'typing-indicator', { 'typing-indicator--ai': chat.isAiMode }]">
 					<template v-if="chat.isAiMode">
 						<span class="typing-indicator__label">{{ aiTypingLabel }}</span>

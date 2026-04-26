@@ -3,7 +3,7 @@
 		<Transition name="modal">
 			<div v-if="visible" class="modal-overlay" @click.self="close">
 				<div class="modal-container modal-container--recharge">
-					<button class="modal-close" @click="close">×</button>
+					<button class="modal-close" @click="close">✕</button>
 
 					<div class="modal-content" v-if="step === 'form'">
 						<h3>Пополнение баланса</h3>
@@ -19,12 +19,7 @@
 							@keyup.enter="submit"
 						/>
 
-						<input
-							v-model.trim="promoCode"
-							type="text"
-							placeholder="Промокод"
-							class="amount-input promo-code-input"
-						/>
+						<input v-model.trim="promoCode" type="text" placeholder="Промокод" class="amount-input promo-code-input" />
 
 						<div class="modal-buttons">
 							<button @click="loadPreview" class="cancel-btn" :disabled="!isValid || isLoading">
@@ -36,9 +31,15 @@
 						</div>
 
 						<div v-if="preview" class="recharge-preview">
-							<p>Сумма пополнения: <b>{{ formatMoneyMinor(preview.baseAmountMinor) }} ₽</b></p>
-							<p>Бонус: <b>{{ formatMoneyMinor(preview.bonusMinor) }} ₽</b></p>
-							<p>Будет зачислено: <b>{{ formatMoneyMinor(preview.creditedAmountMinor) }} ₽</b></p>
+							<p>
+								Сумма пополнения: <b>{{ formatMoneyMinor(preview.baseAmountMinor) }} ₽</b>
+							</p>
+							<p>
+								Бонус: <b>{{ formatMoneyMinor(preview.bonusMinor) }} ₽</b>
+							</p>
+							<p>
+								Будет зачислено: <b>{{ formatMoneyMinor(preview.creditedAmountMinor) }} ₽</b>
+							</p>
 							<p v-if="preview.appliedDiscount" class="recharge-preview__discount">
 								Применено: {{ preview.appliedDiscount.name }}
 							</p>
