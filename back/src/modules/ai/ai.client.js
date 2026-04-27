@@ -299,7 +299,7 @@ export const aiClient = {
 		formData.set('user_id', userId)
 		formData.set('conversation_id', conversationId)
 		formData.set('file', file, file.name || 'upload.bin')
-		return requestFormData('/api/upload', formData)
+		return requestFormData('/api/files/upload', formData)
 	},
 
 	voice({ userId, conversationId, file }) {
@@ -311,14 +311,20 @@ export const aiClient = {
 	},
 
 	getConversation({ userId, conversationId }) {
-		void userId
-		return requestJson(`/api/conversations/${encodeURIComponent(conversationId)}`)
+		return requestJson(`/api/conversations/${encodeURIComponent(conversationId)}`, {
+			method: 'GET',
+			query: {
+				user_id: userId,
+			},
+		})
 	},
 
 	resetConversation({ userId, conversationId }) {
-		void userId
 		return requestJson(`/api/conversations/${encodeURIComponent(conversationId)}/reset`, {
 			method: 'POST',
+			query: {
+				user_id: userId,
+			},
 		})
 	},
 }
