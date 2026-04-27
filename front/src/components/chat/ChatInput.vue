@@ -1,6 +1,34 @@
 <template>
 	<div class="input">
 		<ScrollBtn />
+		<div class="input-stack">
+			<div v-if="pendingFile || pendingVoiceUrl || voiceError" class="input-preview">
+				<div v-if="pendingFile" class="input-preview__item">
+					<span class="input-preview__label">File</span>
+					<strong>{{ pendingFile.name }}</strong>
+					<small>{{ formatBytes(pendingFile.size) }}</small>
+					<button type="button" class="input-preview__button" :disabled="uploading || isGenerating" @click="confirmFileUpload">
+						Send
+					</button>
+					<button type="button" class="input-preview__button" :disabled="uploading || isGenerating" @click="clearPendingFile">
+						Cancel
+					</button>
+				</div>
+
+				<div v-if="pendingVoiceUrl" class="input-preview__item">
+					<span class="input-preview__label">Voice</span>
+					<audio class="input-preview__audio" controls :src="pendingVoiceUrl"></audio>
+					<button type="button" class="input-preview__button" :disabled="isGenerating" @click="confirmVoiceSend">
+						Send
+					</button>
+					<button type="button" class="input-preview__button" :disabled="isGenerating" @click="clearPendingVoice">
+						Cancel
+					</button>
+				</div>
+
+				<p v-if="voiceError" class="input-preview__error">{{ voiceError }}</p>
+			</div>
+
 		<div :class="['input-inner', { 'input-inner--ai': chat.isAiMode }]">
 			<button
 				:class="['attach-btn', { 'attach-btn--ai': chat.isAiMode }]"
@@ -65,6 +93,7 @@
 				</button>
 			</div>
 		</div>
+		</div>
 	</div>
 </template>
 
@@ -99,6 +128,10 @@ const voiceButtonRef = ref<HTMLButtonElement | null>(null)
 const isRecording = ref(false)
 const isDeleteHover = ref(false)
 const showVoiceTrigger = ref(false)
+const pendingFile = ref<File | null>(null)
+const pendingVoice = ref<File | null>(null)
+const pendingVoiceUrl = ref('')
+const voiceError = ref('')
 
 let mediaRecorder: MediaRecorder | null = null
 let mediaStream: MediaStream | null = null
@@ -112,6 +145,43 @@ const sendButtonDisabled = computed(() => {
 	if (props.isGenerating) return false
 	return !!props.disabled || (!text.value.trim() && !showVoiceTrigger.value)
 })
+
+const formatBytes = (value: number) => {
+	if (!Number.isFinite(value) || value <= 0) return '0 B'
+	if (value < 1024) return `${value} B`
+	if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+	return `${(value / 1024 / 1024).toFixed(1)} MB`
+}
+
+const clearPendingFile = () => {
+	pendingFile.value = null
+}
+
+const revokePendingVoiceUrl = () => {
+	if (!pendingVoiceUrl.value) return
+	URL.revokeObjectURL(pendingVoiceUrl.value)
+	pendingVoiceUrl.value = ''
+}
+
+const clearPendingVoice = () => {
+	revokePendingVoiceUrl()
+	pendingVoice.value = null
+	voiceError.value = ''
+}
+
+const confirmFileUpload = () => {
+	if (!pendingFile.value || props.uploading || props.isGenerating) return
+	const file = pendingFile.value
+	pendingFile.value = null
+	emit('upload-file', file)
+}
+
+const confirmVoiceSend = () => {
+	if (!pendingVoice.value || props.isGenerating) return
+	const file = pendingVoice.value
+	clearPendingVoice()
+	emit('voice-recorded', file)
+}
 
 const clearLongPressTimer = () => {
 	if (longPressTimer) {
@@ -193,7 +263,7 @@ const handleFileSelected = (event: Event) => {
 	const input = event.target as HTMLInputElement
 	const file = input.files?.[0]
 	if (!file) return
-	emit('upload-file', file)
+	pendingFile.value = file
 	input.value = ''
 }
 
@@ -252,6 +322,7 @@ const toggleVoiceRecording = async () => {
 		recordedChunks = []
 		discardRecording = false
 		isDeleteHover.value = false
+		voiceError.value = ''
 		mediaRecorder = new MediaRecorder(mediaStream)
 
 		mediaRecorder.ondataavailable = event => {
@@ -271,7 +342,9 @@ const toggleVoiceRecording = async () => {
 			const extension = blob.type.includes('ogg') ? 'ogg' : 'webm'
 			const file = new File([blob], `voice-${Date.now()}.${extension}`, { type: blob.type || 'audio/webm' })
 
-			emit('voice-recorded', file)
+			clearPendingVoice()
+			pendingVoice.value = file
+			pendingVoiceUrl.value = URL.createObjectURL(file)
 
 			recordedChunks = []
 			isRecording.value = false
@@ -285,7 +358,8 @@ const toggleVoiceRecording = async () => {
 			isDeleteHover.value = false
 			stopRecordingTracks()
 			scheduleVoiceModeHide()
-			emit('voice-error', 'Не удалось записать голосовое сообщение')
+			voiceError.value = 'Не удалось записать голосовое сообщение'
+			emit('voice-error', voiceError.value)
 		}
 
 		mediaRecorder.start()
@@ -296,13 +370,15 @@ const toggleVoiceRecording = async () => {
 		isDeleteHover.value = false
 		stopRecordingTracks()
 		scheduleVoiceModeHide()
-		emit('voice-error', (error as Error).message || 'Voice capture failed')
+		voiceError.value = (error as Error).message || 'Voice capture failed'
+		emit('voice-error', voiceError.value)
 	}
 }
 
 onBeforeUnmount(() => {
 	clearLongPressTimer()
 	clearVoiceModeTimer()
+	clearPendingVoice()
 	stopRecordingTracks()
 })
 </script>

@@ -212,6 +212,18 @@
 	border-color: var(--mode-accent-border);
 }
 
+.chat .context-chip--transfer {
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--color-text);
+	border-color: rgba(255, 255, 255, 0.1);
+}
+
+.chat .context-chip--error {
+	background: rgba(255, 107, 107, 0.14);
+	color: #ff9b9b;
+	border-color: rgba(255, 107, 107, 0.22);
+}
+
 .chat .context-action {
 	border: 1px solid rgba(255, 255, 255, 0.12);
 	background: rgba(255, 255, 255, 0.04);
@@ -314,6 +326,81 @@
 	border-top: none;
 	z-index: 30;
 	box-sizing: border-box;
+}
+
+.chat .input-stack {
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.chat .input-preview {
+	width: 100%;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px;
+	border-radius: 16px;
+	background: rgba(24, 27, 34, 0.96);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	box-shadow: 0 12px 34px rgba(0, 0, 0, 0.24);
+	box-sizing: border-box;
+}
+
+.chat .input-preview__item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+	color: var(--color-text-soft);
+	font-size: 12px;
+}
+
+.chat .input-preview__item strong {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--color-text);
+}
+
+.chat .input-preview__label,
+.chat .input-preview__button {
+	flex: 0 0 auto;
+	border-radius: 999px;
+}
+
+.chat .input-preview__label {
+	padding: 4px 8px;
+	background: var(--mode-accent-soft);
+	color: var(--mode-accent-strong);
+}
+
+.chat .input-preview__button {
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	background: rgba(255, 255, 255, 0.06);
+	color: var(--color-text);
+	padding: 6px 10px;
+	cursor: pointer;
+}
+
+.chat .input-preview__button:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.chat .input-preview__audio {
+	flex: 1 1 160px;
+	min-width: 120px;
+	height: 32px;
+	accent-color: var(--mode-accent);
+}
+
+.chat .input-preview__error {
+	margin: 0;
+	color: #ff9b9b;
+	font-size: 12px;
 }
 
 .chat .input-inner {
@@ -739,6 +826,18 @@
 
 .context-panel .hidden-file-input {
 	display: none;
+}
+
+.context-panel .context-upload-preview {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.context-panel .context-audio-preview {
+	width: 100%;
+	margin-top: 8px;
+	accent-color: var(--mode-accent);
 }
 
 .context-panel .context-card,
@@ -1210,5 +1309,9 @@
 	.chat .input-inner {
 		padding: 8px;
 		border-radius: 20px;
+	}
+
+	.chat .input-preview__item {
+		flex-wrap: wrap;
 	}
 }

@@ -124,6 +124,16 @@ const buildUpstreamError = async response => {
 		requestId: payload?.request_id || crypto.randomUUID(),
 	})
 
+	if (response.status === 401 || response.status === 403) {
+		return new AppError('AI backend authentication failed', 503, {
+			code: 'AI_BACKEND_AUTH_FAILED',
+			upstreamStatus: response.status,
+			upstreamMessage,
+			upstreamCode,
+			reason: 'upstream_auth',
+		})
+	}
+
 	if (response.status >= 500) {
 		return new AppError('AI backend is unavailable', 503, {
 			code: 'AI_BACKEND_UNAVAILABLE',

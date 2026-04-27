@@ -22,6 +22,10 @@ const EXTERNAL_AI_BUSINESS_CODES = new Set([
 	'AI_LIMIT_REACHED',
 	'AI_FEATURE_DISABLED',
 	'AI_BACKEND_UNAVAILABLE',
+	'AI_FILE_TOO_LARGE',
+	'AI_FILE_TYPE_UNSUPPORTED',
+	'AI_AUDIO_TOO_LARGE',
+	'AI_AUDIO_TYPE_UNSUPPORTED',
 ])
 
 const toHistoryItem = (message: Message): ChatHistoryItem => ({ role: message.role, content: message.content })
@@ -32,6 +36,17 @@ const toWorkspaceMessage = (message: Message): WorkspaceMessage => ({
 })
 
 type ChatMode = 'core' | 'ai'
+type TransferState = {
+	status: 'idle' | 'uploading' | 'recording' | 'sending' | 'success' | 'error'
+	name: string
+	error: string
+}
+
+const createTransferState = (): TransferState => ({
+	status: 'idle',
+	name: '',
+	error: '',
+})
 
 const getStorageKey = (userId?: string, mode: ChatMode = 'core') => `${STORAGE_KEY_PREFIX}:${mode}:${userId || 'guest'}`
 const getAiSessionContextStorageKey = (userId?: string, conversationId?: string) =>
@@ -95,6 +110,16 @@ const toExternalAiError = (error: unknown) => {
 			return new Error('Эта AI-функция недоступна на текущем тарифе.')
 		case 'AI_BACKEND_UNAVAILABLE':
 			return new Error('VK AI backend временно недоступен.')
+		case 'AI_BACKEND_AUTH_FAILED':
+			return new Error('VK AI backend auth failed. Check server API key.')
+		case 'AI_FILE_TOO_LARGE':
+			return new Error('File is too large for AI upload.')
+		case 'AI_FILE_TYPE_UNSUPPORTED':
+			return new Error('File type is not supported for AI upload.')
+		case 'AI_AUDIO_TOO_LARGE':
+			return new Error('Voice message is too large.')
+		case 'AI_AUDIO_TYPE_UNSUPPORTED':
+			return new Error('Voice message type is not supported.')
 		default:
 			if (status === 401) return new Error('Требуется авторизация.')
 			return new Error(message)
@@ -113,6 +138,8 @@ export const useChatStore = defineStore('chat', () => {
 	const isLoading = ref(false)
 	const isHydrating = ref(false)
 	const isUploadingFile = ref(false)
+	const fileTransfer = ref<TransferState>(createTransferState())
+	const voiceTransfer = ref<TransferState>(createTransferState())
 	const backendStatus = ref<'idle' | 'online' | 'offline'>('idle')
 	const chatMode = ref<ChatMode>(localStorage.getItem(CHAT_MODE_STORAGE_KEY) === 'ai' ? 'ai' : 'core')
 	const conversationId = ref(localStorage.getItem(CONVERSATION_STORAGE_KEY) || createConversationId())
@@ -290,7 +317,9 @@ export const useChatStore = defineStore('chat', () => {
 		isHydrating.value = true
 
 		if (!userStore.token || !isLikelyJwt(userStore.token)) {
-			hydrateFromLocalStorage(userId)
+			setModeMessages('ai', [])
+			contextFiles.value = []
+			voiceRecords.value = []
 			backendStatus.value = 'idle'
 			isHydrating.value = false
 			return
@@ -314,8 +343,10 @@ export const useChatStore = defineStore('chat', () => {
 			localStorage.setItem(getStorageKey(userId, 'ai'), JSON.stringify(nextMessages))
 			backendStatus.value = 'online'
 		} catch (error) {
-			console.warn('[chat] hydrateExternalConversation:fallback_to_local', error)
-			hydrateFromLocalStorage(userId, 'ai')
+			console.warn('[chat] hydrateExternalConversation:external_failed', error)
+			setModeMessages('ai', [])
+			contextFiles.value = []
+			voiceRecords.value = []
 			backendStatus.value = shouldKeepExternalBackendOnline(error) ? 'online' : 'offline'
 		} finally {
 			isHydrating.value = false
@@ -421,16 +452,21 @@ export const useChatStore = defineStore('chat', () => {
 			contextFiles.value = []
 			voiceRecords.value = []
 			sourceHistory.value = []
+			fileTransfer.value = createTransferState()
+			voiceTransfer.value = createTransferState()
 
 			if (!userId) {
-				hydrateFromLocalStorage(undefined, chatMode.value)
 				if (isExternalBackend.value) {
 					await hydrateExternalConversation()
+				} else {
+					hydrateFromLocalStorage(undefined, chatMode.value)
 				}
 				return
 			}
 
-			hydrateFromLocalStorage(userId, chatMode.value)
+			if (!isExternalBackend.value) {
+				hydrateFromLocalStorage(userId, chatMode.value)
+			}
 			await syncWithServer()
 		},
 		{ immediate: true },
@@ -441,7 +477,7 @@ export const useChatStore = defineStore('chat', () => {
 		async token => {
 			console.log('[chat] watch:token', { hasToken: Boolean(token) })
 			if (isExternalBackend.value) {
-				await refreshExternalHealth()
+				await syncWithServer()
 				return
 			}
 			if (token && isLikelyJwt(token) && userStore.user?.vkId) {
@@ -496,6 +532,11 @@ export const useChatStore = defineStore('chat', () => {
 		}
 
 		isUploadingFile.value = true
+		fileTransfer.value = {
+			status: 'uploading',
+			name: file.name,
+			error: '',
+		}
 
 		try {
 			const result = await vkAiApi.uploadFile({
@@ -503,15 +544,28 @@ export const useChatStore = defineStore('chat', () => {
 				conversationId: conversationId.value,
 				file,
 			})
-			contextFiles.value = Array.from(new Set([...contextFiles.value, result.filename]))
-			addUserMessage(`Файл "${result.filename}" добавлен в контекст`, {
-				fileName: result.filename,
-				statusLabel: `Обработано: ${result.status}`,
+			const fileName = result.filename || file.name
+			contextFiles.value = Array.from(new Set([...contextFiles.value, fileName]))
+			fileTransfer.value = {
+				status: 'success',
+				name: fileName,
+				error: '',
+			}
+			addUserMessage(`Файл "${fileName}" добавлен в контекст`, {
+				fileName,
+				statusLabel: result.status ? `Обработано: ${result.status}` : 'Загружено',
 			})
 			backendStatus.value = 'online'
+			await userStore.loadAiAccess()
 		} catch (error) {
 			backendStatus.value = shouldKeepExternalBackendOnline(error) ? 'online' : 'offline'
-			throw toExternalAiError(error)
+			const externalError = toExternalAiError(error)
+			fileTransfer.value = {
+				status: 'error',
+				name: file.name,
+				error: externalError.message,
+			}
+			throw externalError
 		} finally {
 			isUploadingFile.value = false
 		}
@@ -538,6 +592,8 @@ export const useChatStore = defineStore('chat', () => {
 		contextFiles.value = []
 		voiceRecords.value = []
 		sourceHistory.value = []
+		fileTransfer.value = createTransferState()
+		voiceTransfer.value = createTransferState()
 		localStorage.removeItem(getStorageKey(userId, chatMode.value))
 	}
 
@@ -547,6 +603,11 @@ export const useChatStore = defineStore('chat', () => {
 		}
 
 		isLoading.value = true
+		voiceTransfer.value = {
+			status: 'sending',
+			name: audio.name,
+			error: '',
+		}
 
 		try {
 			const response = await vkAiApi.sendVoice({
@@ -556,6 +617,11 @@ export const useChatStore = defineStore('chat', () => {
 			})
 
 			voiceRecords.value = Array.from(new Set([...voiceRecords.value, audio.name]))
+			voiceTransfer.value = {
+				status: 'success',
+				name: audio.name,
+				error: '',
+			}
 			addUserMessage(response.transcript || 'Голосовое сообщение', {
 				transcript: response.transcript,
 				statusLabel: 'Voice message',
@@ -573,9 +639,16 @@ export const useChatStore = defineStore('chat', () => {
 				transcript: response.transcript,
 			})
 			backendStatus.value = 'online'
+			await userStore.loadAiAccess()
 		} catch (error) {
 			backendStatus.value = shouldKeepExternalBackendOnline(error) ? 'online' : 'offline'
-			throw toExternalAiError(error)
+			const externalError = toExternalAiError(error)
+			voiceTransfer.value = {
+				status: 'error',
+				name: audio.name,
+				error: externalError.message,
+			}
+			throw externalError
 		} finally {
 			isLoading.value = false
 		}
@@ -612,6 +685,7 @@ export const useChatStore = defineStore('chat', () => {
 					transcript: response.transcript,
 				})
 				backendStatus.value = 'online'
+				await userStore.loadAiAccess()
 				return
 			}
 
@@ -763,6 +837,8 @@ export const useChatStore = defineStore('chat', () => {
 		isLoading,
 		isHydrating,
 		isUploadingFile,
+		fileTransfer,
+		voiceTransfer,
 		isAiMode,
 		isExternalBackend,
 		backendStatus,

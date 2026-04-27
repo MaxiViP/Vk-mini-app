@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 
 import prisma from '../../db/prisma.js'
+import env from '../../config/env.js'
 import logger from '../../config/logger.js'
 import { AppError } from '../../shared/errors.js'
 import {
@@ -22,6 +23,29 @@ const AI_MEMORY_CACHE_TTL_MS = 0
 const AI_HISTORY_STORAGE_UNAVAILABLE = Symbol('AI_HISTORY_STORAGE_UNAVAILABLE')
 const aiMemoryCache = new Map()
 const aiServiceLogger = logger.createChild({ module: 'ai-service' })
+
+const FILE_UPLOAD_ALLOWED_MIME_TYPES = new Set([
+	'text/plain',
+	'text/csv',
+	'application/pdf',
+	'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+	'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+])
+
+const FILE_UPLOAD_ALLOWED_EXTENSIONS = new Set(['txt', 'csv', 'pdf', 'docx', 'xlsx'])
+
+const VOICE_ALLOWED_MIME_TYPES = new Set([
+	'audio/webm',
+	'audio/ogg',
+	'audio/mpeg',
+	'audio/mp3',
+	'audio/wav',
+	'audio/x-wav',
+	'audio/mp4',
+	'video/webm',
+])
+
+const VOICE_ALLOWED_EXTENSIONS = new Set(['webm', 'ogg', 'mp3', 'mpeg', 'wav', 'm4a', 'mp4'])
 
 const USAGE_MODELS = {
 	chat: 'chat',
@@ -210,6 +234,74 @@ const normalizeAiMessageContent = value => String(value || '').trim()
 const normalizeAiConversationTitle = value => {
 	const normalized = normalizeAiMessageContent(value).slice(0, AI_CONVERSATION_TITLE_MAX_LENGTH)
 	return normalized || null
+}
+const normalizeMimeType = value =>
+	String(value || '')
+		.split(';')[0]
+		.trim()
+		.toLowerCase()
+const getFileExtension = file => {
+	const name = String(file?.name || '')
+	const index = name.lastIndexOf('.')
+	return index >= 0 ? name.slice(index + 1).toLowerCase() : ''
+}
+
+const assertUploadSize = ({ file, maxBytes, code, message }) => {
+	const size = Number(file?.size || 0)
+	if (size <= maxBytes) return
+
+	throw new AppError(message, 413, {
+		code,
+		size,
+		maxBytes,
+	})
+}
+
+const assertUploadType = ({ file, mimeTypes, extensions, code, message }) => {
+	const mimeType = normalizeMimeType(file?.type)
+	const extension = getFileExtension(file)
+	const hasAllowedMimeType = mimeType && mimeTypes.has(mimeType)
+	const hasAllowedExtension = extension && extensions.has(extension)
+
+	if (hasAllowedMimeType || hasAllowedExtension) return
+
+	throw new AppError(message, 415, {
+		code,
+		mimeType: mimeType || null,
+		extension: extension || null,
+	})
+}
+
+const assertContextFileAllowed = file => {
+	assertUploadSize({
+		file,
+		maxBytes: Number(env.vkAiMaxFileBytes || 0),
+		code: 'AI_FILE_TOO_LARGE',
+		message: 'AI file is too large',
+	})
+	assertUploadType({
+		file,
+		mimeTypes: FILE_UPLOAD_ALLOWED_MIME_TYPES,
+		extensions: FILE_UPLOAD_ALLOWED_EXTENSIONS,
+		code: 'AI_FILE_TYPE_UNSUPPORTED',
+		message: 'AI file type is unsupported',
+	})
+}
+
+const assertVoiceFileAllowed = file => {
+	assertUploadSize({
+		file,
+		maxBytes: Number(env.vkAiMaxAudioBytes || 0),
+		code: 'AI_AUDIO_TOO_LARGE',
+		message: 'AI audio file is too large',
+	})
+	assertUploadType({
+		file,
+		mimeTypes: VOICE_ALLOWED_MIME_TYPES,
+		extensions: VOICE_ALLOWED_EXTENSIONS,
+		code: 'AI_AUDIO_TYPE_UNSUPPORTED',
+		message: 'AI audio type is unsupported',
+	})
 }
 
 const resolveConversationKey = ({ userId, conversationId, mode = 'context' }) =>
@@ -727,6 +819,34 @@ export const aiService = {
 		const normalizedSessionContext =
 			chatMode === 'context' ? normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH) : ''
 
+		aiServiceLogger.debug('Dispatching AI chat to external backend', {
+			externalEndpoint: '/api/chat',
+			conversationId: resolvedConversationId,
+			messageLength: normalizedUserMessage.length,
+			userMemoryLength: normalizedUserMemory.length,
+			sessionContextLength: normalizedSessionContext.length,
+		})
+
+		const externalResponse = await aiClient.chat({
+			userId: toExternalUserId(userId),
+			conversationId: resolvedConversationId,
+			message: normalizedUserMessage,
+			userMemory: normalizedUserMemory || undefined,
+			sessionContext: normalizedSessionContext || undefined,
+		})
+
+		await createUsageEvent({
+			userId,
+			subscription: access.activeSubscription,
+			modelName: USAGE_MODELS.chat,
+		})
+
+		return {
+			...externalResponse,
+			user_id: externalResponse?.user_id || toExternalUserId(userId),
+			conversation_id: externalResponse?.conversation_id || resolvedConversationId,
+		}
+
 		const promptMode =
 			chatMode === 'simple'
 				? normalizedUserMemory
@@ -897,8 +1017,28 @@ export const aiService = {
 		const access = await assertSubscriptionActive(userId)
 		assertCapability(access, 'fileUpload')
 		assertRemaining(access, 'fileUpload')
+		assertContextFileAllowed(file)
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
+		const externalResponse = await aiClient.uploadFile({
+			userId: toExternalUserId(userId),
+			conversationId: resolvedConversationId,
+			file,
+		})
+
+		await createUsageEvent({
+			userId,
+			subscription: access.activeSubscription,
+			modelName: USAGE_MODELS.fileUpload,
+		})
+
+		return {
+			...externalResponse,
+			user_id: externalResponse?.user_id || toExternalUserId(userId),
+			conversation_id: externalResponse?.conversation_id || resolvedConversationId,
+			filename: externalResponse?.filename || file?.name || null,
+		}
+
 		const conversation = await ensureAiConversation({
 			userId,
 			conversationKey: resolvedConversationId,
@@ -940,8 +1080,27 @@ export const aiService = {
 		const access = await assertSubscriptionActive(userId)
 		assertCapability(access, 'voice')
 		assertRemaining(access, 'voice')
+		assertVoiceFileAllowed(file)
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
+		const externalResponse = await aiClient.voice({
+			userId: toExternalUserId(userId),
+			conversationId: resolvedConversationId,
+			file,
+		})
+
+		await createUsageEvent({
+			userId,
+			subscription: access.activeSubscription,
+			modelName: USAGE_MODELS.voice,
+		})
+
+		return {
+			...externalResponse,
+			user_id: externalResponse?.user_id || toExternalUserId(userId),
+			conversation_id: externalResponse?.conversation_id || resolvedConversationId,
+		}
+
 		const conversation = await ensureAiConversation({
 			userId,
 			conversationKey: resolvedConversationId,
@@ -998,6 +1157,10 @@ export const aiService = {
 	async listConversations({ userId }) {
 		const access = await assertSubscriptionActive(userId)
 		assertCapability(access, 'chat')
+		throw new AppError('AI conversation list is not supported by external backend contract', 501, {
+			code: 'AI_CONVERSATION_LIST_UNSUPPORTED',
+		})
+
 		const conversations = await listStoredConversations({ userId })
 
 		if (conversations === AI_HISTORY_STORAGE_UNAVAILABLE) {
@@ -1012,6 +1175,21 @@ export const aiService = {
 		assertCapability(access, 'chat')
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
+		const externalConversation = await aiClient.getConversation({
+			userId: toExternalUserId(userId),
+			conversationId: resolvedConversationId,
+		})
+
+		return {
+			...externalConversation,
+			user_id: externalConversation?.user_id || toExternalUserId(userId),
+			conversation_id: externalConversation?.conversation_id || resolvedConversationId,
+			message_count: Number(externalConversation?.message_count || externalConversation?.messages?.length || 0),
+			messages: Array.isArray(externalConversation?.messages) ? externalConversation.messages : [],
+			files: Array.isArray(externalConversation?.files) ? externalConversation.files : [],
+			voice_records: Array.isArray(externalConversation?.voice_records) ? externalConversation.voice_records : [],
+		}
+
 		const storedConversation = await loadStoredConversation({
 			userId,
 			conversationId: resolvedConversationId,
@@ -1043,6 +1221,18 @@ export const aiService = {
 		await assertSubscriptionActive(userId)
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
+		const externalReset = await aiClient.resetConversation({
+			userId: toExternalUserId(userId),
+			conversationId: resolvedConversationId,
+		})
+
+		return {
+			...externalReset,
+			status: externalReset?.status || 'ok',
+			user_id: externalReset?.user_id || toExternalUserId(userId),
+			conversation_id: externalReset?.conversation_id || resolvedConversationId,
+			upstreamResetOk: true,
+		}
 
 		console.log('[ai-context] resetConversation:local_only_start', {
 			userId: String(userId),

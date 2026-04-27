@@ -73,6 +73,12 @@
 				</button>
 			</div>
 
+			<div v-if="transferStatusItems.length" class="context-chips">
+				<span v-for="item in transferStatusItems" :key="item.key" :class="['context-chip', item.className]">
+					{{ item.label }}
+				</span>
+			</div>
+
 			<div v-if="chat.contextFiles.length" class="context-chips">
 				<span v-for="file in chat.contextFiles" :key="file" class="context-chip">Файл: {{ file }}</span>
 			</div>
@@ -236,6 +242,36 @@ const aiCapabilityPills = computed(() => {
 
 const typingLabel = computed(() => 'Модель думает')
 const aiTypingLabel = computed(() => (chat.isExternalBackend ? 'AI анализирует контекст' : 'AI готовит ответ'))
+const transferStatusItems = computed(() => {
+	const items: Array<{ key: string; label: string; className: string }> = []
+	const fileStatus = chat.fileTransfer.status
+	const voiceStatus = chat.voiceTransfer.status
+
+	if (fileStatus !== 'idle') {
+		items.push({
+			key: 'file-transfer',
+			label:
+				fileStatus === 'error'
+					? `File error: ${chat.fileTransfer.error}`
+					: `File ${fileStatus}: ${chat.fileTransfer.name}`,
+			className: fileStatus === 'error' ? 'context-chip--error' : 'context-chip--transfer',
+		})
+	}
+
+	if (voiceStatus !== 'idle') {
+		items.push({
+			key: 'voice-transfer',
+			label:
+				voiceStatus === 'error'
+					? `Voice error: ${chat.voiceTransfer.error}`
+					: `Voice ${voiceStatus}: ${chat.voiceTransfer.name}`,
+			className: voiceStatus === 'error' ? 'context-chip--error' : 'context-chip--voice',
+		})
+	}
+
+	return items
+})
+
 const shouldVirtualize = computed(() => chat.messages.length > VIRTUALIZATION_MIN_ITEMS)
 const getMeasuredHeight = (index: number) => measuredHeights.value[index] ?? DEFAULT_MESSAGE_HEIGHT
 const getMessageStableKey = (message: ChatMessage, index: number) => {

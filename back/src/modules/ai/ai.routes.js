@@ -81,11 +81,7 @@ router.get('/health', async (_req, res, next) => {
 router.post('/chat', async (req, res, next) => {
 	try {
 		const mode = String(req.body?.mode || 'context').toLowerCase() === 'simple' ? 'simple' : 'context'
-		if (mode === 'context') {
-			requireFields(req.body, ['conversationId', 'message'])
-		} else {
-			requireFields(req.body, ['message'])
-		}
+		requireFields(req.body, ['conversationId', 'message'])
 
 		const result = await aiService.sendChat({
 			userId: req.user.id,

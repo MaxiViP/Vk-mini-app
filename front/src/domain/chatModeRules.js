@@ -2,7 +2,7 @@ export const normalizeChatMode = value => (value === 'ai' ? 'ai' : 'core')
 
 export const shouldUseAiApi = chatMode => normalizeChatMode(chatMode) === 'ai'
 
-export const getChatHistorySource = chatMode => (shouldUseAiApi(chatMode) ? 'backend-db' : 'workspace')
+export const getChatHistorySource = chatMode => (shouldUseAiApi(chatMode) ? 'external-ai' : 'workspace')
 
 export const normalizeVkAiSessionContext = value => String(value || '').trim()
 

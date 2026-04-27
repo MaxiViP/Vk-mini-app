@@ -24,6 +24,8 @@ const env = {
 	vkAiBackendUrl: process.env.VK_AI_BACKEND_URL || '',
 	vkAiBackendApiKey: process.env.VK_AI_BACKEND_API_KEY || '',
 	vkAiBackendTimeoutMs: toInt(process.env.VK_AI_BACKEND_TIMEOUT_MS, 30000),
+	vkAiMaxFileBytes: toInt(process.env.VK_AI_MAX_FILE_BYTES, 20 * 1024 * 1024),
+	vkAiMaxAudioBytes: toInt(process.env.VK_AI_MAX_AUDIO_BYTES, 25 * 1024 * 1024),
 	logLevel: process.env.LOG_LEVEL || 'info',
 }
 

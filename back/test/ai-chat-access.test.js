@@ -135,7 +135,7 @@ export const cases = [
 		},
 	},
 	{
-		name: 'POST /api/ai/chat supports simple mode via upstream simple endpoint',
+		name: 'POST /api/ai/chat uses stable conversation id in simple mode',
 		run: async () => {
 			const restores = [
 				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
@@ -151,8 +151,8 @@ export const cases = [
 				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...storedConversation, ...data })),
 				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_simple_1', ...data })),
 				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'persistent memory' })),
-				patchMethod(aiClient, 'simpleChat', async ({ message }) => ({
-					reply: `simple:${message}`,
+				patchMethod(aiClient, 'chat', async ({ message, conversationId }) => ({
+					reply: `simple:${conversationId}:${message}`,
 				})),
 			]
 
@@ -168,13 +168,14 @@ export const cases = [
 					},
 					body: JSON.stringify({
 						mode: 'simple',
+						conversationId: 'conv-simple',
 						message: 'hello-simple',
 					}),
 				})
 				const payload = await response.json()
 
 				assert.equal(response.status, 200)
-				assert.equal(payload.reply, 'simple:ИНСТРУКЦИЯ:\npersistent memory\n\nВОПРОС:\nhello-simple')
+				assert.equal(payload.reply, 'simple:conv-simple:hello-simple')
 			} finally {
 				restoreAll(restores)
 				await stopTestServer(server)
@@ -182,7 +183,7 @@ export const cases = [
 		},
 	},
 	{
-		name: 'GET /api/ai/history/:conversationId returns DB-backed AI history',
+		name: 'GET /api/ai/history/:conversationId proxies external AI history',
 		run: async () => {
 			const restores = [
 				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
@@ -206,6 +207,17 @@ export const cases = [
 						metadataJson: null,
 					},
 				]),
+				patchMethod(aiClient, 'getConversation', async ({ conversationId }) => ({
+					user_id: 'test-user',
+					conversation_id: conversationId,
+					message_count: 2,
+					messages: [
+						{ role: 'user', content: 'hello' },
+						{ role: 'assistant', content: 'AI reply' },
+					],
+					files: [],
+					voice_records: [],
+				})),
 			]
 
 			const token = createAccessToken()
@@ -231,7 +243,7 @@ export const cases = [
 		},
 	},
 	{
-		name: 'GET /api/ai/conversations returns DB-backed conversation list',
+		name: 'GET /api/ai/conversations rejects unsupported external list contract',
 		run: async () => {
 			const restores = [
 				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
@@ -258,10 +270,8 @@ export const cases = [
 				})
 				const payload = await response.json()
 
-				assert.equal(response.status, 200)
-				assert.equal(Array.isArray(payload), true)
-				assert.equal(payload[0].conversation_key, 'conv-db')
-				assert.equal(payload[0].message_count, 2)
+				assert.equal(response.status, 501)
+				assert.equal(payload.details?.code, 'AI_CONVERSATION_LIST_UNSUPPORTED')
 			} finally {
 				restoreAll(restores)
 				await stopTestServer(server)
@@ -269,7 +279,7 @@ export const cases = [
 		},
 	},
 	{
-		name: 'POST /api/ai/history/:conversationId/reset clears DB-backed AI history',
+		name: 'POST /api/ai/history/:conversationId/reset proxies external reset',
 		run: async () => {
 			const restores = [
 				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),

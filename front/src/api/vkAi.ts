@@ -39,10 +39,12 @@ export interface VkAiConversationResponse {
 }
 
 export interface VkAiUploadResponse {
-	file_id: string
-	filename: string
-	status: string
+	file_id?: string
+	filename?: string
+	status?: string
 	extracted_chars?: number
+	conversation_id?: string
+	user_id?: string
 }
 
 export interface VkAiHealthResponse {

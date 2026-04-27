@@ -42,6 +42,25 @@
 								@change="handleFileSelected"
 							/>
 
+							<div v-if="pendingFile || pendingVoiceUrl" class="context-upload-preview">
+								<div v-if="pendingFile" class="context-list-item">
+									<b>File:</b> {{ pendingFile.name }}
+									<div class="context-inline-actions">
+										<button class="context-inline-btn" type="button" @click="confirmFileUpload">Send</button>
+										<button class="context-inline-btn" type="button" @click="clearPendingFile">Cancel</button>
+									</div>
+								</div>
+
+								<div v-if="pendingVoiceUrl" class="context-list-item">
+									<b>Voice preview</b>
+									<audio class="context-audio-preview" controls :src="pendingVoiceUrl"></audio>
+									<div class="context-inline-actions">
+										<button class="context-inline-btn" type="button" @click="confirmVoiceSend">Send</button>
+										<button class="context-inline-btn" type="button" @click="clearPendingVoice">Cancel</button>
+									</div>
+								</div>
+							</div>
+
 							<p v-if="!chat.isExternalBackend" class="context-empty">
 								Файлы и голос работают только в режиме `vk-ai` backend.
 							</p>
@@ -209,7 +228,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { fetchAiMemory, saveAiMemory } from '../../api/workspace'
 import { useChatStore } from '../../stores/chat'
 import { useUserStore } from '../../stores/user'
@@ -260,6 +279,9 @@ const userMemoryPresets = [
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const isRecording = ref(false)
+const pendingFile = ref<File | null>(null)
+const pendingVoice = ref<File | null>(null)
+const pendingVoiceUrl = ref('')
 
 const sessionContext = ref('')
 const savedSessionContext = ref('')
@@ -412,17 +434,51 @@ const openFilePicker = () => {
 	fileInputRef.value?.click()
 }
 
-const handleFileSelected = async (event: Event) => {
-	const input = event.target as HTMLInputElement
-	const file = input.files?.[0]
-	if (!file) return
+const clearPendingFile = () => {
+	pendingFile.value = null
+}
+
+const revokePendingVoiceUrl = () => {
+	if (!pendingVoiceUrl.value) return
+	URL.revokeObjectURL(pendingVoiceUrl.value)
+	pendingVoiceUrl.value = ''
+}
+
+const clearPendingVoice = () => {
+	revokePendingVoiceUrl()
+	pendingVoice.value = null
+}
+
+const confirmFileUpload = async () => {
+	if (!pendingFile.value) return
+	const file = pendingFile.value
+	pendingFile.value = null
 
 	try {
 		await chat.uploadContextFile(file)
 	} catch (error) {
 		chat.addSystemMessage(`Не удалось загрузить файл: ${(error as Error).message}`)
 	}
+}
 
+const confirmVoiceSend = async () => {
+	if (!pendingVoice.value) return
+	const file = pendingVoice.value
+	clearPendingVoice()
+
+	try {
+		await chat.sendVoiceMessage(file)
+	} catch (error) {
+		chat.addSystemMessage(`Не удалось отправить голосовое: ${(error as Error).message}`)
+	}
+}
+
+const handleFileSelected = async (event: Event) => {
+	const input = event.target as HTMLInputElement
+	const file = input.files?.[0]
+	if (!file) return
+
+	pendingFile.value = file
 	input.value = ''
 }
 
@@ -450,9 +506,11 @@ const toggleVoiceRecording = async () => {
 				const blob = new Blob(recordedChunks, { type: mediaRecorder?.mimeType || 'audio/webm' })
 				const extension = blob.type.includes('ogg') ? 'ogg' : 'webm'
 				const file = new File([blob], `voice-${Date.now()}.${extension}`, { type: blob.type || 'audio/webm' })
-				await chat.sendVoiceMessage(file)
+				clearPendingVoice()
+				pendingVoice.value = file
+				pendingVoiceUrl.value = URL.createObjectURL(file)
 			} catch (error) {
-				chat.addSystemMessage(`Не удалось отправить голосовое: ${(error as Error).message}`)
+				chat.addSystemMessage(`Не удалось подготовить голосовое: ${(error as Error).message}`)
 			} finally {
 				recordedChunks = []
 				isRecording.value = false
@@ -516,5 +574,10 @@ watch(userMemory, value => {
 
 	if (isHydratingUserMemory.value || userMemoryStatus.value === 'saving') return
 	userMemoryStatus.value = isUserMemoryDirty.value ? 'idle' : 'saved'
+})
+
+onBeforeUnmount(() => {
+	clearPendingVoice()
+	stopRecordingTracks()
 })
 </script>

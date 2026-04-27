@@ -290,7 +290,7 @@ export const cases = [
 				assert.deepEqual(debugCalls[0].meta, {
 					module: 'ai-service',
 					externalEndpoint: '/api/chat',
-					promptMode: 'memory+context',
+					conversationId: 'conv-prompt',
 					messageLength: 'question'.length,
 					userMemoryLength: 'memory'.length,
 					sessionContextLength: 'temporary context'.length,
@@ -305,7 +305,7 @@ export const cases = [
 	{
 		name: 'aiService simple mode ignores session context and keeps AI memory',
 		run: async () => {
-			let capturedMessage = null
+			let capturedPayload = null
 			const restores = buildRestores({
 				aiMemory: 'memory that should be used',
 				conversation: {
@@ -313,8 +313,8 @@ export const cases = [
 					conversationKey: 'aivk-simple-prompt-user',
 					mode: 'simple',
 				},
-				onSimpleChat: ({ message }) => {
-					capturedMessage = message
+				onChat: payload => {
+					capturedPayload = payload
 				},
 			})
 
@@ -329,8 +329,10 @@ export const cases = [
 					mode: 'simple',
 				})
 
-				assert.equal(capturedMessage, 'ИНСТРУКЦИЯ:\nmemory that should be used\n\nВОПРОС:\nquestion')
-				assert.equal(capturedMessage.includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
+				assert.equal(capturedPayload.message, 'question')
+				assert.equal(capturedPayload.userMemory, 'memory that should be used')
+				assert.equal(capturedPayload.sessionContext, undefined)
+				assert.equal(capturedPayload.message.includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
 			} finally {
 				restoreAll(restores)
 			}
@@ -348,7 +350,7 @@ export const cases = [
 						conversationKey: 'aivk-simple-prompt-user',
 						mode: 'simple',
 					},
-					onSimpleChat: () => {},
+					onChat: () => {},
 				}),
 				patchMethod(logger, 'debug', (message, meta) => {
 					debugCalls.push({ message, meta })
@@ -370,9 +372,9 @@ export const cases = [
 				assert.equal(debugCalls[0].message, 'Dispatching AI chat to external backend')
 				assert.deepEqual(debugCalls[0].meta, {
 					module: 'ai-service',
-					externalEndpoint: '/api/chat/simple',
-					promptMode: 'memory-only',
-					messageLength: 'ИНСТРУКЦИЯ:\nmemory that should be used\n\nВОПРОС:\nquestion'.length,
+					externalEndpoint: '/api/chat',
+					conversationId: 'conv-prompt',
+					messageLength: 'question'.length,
 					userMemoryLength: 'memory that should be used'.length,
 					sessionContextLength: 0,
 				})
@@ -384,7 +386,7 @@ export const cases = [
 		},
 	},
 	{
-		name: 'aiService does not persist runtime context in DB-backed message history',
+		name: 'aiService does not persist AI chat messages as local primary storage',
 		run: async () => {
 			let capturedPayload = null
 			const persistedMessages = []
@@ -411,9 +413,7 @@ export const cases = [
 				assert.equal(capturedPayload.message, 'question')
 				assert.equal(capturedPayload.userMemory, 'memory')
 				assert.equal(capturedPayload.sessionContext, 'temporary context')
-				assert.equal(persistedMessages.length, 2)
-				assert.equal(persistedMessages[0].data.content, 'question')
-				assert.equal(persistedMessages[1].data.content, 'ok')
+				assert.equal(persistedMessages.length, 0)
 				assert.equal(JSON.stringify(persistedMessages).includes('temporary context'), false)
 				assert.equal(JSON.stringify(persistedMessages).includes('memory'), false)
 				assert.equal(JSON.stringify(persistedMessages).includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
