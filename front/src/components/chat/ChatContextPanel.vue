@@ -228,7 +228,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { fetchAiMemory, saveAiMemory } from '../../api/workspace'
 import { useChatStore } from '../../stores/chat'
 import { useUserStore } from '../../stores/user'
@@ -351,6 +351,12 @@ const clearSessionContext = () => {
 	console.log('[ai-session-context] cleared', {
 		conversationId: chat.conversationId,
 	})
+}
+
+const handleSessionContextUpdated = (event: Event) => {
+	const customEvent = event as CustomEvent<{ conversationId?: string }>
+	if (customEvent.detail?.conversationId && customEvent.detail.conversationId !== chat.conversationId) return
+	loadSessionContext()
 }
 
 const loadUserMemory = async () => {
@@ -576,7 +582,12 @@ watch(userMemory, value => {
 	userMemoryStatus.value = isUserMemoryDirty.value ? 'idle' : 'saved'
 })
 
+onMounted(() => {
+	window.addEventListener('ai-session-context-updated', handleSessionContextUpdated as EventListener)
+})
+
 onBeforeUnmount(() => {
+	window.removeEventListener('ai-session-context-updated', handleSessionContextUpdated as EventListener)
 	clearPendingVoice()
 	stopRecordingTracks()
 })

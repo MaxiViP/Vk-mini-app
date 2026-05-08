@@ -1,6 +1,26 @@
 <template>
-	<div :class="['message', message.role]">
-		<div :class="['avatar', `avatar--${message.role}`]" aria-hidden="true">
+	<div :class="['message', message.role, { 'message--quick-context-open': isQuickContextVisible }]">
+		<button
+			v-if="isQuickContextAvailable"
+			:class="['avatar', 'avatar--assistant', 'avatar--button']"
+			type="button"
+			:aria-expanded="quickContextOpen"
+			title="Изменить быстрый контекст"
+			aria-label="Изменить быстрый контекст AI"
+			@click="toggleQuickContext"
+		>
+			<svg class="avatar__icon avatar__icon--assistant" viewBox="0 0 24 24">
+				<rect x="5" y="7" width="14" height="11" rx="4" />
+				<path d="M12 3v4" />
+				<path d="M8.5 12h.01" />
+				<path d="M15.5 12h.01" />
+				<path d="M9.5 15.5c1.35 1 3.65 1 5 0" />
+				<path d="M4 12h1" />
+				<path d="M19 12h1" />
+			</svg>
+		</button>
+
+		<div v-else :class="['avatar', `avatar--${message.role}`]" aria-hidden="true">
 			<svg v-if="message.role === 'user'" class="avatar__icon" viewBox="0 0 24 24">
 				<path d="M20 21a8 8 0 0 0-16 0" />
 				<circle cx="12" cy="7" r="4" />
@@ -16,6 +36,37 @@
 				<path d="M19 12h1" />
 			</svg>
 		</div>
+
+		<Transition name="quick-context-slide">
+			<form
+				v-if="isQuickContextVisible"
+				class="assistant-quick-context"
+				@submit.prevent="saveQuickContext"
+			>
+				<label class="assistant-quick-context__label" :for="quickContextInputId">Быстрый контекст</label>
+				<textarea
+					:id="quickContextInputId"
+					ref="quickContextInputRef"
+					v-model="quickContextDraft"
+					class="assistant-quick-context__input"
+					rows="2"
+					:maxlength="quickContextMaxLength"
+					placeholder="Например: отвечай короче, учитывай текущую задачу..."
+					@keydown.esc.prevent="closeQuickContext"
+					@keydown.ctrl.enter.prevent="saveQuickContext"
+				></textarea>
+
+				<div class="assistant-quick-context__actions">
+					<button class="assistant-quick-context__btn assistant-quick-context__btn--primary" type="submit" :disabled="!canSaveQuickContext">
+						Сохранить
+					</button>
+					<button class="assistant-quick-context__btn" type="button" :disabled="!canClearQuickContext" @click="clearQuickContext">
+						Очистить
+					</button>
+					<button class="assistant-quick-context__btn" type="button" @click="closeQuickContext">Закрыть</button>
+				</div>
+			</form>
+		</Transition>
 
 		<div :class="['bubble', { 'bubble--editing': isEditing }]">
 			<!-- <div v-if="metaSummary.length" class="meta-row">
@@ -241,24 +292,37 @@ const props = withDefaults(
 		index?: number
 		showLimits?: boolean
 		actionsDisabled?: boolean
+		quickContextEnabled?: boolean
+		quickContextOpen?: boolean
+		quickContextValue?: string
+		quickContextMaxLength?: number
 	}>(),
 	{
 		index: -1,
 		actionsDisabled: false,
+		quickContextEnabled: false,
+		quickContextOpen: false,
+		quickContextValue: '',
+		quickContextMaxLength: 1200,
 	},
 )
 
 const emit = defineEmits<{
 	(e: 'edit-message', payload: { index: number; content: string }): void
 	(e: 'resend-message', payload: { index: number; content: string }): void
+	(e: 'toggle-quick-context', payload: { index: number }): void
+	(e: 'save-quick-context', payload: { index: number; content: string }): void
+	(e: 'close-quick-context', payload: { index: number }): void
 }>()
 
 const audioReplyRef = ref<HTMLAudioElement | null>(null)
 const editTextareaRef = ref<HTMLTextAreaElement | null>(null)
+const quickContextInputRef = ref<HTMLTextAreaElement | null>(null)
 const renderedContent = ref('')
 const isEditing = ref(false)
 const areActionsOpen = ref(false)
 const editText = ref(props.message.content)
+const quickContextDraft = ref(props.quickContextValue)
 const copyStatus = ref<'idle' | 'copied'>('idle')
 const resendStatus = ref<'idle' | 'sent'>('idle')
 
@@ -310,6 +374,17 @@ const metaSummary = computed(() => {
 })
 
 const resolvedAudioReplyUrl = computed(() => props.message.meta?.audioReplyUrl || '')
+const isQuickContextAvailable = computed(() => props.message.role === 'assistant' && props.quickContextEnabled)
+const isQuickContextVisible = computed(() => isQuickContextAvailable.value && props.quickContextOpen)
+const quickContextInputId = computed(() => `assistant-quick-context-${props.index}`)
+const normalizedQuickContextValue = computed(() => String(props.quickContextValue || '').trim())
+const normalizedQuickContextDraft = computed(() =>
+	String(quickContextDraft.value || '')
+		.slice(0, props.quickContextMaxLength)
+		.trim(),
+)
+const canSaveQuickContext = computed(() => normalizedQuickContextDraft.value !== normalizedQuickContextValue.value)
+const canClearQuickContext = computed(() => Boolean(normalizedQuickContextDraft.value || normalizedQuickContextValue.value))
 const copyTitle = computed(() => (copyStatus.value === 'copied' ? 'Скопировано' : 'Копировать'))
 const copyAriaLabel = computed(() => (copyStatus.value === 'copied' ? 'Сообщение скопировано' : 'Копировать сообщение'))
 
@@ -330,6 +405,52 @@ const closeActionsMenu = () => {
 const toggleActionsMenu = () => {
 	areActionsOpen.value = !areActionsOpen.value
 }
+
+const toggleQuickContext = () => {
+	if (!isQuickContextAvailable.value) return
+	closeActionsMenu()
+	emit('toggle-quick-context', { index: props.index })
+}
+
+const closeQuickContext = () => {
+	emit('close-quick-context', { index: props.index })
+}
+
+const saveQuickContext = () => {
+	if (!canSaveQuickContext.value) return
+	emit('save-quick-context', {
+		index: props.index,
+		content: normalizedQuickContextDraft.value,
+	})
+}
+
+const clearQuickContext = () => {
+	quickContextDraft.value = ''
+	if (!canClearQuickContext.value) return
+	emit('save-quick-context', {
+		index: props.index,
+		content: '',
+	})
+}
+
+watch(
+	() => props.quickContextValue,
+	value => {
+		if (props.quickContextOpen) quickContextDraft.value = value
+	},
+)
+
+watch(
+	() => props.quickContextOpen,
+	async isOpen => {
+		if (!isOpen) return
+		closeActionsMenu()
+		quickContextDraft.value = props.quickContextValue
+		await nextTick()
+		quickContextInputRef.value?.focus()
+		quickContextInputRef.value?.select()
+	},
+)
 
 watch(
 	() => props.message.content,

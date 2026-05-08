@@ -97,8 +97,15 @@
 					:message="item.message"
 					:index="item.index"
 					:actions-disabled="chat.isLoading"
+					:quick-context-enabled="chat.isAiMode"
+					:quick-context-open="quickContextOpenIndex === item.index"
+					:quick-context-value="quickContextValue"
+					:quick-context-max-length="SESSION_CONTEXT_MAX_LENGTH"
 					@edit-message="handleEditMessage"
 					@resend-message="handleResendMessage"
+					@toggle-quick-context="handleQuickContextToggle"
+					@save-quick-context="handleQuickContextSave"
+					@close-quick-context="handleQuickContextClose"
 				/>
 			</div>
 			<div v-if="bottomSpacerHeight > 0" aria-hidden="true" :style="{ height: `${bottomSpacerHeight}px` }"></div>
@@ -163,12 +170,15 @@ const VIRTUALIZATION_MIN_ITEMS = 40
 const DEFAULT_MESSAGE_HEIGHT = 112
 const VIRTUALIZATION_BUFFER_PX = 600
 const AUTO_SCROLL_THRESHOLD_PX = 48
+const SESSION_CONTEXT_MAX_LENGTH = 1200
 
 const chat = useChatStore()
 const modelsStore = useModelsStore()
 const userStore = useUserStore()
 const showContextPanel = ref(false)
 const isContextPrimaryOpen = ref(false)
+const quickContextOpenIndex = ref<number | null>(null)
+const quickContextValue = ref('')
 const messagesContainerRef = ref<HTMLElement | null>(null)
 const scrollTop = ref(0)
 const viewportHeight = ref(0)
@@ -477,6 +487,58 @@ const handleToggleChatContext = (event: Event) => {
 	showContextPanel.value = !showContextPanel.value
 }
 
+const normalizeQuickSessionContext = (value: string) => String(value || '').slice(0, SESSION_CONTEXT_MAX_LENGTH).trim()
+
+const loadQuickSessionContext = () => normalizeQuickSessionContext(chat.readSessionContext(userStore.user?.vkId, chat.conversationId))
+
+type QuickContextPayload = {
+	index: number
+	content?: string
+}
+
+const handleQuickContextToggle = async ({ index }: QuickContextPayload) => {
+	if (!chat.isAiMode || index < 0) return
+
+	if (quickContextOpenIndex.value === index) {
+		quickContextOpenIndex.value = null
+		await nextTick()
+		measureVisibleRows()
+		return
+	}
+
+	quickContextValue.value = loadQuickSessionContext()
+	quickContextOpenIndex.value = index
+	await nextTick()
+	measureVisibleRows()
+}
+
+const handleQuickContextSave = async ({ content = '' }: QuickContextPayload) => {
+	if (!chat.isAiMode) return
+
+	const normalized = normalizeQuickSessionContext(content)
+	chat.writeSessionContext(normalized, userStore.user?.vkId, chat.conversationId)
+	quickContextValue.value = normalized
+	quickContextOpenIndex.value = null
+
+	window.dispatchEvent(
+		new CustomEvent('ai-session-context-updated', {
+			detail: {
+				conversationId: chat.conversationId,
+				length: normalized.length,
+			},
+		}),
+	)
+
+	await nextTick()
+	measureVisibleRows()
+}
+
+const handleQuickContextClose = async () => {
+	quickContextOpenIndex.value = null
+	await nextTick()
+	measureVisibleRows()
+}
+
 const isBillingOrAccessError = (message: string) => {
 	const normalized = message.toLowerCase()
 	return (
@@ -621,7 +683,18 @@ watch(showContextPanel, emitChatContextState, { immediate: true })
 watch(
 	() => chat.isAiMode,
 	isAiMode => {
-		if (!isAiMode) isContextPrimaryOpen.value = false
+		if (!isAiMode) {
+			isContextPrimaryOpen.value = false
+			quickContextOpenIndex.value = null
+		}
+	},
+)
+
+watch(
+	() => `${userStore.user?.vkId || 'guest'}:${chat.conversationId}`,
+	() => {
+		quickContextOpenIndex.value = null
+		quickContextValue.value = loadQuickSessionContext()
 	},
 )
 

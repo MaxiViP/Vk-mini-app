@@ -114,6 +114,153 @@
 	stroke-width: 2.25;
 }
 
+.messages .avatar--button {
+	padding: 0;
+	font: inherit;
+	cursor: pointer;
+}
+
+.messages .avatar--button:focus-visible {
+	outline: none;
+	border-color: var(--mode-accent-border);
+	box-shadow:
+		0 0 0 1px var(--mode-accent-border),
+		0 0 0 5px var(--mode-accent-soft),
+		0 12px 28px rgba(0, 0, 0, 0.24);
+}
+
+.messages .message--quick-context-open {
+	flex-wrap: wrap;
+	row-gap: 8px;
+}
+
+.messages .assistant-quick-context {
+	order: 2;
+	flex: 1 1 min(460px, calc(100% - 44px));
+	max-width: min(460px, calc(100% - 44px));
+	margin-left: 42px;
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 8px;
+	padding: 10px;
+	border-radius: 18px;
+	background:
+		linear-gradient(135deg, rgba(255, 255, 255, 0.07), transparent 48%),
+		var(--mode-panel-bg-strong, rgba(24, 27, 34, 0.96));
+	border: 1px solid var(--mode-accent-border);
+	box-shadow:
+		0 0 0 1px rgba(255, 255, 255, 0.03),
+		0 14px 34px rgba(0, 0, 0, 0.22);
+	box-sizing: border-box;
+}
+
+.messages .message--quick-context-open .bubble {
+	order: 3;
+	margin-left: 42px;
+}
+
+.messages .assistant-quick-context__label {
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--mode-accent-strong);
+}
+
+.messages .assistant-quick-context__input {
+	width: 100%;
+	min-height: 52px;
+	max-height: 124px;
+	padding: 9px 10px;
+	border-radius: 13px;
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	background: rgba(255, 255, 255, 0.045);
+	color: var(--color-text);
+	font: inherit;
+	font-size: 13px;
+	line-height: 1.4;
+	resize: vertical;
+	outline: none;
+	box-sizing: border-box;
+}
+
+.messages .assistant-quick-context__input:focus {
+	border-color: var(--mode-accent);
+	box-shadow:
+		0 0 0 1px var(--mode-accent-border),
+		0 0 0 4px var(--mode-accent-soft);
+}
+
+.messages .assistant-quick-context__input::placeholder {
+	color: var(--color-text-muted);
+}
+
+.messages .assistant-quick-context__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 7px;
+}
+
+.messages .assistant-quick-context__btn {
+	min-height: 30px;
+	padding: 6px 10px;
+	border-radius: 999px;
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	background: rgba(255, 255, 255, 0.06);
+	color: var(--color-text-soft);
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+	transition:
+		transform var(--transition-fast),
+		background var(--transition-base),
+		border-color var(--transition-base);
+}
+
+.messages .assistant-quick-context__btn--primary {
+	background: var(--mode-accent);
+	border-color: var(--mode-accent-border);
+	color: #04261f;
+	font-weight: 700;
+}
+
+.messages .assistant-quick-context__btn:hover:not(:disabled) {
+	transform: translateY(-1px);
+	background: rgba(255, 255, 255, 0.12);
+	border-color: var(--mode-accent-border);
+}
+
+.messages .assistant-quick-context__btn--primary:hover:not(:disabled) {
+	background: #35dec1;
+}
+
+.messages .assistant-quick-context__btn:disabled {
+	opacity: 0.48;
+	cursor: not-allowed;
+}
+
+.quick-context-slide-enter-active,
+.quick-context-slide-leave-active {
+	transition:
+		opacity var(--transition-base),
+		transform var(--transition-base),
+		max-height var(--transition-base);
+}
+
+.quick-context-slide-enter-from,
+.quick-context-slide-leave-to {
+	max-height: 0;
+	opacity: 0;
+	transform: translateX(-18px) scale(0.98);
+}
+
+.quick-context-slide-enter-to,
+.quick-context-slide-leave-from {
+	max-height: 220px;
+	opacity: 1;
+	transform: translateX(0) scale(1);
+}
+
 /* ===== BUBBLE ===== */
 .messages .bubble {
 	position: relative;
@@ -585,7 +732,9 @@
 	.messages .message-actions__chevron,
 	.messages .message-action__icon,
 	.messages .message-edit-form,
-	.messages .message-edit-btn {
+	.messages .message-edit-btn,
+	.quick-context-slide-enter-active,
+	.quick-context-slide-leave-active {
 		animation: none;
 		transition: none;
 	}
@@ -627,6 +776,21 @@
 	.messages .message-actions__toggle {
 		padding: 0;
 	}
+
+	.messages .assistant-quick-context,
+	.messages .message--quick-context-open .bubble {
+		margin-left: 40px;
+		max-width: calc(100% - 40px);
+	}
+
+	.messages .assistant-quick-context__actions {
+		gap: 6px;
+	}
+
+	.messages .assistant-quick-context__btn {
+		font-size: 11px;
+		padding: 6px 9px;
+	}
 }
 
 @media (max-width: 420px) {
@@ -646,6 +810,12 @@
 
 	.messages .message.user .bubble.bubble--editing {
 		padding-right: 12px;
+	}
+
+	.messages .assistant-quick-context,
+	.messages .message--quick-context-open .bubble {
+		margin-left: 0;
+		max-width: 100%;
 	}
 }
 
