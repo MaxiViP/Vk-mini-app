@@ -81,25 +81,27 @@ export const cases = [
 		},
 	},
 	{
-		name: 'POST /api/ai/chat passes session context through route to AI service',
+		name: 'POST /api/ai/chat proxies clean message with resolved VK external user id',
 		run: async () => {
 			const restores = [
 				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
 				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
 				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
 				patchMethod(prisma.usageEvent, 'create', async data => ({ id: 'usage_1', ...data })),
+				patchMethod(prisma.authIdentity, 'findFirst', async () => ({ providerUserId: 'vk-test-user' })),
 				patchMethod(prisma.aiConversation, 'findUnique', async () => null),
 				patchMethod(prisma.aiConversation, 'create', async () => storedConversation),
 				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...storedConversation, ...data })),
 				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_1', ...data })),
 				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'persistent memory' })),
-				patchMethod(aiClient, 'chat', async ({ userId, conversationId, message, userMemory, sessionContext }) => ({
+				patchMethod(aiClient, 'chat', async payload => ({
 					reply: 'AI reply',
-					user_id: userId,
-					conversation_id: conversationId,
-					upstream_message: message,
-					upstream_user_memory: userMemory,
-					upstream_session_context: sessionContext,
+					user_id: payload.externalUserId,
+					conversation_id: `vk_${payload.externalUserId}_default`,
+					upstream_message: payload.message,
+					upstream_external_user_id: payload.externalUserId,
+					upstream_has_user_memory: Object.hasOwn(payload, 'userMemory'),
+					upstream_has_session_context: Object.hasOwn(payload, 'sessionContext'),
 				})),
 			]
 
@@ -123,10 +125,11 @@ export const cases = [
 
 				assert.equal(response.status, 200)
 				assert.equal(payload.reply, 'AI reply')
-				assert.equal(payload.conversation_id, 'conv-with-access')
+				assert.equal(payload.conversation_id, 'vk_vk-test-user_default')
 				assert.equal(payload.upstream_message, 'hello')
-				assert.equal(payload.upstream_user_memory, 'persistent memory')
-				assert.equal(payload.upstream_session_context, 'current task')
+				assert.equal(payload.upstream_external_user_id, 'vk-test-user')
+				assert.equal(payload.upstream_has_user_memory, false)
+				assert.equal(payload.upstream_has_session_context, false)
 				assert.equal(payload.upstream_message.includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
 			} finally {
 				restoreAll(restores)
@@ -142,6 +145,7 @@ export const cases = [
 				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
 				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
 				patchMethod(prisma.usageEvent, 'create', async data => ({ id: 'usage_simple_1', ...data })),
+				patchMethod(prisma.authIdentity, 'findFirst', async () => ({ providerUserId: 'vk-test-user' })),
 				patchMethod(prisma.aiConversation, 'findUnique', async () => null),
 				patchMethod(prisma.aiConversation, 'create', async () => ({
 					...storedConversation,
@@ -151,8 +155,8 @@ export const cases = [
 				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...storedConversation, ...data })),
 				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_simple_1', ...data })),
 				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'persistent memory' })),
-				patchMethod(aiClient, 'chat', async ({ message, conversationId }) => ({
-					reply: `simple:${conversationId}:${message}`,
+				patchMethod(aiClient, 'chat', async ({ externalUserId, message }) => ({
+					reply: `simple:${externalUserId}:${message}`,
 				})),
 			]
 
@@ -175,7 +179,7 @@ export const cases = [
 				const payload = await response.json()
 
 				assert.equal(response.status, 200)
-				assert.equal(payload.reply, 'simple:conv-simple:hello-simple')
+				assert.equal(payload.reply, 'simple:vk-test-user:hello-simple')
 			} finally {
 				restoreAll(restores)
 				await stopTestServer(server)

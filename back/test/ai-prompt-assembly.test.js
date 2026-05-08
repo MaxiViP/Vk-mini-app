@@ -52,11 +52,15 @@ const buildRestores = ({
 	onChat = null,
 	onSimpleChat = null,
 	onAiMessageCreate = null,
+	externalUserId = 'vk-prompt-user',
 }) => [
 	patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
 	patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
 	patchMethod(prisma.usageEvent, 'groupBy', async () => []),
 	patchMethod(prisma.usageEvent, 'create', async data => ({ id: 'usage_prompt', ...data })),
+	patchMethod(prisma.authIdentity, 'findFirst', async () =>
+		externalUserId ? { providerUserId: externalUserId } : null,
+	),
 	patchMethod(prisma.aiConversation, 'findUnique', async () => null),
 	patchMethod(prisma.aiConversation, 'create', async () => conversation),
 	patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...conversation, ...data })),
@@ -71,8 +75,8 @@ const buildRestores = ({
 					onChat(payload)
 					return {
 						reply: 'ok',
-						user_id: 'prompt-user',
-						conversation_id: payload.conversationId,
+						user_id: payload.externalUserId,
+						conversation_id: `vk_${payload.externalUserId}_default`,
 					}
 				}),
 			]
@@ -91,7 +95,7 @@ const buildRestores = ({
 
 export const cases = [
 	{
-		name: 'aiService context mode sends AI memory outside the user message',
+		name: 'aiService context mode sends clean user message without AI memory fields',
 		run: async () => {
 			let capturedPayload = null
 			const restores = buildRestores({
@@ -112,8 +116,9 @@ export const cases = [
 				})
 
 				assert.equal(capturedPayload.message, 'question')
-				assert.equal(capturedPayload.userMemory, 'memory')
-				assert.equal(capturedPayload.sessionContext, undefined)
+				assert.equal(capturedPayload.externalUserId, 'vk-prompt-user')
+				assert.equal(Object.hasOwn(capturedPayload, 'userMemory'), false)
+				assert.equal(Object.hasOwn(capturedPayload, 'sessionContext'), false)
 				assert.equal(capturedPayload.message.includes('[GLOBAL AI MEMORY]'), false)
 				assert.equal(capturedPayload.message.includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
 			} finally {
@@ -122,7 +127,7 @@ export const cases = [
 		},
 	},
 	{
-		name: 'aiService context mode sends session context outside the user message',
+		name: 'aiService context mode does not forward session context fields',
 		run: async () => {
 			let capturedPayload = null
 			const restores = buildRestores({
@@ -143,8 +148,9 @@ export const cases = [
 				})
 
 				assert.equal(capturedPayload.message, 'question')
-				assert.equal(capturedPayload.userMemory, undefined)
-				assert.equal(capturedPayload.sessionContext, 'context')
+				assert.equal(capturedPayload.externalUserId, 'vk-prompt-user')
+				assert.equal(Object.hasOwn(capturedPayload, 'userMemory'), false)
+				assert.equal(Object.hasOwn(capturedPayload, 'sessionContext'), false)
 				assert.equal(capturedPayload.message.includes('[GLOBAL AI MEMORY]'), false)
 				assert.equal(capturedPayload.message.includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
 			} finally {
@@ -153,7 +159,7 @@ export const cases = [
 		},
 	},
 	{
-		name: 'aiService context mode keeps AI memory and session context out of message history',
+		name: 'aiService context mode keeps legacy memory/context out of upstream message',
 		run: async () => {
 			let capturedPayload = null
 			const restores = buildRestores({
@@ -174,8 +180,9 @@ export const cases = [
 				})
 
 				assert.equal(capturedPayload.message, 'question')
-				assert.equal(capturedPayload.userMemory, 'memory')
-				assert.equal(capturedPayload.sessionContext, 'context')
+				assert.equal(capturedPayload.externalUserId, 'vk-prompt-user')
+				assert.equal(Object.hasOwn(capturedPayload, 'userMemory'), false)
+				assert.equal(Object.hasOwn(capturedPayload, 'sessionContext'), false)
 				assert.equal(capturedPayload.message.includes('memory'), false)
 				assert.equal(capturedPayload.message.includes('context'), false)
 			} finally {
@@ -184,7 +191,7 @@ export const cases = [
 		},
 	},
 	{
-		name: 'aiService context mode gives session context higher priority than AI memory',
+		name: 'aiService context mode ignores legacy memory/context transport fields',
 		run: async () => {
 			let capturedPayload = null
 			const restores = buildRestores({
@@ -205,15 +212,16 @@ export const cases = [
 				})
 
 				assert.equal(capturedPayload.message, 'Say hello')
-				assert.equal(capturedPayload.userMemory, 'reply in Russian')
-				assert.equal(capturedPayload.sessionContext, 'reply in English')
+				assert.equal(capturedPayload.externalUserId, 'vk-prompt-user')
+				assert.equal(Object.hasOwn(capturedPayload, 'userMemory'), false)
+				assert.equal(Object.hasOwn(capturedPayload, 'sessionContext'), false)
 			} finally {
 				restoreAll(restores)
 			}
 		},
 	},
 	{
-		name: 'aiService context mode can produce English reply when session context overrides AI memory',
+		name: 'aiService context mode preserves upstream response fields',
 		run: async () => {
 			let capturedPayload = null
 			const restores = [
@@ -221,6 +229,7 @@ export const cases = [
 				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
 				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
 				patchMethod(prisma.usageEvent, 'create', async data => ({ id: 'usage_prompt', ...data })),
+				patchMethod(prisma.authIdentity, 'findFirst', async () => ({ providerUserId: 'vk-prompt-user' })),
 				patchMethod(prisma.aiConversation, 'findUnique', async () => null),
 				patchMethod(prisma.aiConversation, 'create', async () => storedConversation),
 				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...storedConversation, ...data })),
@@ -228,16 +237,15 @@ export const cases = [
 				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'reply in Russian' })),
 				patchMethod(aiClient, 'chat', async payload => {
 					capturedPayload = payload
-					const reply = payload.userMemory === 'reply in Russian' &&
-						payload.sessionContext === 'reply in English' &&
-						payload.message === 'Say hello'
-						? 'Hello'
+					const reply =
+						payload.externalUserId === 'vk-prompt-user' && payload.message === 'Say hello'
+							? 'Hello'
 						: 'Привет'
 
 					return {
 						reply,
-						user_id: 'prompt-user',
-						conversation_id: payload.conversationId,
+						user_id: payload.externalUserId,
+						conversation_id: `vk_${payload.externalUserId}_default`,
 					}
 				}),
 			]
@@ -253,8 +261,9 @@ export const cases = [
 				})
 
 				assert.equal(capturedPayload.message, 'Say hello')
-				assert.equal(capturedPayload.userMemory, 'reply in Russian')
-				assert.equal(capturedPayload.sessionContext, 'reply in English')
+				assert.equal(capturedPayload.externalUserId, 'vk-prompt-user')
+				assert.equal(Object.hasOwn(capturedPayload, 'userMemory'), false)
+				assert.equal(Object.hasOwn(capturedPayload, 'sessionContext'), false)
 				assert.equal(response.reply, 'Hello')
 			} finally {
 				restoreAll(restores)
@@ -285,25 +294,26 @@ export const cases = [
 					sessionContext: 'temporary context',
 				})
 
-				assert.equal(debugCalls.length, 1)
-				assert.equal(debugCalls[0].message, 'Dispatching AI chat to external backend')
-				assert.deepEqual(debugCalls[0].meta, {
+				const dispatchCall = debugCalls.find(call => call.message === 'Dispatching AI chat to external backend')
+				assert.ok(dispatchCall)
+				assert.deepEqual(dispatchCall.meta, {
 					module: 'ai-service',
-					externalEndpoint: '/api/chat',
-					conversationId: 'conv-prompt',
+					externalEndpoint: '/v1/chat/messages',
+					localConversationId: 'conv-prompt',
+					expectedExternalConversationId: 'vk_vk-prompt-user_default',
 					messageLength: 'question'.length,
-					userMemoryLength: 'memory'.length,
 					sessionContextLength: 'temporary context'.length,
+					mode: 'context',
 				})
-				assert.equal(JSON.stringify(debugCalls[0].meta).includes('temporary context'), false)
-				assert.equal(JSON.stringify(debugCalls[0].meta).includes('question'), false)
+				assert.equal(JSON.stringify(dispatchCall.meta).includes('temporary context'), false)
+				assert.equal(JSON.stringify(dispatchCall.meta).includes('question'), false)
 			} finally {
 				restoreAll(restores)
 			}
 		},
 	},
 	{
-		name: 'aiService simple mode ignores session context and keeps AI memory',
+		name: 'aiService simple mode sends clean user message',
 		run: async () => {
 			let capturedPayload = null
 			const restores = buildRestores({
@@ -330,8 +340,9 @@ export const cases = [
 				})
 
 				assert.equal(capturedPayload.message, 'question')
-				assert.equal(capturedPayload.userMemory, 'memory that should be used')
-				assert.equal(capturedPayload.sessionContext, undefined)
+				assert.equal(capturedPayload.externalUserId, 'vk-prompt-user')
+				assert.equal(Object.hasOwn(capturedPayload, 'userMemory'), false)
+				assert.equal(Object.hasOwn(capturedPayload, 'sessionContext'), false)
 				assert.equal(capturedPayload.message.includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
 			} finally {
 				restoreAll(restores)
@@ -368,25 +379,26 @@ export const cases = [
 					mode: 'simple',
 				})
 
-				assert.equal(debugCalls.length, 1)
-				assert.equal(debugCalls[0].message, 'Dispatching AI chat to external backend')
-				assert.deepEqual(debugCalls[0].meta, {
+				const dispatchCall = debugCalls.find(call => call.message === 'Dispatching AI chat to external backend')
+				assert.ok(dispatchCall)
+				assert.deepEqual(dispatchCall.meta, {
 					module: 'ai-service',
-					externalEndpoint: '/api/chat',
-					conversationId: 'conv-prompt',
+					externalEndpoint: '/v1/chat/messages',
+					localConversationId: 'conv-prompt',
+					expectedExternalConversationId: 'vk_vk-prompt-user_default',
 					messageLength: 'question'.length,
-					userMemoryLength: 'memory that should be used'.length,
 					sessionContextLength: 0,
+					mode: 'simple',
 				})
-				assert.equal(JSON.stringify(debugCalls[0].meta).includes('temporary context'), false)
-				assert.equal(JSON.stringify(debugCalls[0].meta).includes('question'), false)
+				assert.equal(JSON.stringify(dispatchCall.meta).includes('temporary context'), false)
+				assert.equal(JSON.stringify(dispatchCall.meta).includes('question'), false)
 			} finally {
 				restoreAll(restores)
 			}
 		},
 	},
 	{
-		name: 'aiService does not persist AI chat messages as local primary storage',
+		name: 'aiService persists clean local chat messages without legacy memory/context',
 		run: async () => {
 			let capturedPayload = null
 			const persistedMessages = []
@@ -411,9 +423,10 @@ export const cases = [
 				})
 
 				assert.equal(capturedPayload.message, 'question')
-				assert.equal(capturedPayload.userMemory, 'memory')
-				assert.equal(capturedPayload.sessionContext, 'temporary context')
-				assert.equal(persistedMessages.length, 0)
+				assert.equal(capturedPayload.externalUserId, 'vk-prompt-user')
+				assert.equal(Object.hasOwn(capturedPayload, 'userMemory'), false)
+				assert.equal(Object.hasOwn(capturedPayload, 'sessionContext'), false)
+				assert.equal(persistedMessages.length, 2)
 				assert.equal(JSON.stringify(persistedMessages).includes('temporary context'), false)
 				assert.equal(JSON.stringify(persistedMessages).includes('memory'), false)
 				assert.equal(JSON.stringify(persistedMessages).includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)

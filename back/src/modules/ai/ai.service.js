@@ -225,6 +225,9 @@ const createUsageEvent = ({ userId, subscription, modelName }) =>
 const AI_HISTORY_SOURCE = 'vk_ai'
 const AI_CONVERSATION_TITLE_MAX_LENGTH = 255
 const toExternalUserId = userId => String(userId)
+const buildDefaultVkConversationId = externalUserId => `vk_${externalUserId}_default`
+const isAiBackendFeatureUnsupported = error =>
+	error instanceof AppError && error.details?.code === 'AI_BACKEND_FEATURE_UNSUPPORTED'
 const normalizeAiBlock = (value, maxLength) =>
 	String(value || '')
 		.slice(0, maxLength)
@@ -244,6 +247,37 @@ const getFileExtension = file => {
 	const name = String(file?.name || '')
 	const index = name.lastIndexOf('.')
 	return index >= 0 ? name.slice(index + 1).toLowerCase() : ''
+}
+
+const resolveExternalVkUserId = async userId => {
+	const fallbackUserId = String(userId)
+
+	try {
+		const identity = await prisma.authIdentity.findFirst({
+			where: {
+				userId,
+				provider: 'vk',
+			},
+			select: {
+				providerUserId: true,
+			},
+		})
+
+		const providerUserId = String(identity?.providerUserId || '').trim()
+		if (providerUserId) return providerUserId
+
+		aiServiceLogger.warn('VK auth identity not found; using internal user id for AI chat', {
+			userId: fallbackUserId,
+		})
+	} catch (error) {
+		aiServiceLogger.warn('VK auth identity lookup failed; using internal user id for AI chat', {
+			userId: fallbackUserId,
+			code: error?.code || null,
+			message: error?.message || 'Unknown DB error',
+		})
+	}
+
+	return fallbackUserId
 }
 
 const assertUploadSize = ({ file, maxBytes, code, message }) => {
@@ -815,50 +849,19 @@ export const aiService = {
 		const chatMode = normalizeAiChatMode(mode)
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: chatMode })
 		const normalizedUserMessage = normalizeAiMessageContent(message)
-		const normalizedUserMemory = await getCachedAiMemory(userId)
 		const normalizedSessionContext =
 			chatMode === 'context' ? normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH) : ''
+		const externalUserId = await resolveExternalVkUserId(userId)
+		const defaultExternalConversationId = buildDefaultVkConversationId(externalUserId)
 
 		aiServiceLogger.debug('Dispatching AI chat to external backend', {
-			externalEndpoint: '/api/chat',
-			conversationId: resolvedConversationId,
+			externalEndpoint: '/v1/chat/messages',
+			localConversationId: resolvedConversationId,
+			expectedExternalConversationId: defaultExternalConversationId,
 			messageLength: normalizedUserMessage.length,
-			userMemoryLength: normalizedUserMemory.length,
 			sessionContextLength: normalizedSessionContext.length,
+			mode: chatMode,
 		})
-
-		const externalResponse = await aiClient.chat({
-			userId: toExternalUserId(userId),
-			conversationId: resolvedConversationId,
-			message: normalizedUserMessage,
-			userMemory: normalizedUserMemory || undefined,
-			sessionContext: normalizedSessionContext || undefined,
-		})
-
-		await createUsageEvent({
-			userId,
-			subscription: access.activeSubscription,
-			modelName: USAGE_MODELS.chat,
-		})
-
-		return {
-			...externalResponse,
-			user_id: externalResponse?.user_id || toExternalUserId(userId),
-			conversation_id: externalResponse?.conversation_id || resolvedConversationId,
-		}
-
-		const promptMode =
-			chatMode === 'simple'
-				? normalizedUserMemory
-					? 'memory-only'
-					: 'plain'
-				: normalizedUserMemory && normalizedSessionContext
-					? 'memory+context+local-history'
-					: normalizedSessionContext
-						? 'context+local-history'
-						: normalizedUserMemory
-							? 'memory+local-history'
-							: 'local-history'
 
 		const conversation = await ensureAiConversation({
 			userId,
@@ -866,8 +869,6 @@ export const aiService = {
 			mode: chatMode,
 			title: normalizedUserMessage,
 		})
-
-		let response
 
 		await persistAiMessage({
 			userId,
@@ -878,76 +879,25 @@ export const aiService = {
 			conversation,
 		})
 
-		const localHistoryRows =
-			chatMode === 'context'
-				? await loadLocalPromptHistory({
-						userId,
-						conversationId: resolvedConversationId,
-					})
-				: []
-
-		const requestMessage =
-			chatMode === 'simple'
-				? buildAiMemoryOnlyRequestMessage({
-						userMemory: normalizedUserMemory,
-						message: normalizedUserMessage,
-					})
-				: buildAiRequestMessageWithLocalContext({
-						userMemory: normalizedUserMemory,
-						sessionContext: normalizedSessionContext,
-						historyRows: localHistoryRows,
-						message: normalizedUserMessage,
-					})
-
-		const externalConversationId = `stateless-${crypto.randomUUID()}`
-
-		console.log('[ai-context] sendChat:start', {
-			userId: String(userId),
-			mode: chatMode,
-			promptMode,
-			localConversationId: resolvedConversationId,
-			externalConversationId,
-			localHistoryMessages: localHistoryRows.length,
-			userMemoryLength: normalizedUserMemory.length,
-			sessionContextLength: normalizedSessionContext.length,
-			requestMessageLength: requestMessage.length,
-		})
-
-		aiServiceLogger.debug('Dispatching AI chat to external backend with local context', {
-			externalEndpoint: chatMode === 'simple' ? '/api/chat/simple' : '/api/chat',
-			promptMode,
-			localConversationId: resolvedConversationId,
-			externalConversationId,
-			messageLength: requestMessage.length,
-			localHistoryMessages: localHistoryRows.length,
-			userMemoryLength: normalizedUserMemory.length,
-			sessionContextLength: normalizedSessionContext.length,
-		})
+		let response
 
 		try {
-			if (chatMode === 'simple') {
-				response = await aiClient.simpleChat({
-					message: requestMessage,
-				})
-			} else {
-				response = await aiClient.chat({
-					userId: toExternalUserId(userId),
-					conversationId: externalConversationId,
-					message: requestMessage,
-				})
-			}
+			response = await aiClient.chat({
+				externalUserId,
+				message: normalizedUserMessage,
+			})
 
-			console.log('[ai-context] sendChat:external_response', {
+			aiServiceLogger.debug('AI chat response received from external backend', {
 				localConversationId: resolvedConversationId,
-				externalConversationId,
+				externalConversationId: response?.conversation_id || defaultExternalConversationId,
 				hasReply: Boolean(response?.reply),
 				replyLength: String(response?.reply || '').length,
 				externalMessageCount: response?.message_count ?? null,
 			})
 		} catch (error) {
-			console.error('[ai-context] sendChat:external_error', {
+			aiServiceLogger.error('AI chat request failed', {
 				localConversationId: resolvedConversationId,
-				externalConversationId,
+				expectedExternalConversationId: defaultExternalConversationId,
 				message: error?.message || 'AI request failed',
 				code: error?.details?.code || error?.code || null,
 				upstreamStatus: error?.details?.upstreamStatus || null,
@@ -966,11 +916,13 @@ export const aiService = {
 					upstreamStatus: error?.details?.upstreamStatus || null,
 					upstreamMessage: error?.details?.upstreamMessage || error?.message || null,
 					localConversationId: resolvedConversationId,
-					externalConversationId,
+					expectedExternalConversationId: defaultExternalConversationId,
 				},
 			})
 			throw error
 		}
+
+		const externalConversationId = response?.conversation_id || defaultExternalConversationId
 
 		await persistAiMessage({
 			userId,
@@ -987,8 +939,7 @@ export const aiService = {
 				message_count: response?.message_count ?? null,
 				localConversationId: resolvedConversationId,
 				externalConversationId,
-				promptMode,
-				localHistoryMessages: localHistoryRows.length,
+				promptMode: 'plain-user-message',
 			},
 		})
 
@@ -998,7 +949,7 @@ export const aiService = {
 			modelName: USAGE_MODELS.chat,
 		})
 
-		console.log('[ai-context] sendChat:done', {
+		aiServiceLogger.debug('AI chat completed', {
 			localConversationId: resolvedConversationId,
 			externalConversationId,
 			savedToLocalDb: true,
@@ -1006,10 +957,9 @@ export const aiService = {
 
 		return {
 			...response,
-			user_id: response?.user_id || toExternalUserId(userId),
-			conversation_id: resolvedConversationId,
+			user_id: response?.user_id || externalUserId,
+			conversation_id: externalConversationId,
 			local_conversation_id: resolvedConversationId,
-			external_conversation_id: externalConversationId,
 		}
 	},
 
@@ -1175,19 +1125,31 @@ export const aiService = {
 		assertCapability(access, 'chat')
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
-		const externalConversation = await aiClient.getConversation({
-			userId: toExternalUserId(userId),
-			conversationId: resolvedConversationId,
-		})
+		try {
+			const externalConversation = await aiClient.getConversation({
+				userId: toExternalUserId(userId),
+				conversationId: resolvedConversationId,
+			})
 
-		return {
-			...externalConversation,
-			user_id: externalConversation?.user_id || toExternalUserId(userId),
-			conversation_id: externalConversation?.conversation_id || resolvedConversationId,
-			message_count: Number(externalConversation?.message_count || externalConversation?.messages?.length || 0),
-			messages: Array.isArray(externalConversation?.messages) ? externalConversation.messages : [],
-			files: Array.isArray(externalConversation?.files) ? externalConversation.files : [],
-			voice_records: Array.isArray(externalConversation?.voice_records) ? externalConversation.voice_records : [],
+			return {
+				...externalConversation,
+				user_id: externalConversation?.user_id || toExternalUserId(userId),
+				conversation_id: externalConversation?.conversation_id || resolvedConversationId,
+				message_count: Number(externalConversation?.message_count || externalConversation?.messages?.length || 0),
+				messages: Array.isArray(externalConversation?.messages) ? externalConversation.messages : [],
+				files: Array.isArray(externalConversation?.files) ? externalConversation.files : [],
+				voice_records: Array.isArray(externalConversation?.voice_records) ? externalConversation.voice_records : [],
+			}
+		} catch (error) {
+			if (!isAiBackendFeatureUnsupported(error)) {
+				throw error
+			}
+
+			aiServiceLogger.warn('External AI history is unsupported; falling back to local history', {
+				userId: String(userId),
+				conversationId: resolvedConversationId,
+				code: error?.details?.code || null,
+			})
 		}
 
 		const storedConversation = await loadStoredConversation({
@@ -1221,17 +1183,25 @@ export const aiService = {
 		await assertSubscriptionActive(userId)
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
-		const externalReset = await aiClient.resetConversation({
-			userId: toExternalUserId(userId),
-			conversationId: resolvedConversationId,
-		})
+		let externalReset = null
+		let upstreamResetOk = false
 
-		return {
-			...externalReset,
-			status: externalReset?.status || 'ok',
-			user_id: externalReset?.user_id || toExternalUserId(userId),
-			conversation_id: externalReset?.conversation_id || resolvedConversationId,
-			upstreamResetOk: true,
+		try {
+			externalReset = await aiClient.resetConversation({
+				userId: toExternalUserId(userId),
+				conversationId: resolvedConversationId,
+			})
+			upstreamResetOk = true
+		} catch (error) {
+			if (!isAiBackendFeatureUnsupported(error)) {
+				throw error
+			}
+
+			aiServiceLogger.warn('External AI reset is unsupported; resetting local history only', {
+				userId: String(userId),
+				conversationId: resolvedConversationId,
+				code: error?.details?.code || null,
+			})
 		}
 
 		console.log('[ai-context] resetConversation:local_only_start', {
@@ -1251,11 +1221,12 @@ export const aiService = {
 			})
 
 			return {
+				...externalReset,
 				status: 'ok',
-				user_id: String(userId),
+				user_id: externalReset?.user_id || String(userId),
 				conversation_id: resolvedConversationId,
-				upstreamResetOk: false,
-				localOnly: true,
+				upstreamResetOk,
+				localOnly: !upstreamResetOk,
 			}
 		}
 
@@ -1265,11 +1236,12 @@ export const aiService = {
 		})
 
 		return {
+			...externalReset,
 			status: 'ok',
-			user_id: String(userId),
+			user_id: externalReset?.user_id || String(userId),
 			conversation_id: resolvedConversationId,
-			upstreamResetOk: false,
-			localOnly: true,
+			upstreamResetOk,
+			localOnly: !upstreamResetOk,
 			localResetSkipped: true,
 		}
 	},

@@ -21,6 +21,7 @@ export const cases = [
 				patchValue(env, 'vkAiBackendUrl', 'https://aivk.example'),
 				patchValue(env, 'vkAiBackendApiKey', 'test-api-key'),
 				patchValue(env, 'vkAiBackendTimeoutMs', 1000),
+				patchValue(env, 'vkAiClientId', 'main-prod'),
 				patchValue(globalThis, 'fetch', async (url, options) => {
 					fetchCalls.push({
 						url: String(url),
@@ -50,13 +51,14 @@ export const cases = [
 		},
 	},
 	{
-		name: 'aiClient.chat uses /api/chat and forwards runtime context outside message field',
+		name: 'aiClient.chat uses /v1/chat/messages and sends only the new chat contract',
 		run: async () => {
 			const fetchCalls = []
 			const restores = [
 				patchValue(env, 'vkAiBackendUrl', 'https://aivk.example'),
 				patchValue(env, 'vkAiBackendApiKey', 'test-api-key'),
 				patchValue(env, 'vkAiBackendTimeoutMs', 1000),
+				patchValue(env, 'vkAiClientId', 'main-prod'),
 				patchValue(globalThis, 'fetch', async (url, options) => {
 					fetchCalls.push({
 						url: String(url),
@@ -69,7 +71,7 @@ export const cases = [
 
 			try {
 				const payload = await aiClient.chat({
-					userId: 'user-1',
+					externalUserId: 'vk-user-1',
 					conversationId: 'conv-1',
 					message: 'Say hello',
 					userMemory: 'reply in Russian',
@@ -78,18 +80,20 @@ export const cases = [
 
 				assert.equal(payload.reply, 'ok')
 				assert.equal(fetchCalls.length, 1)
-				assert.equal(fetchCalls[0].url, 'https://aivk.example/api/chat')
+				assert.equal(fetchCalls[0].url, 'https://aivk.example/v1/chat/messages')
 				assert.equal(fetchCalls[0].options.method, 'POST')
 				assert.equal(fetchCalls[0].options.headers['X-API-Key'], 'test-api-key')
+				assert.equal(fetchCalls[0].options.headers['Content-Type'], 'application/json')
 				assert.equal(fetchCalls[0].body.message, 'Say hello')
 				assert.deepEqual(fetchCalls[0].body, {
-					user_id: 'user-1',
-					conversation_id: 'conv-1',
+					client_id: 'main-prod',
+					platform: 'vk',
+					external_user_id: 'vk-user-1',
 					message: 'Say hello',
-					user_memory: 'reply in Russian',
-					session_context: 'reply in English',
 				})
-				assert.equal(fetchCalls[0].body.message.includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
+				assert.equal(Object.hasOwn(fetchCalls[0].body, 'conversation_id'), false)
+				assert.equal(Object.hasOwn(fetchCalls[0].body, 'user_memory'), false)
+				assert.equal(Object.hasOwn(fetchCalls[0].body, 'session_context'), false)
 				assert.equal(Object.hasOwn(fetchCalls[0].body, 'sessionContext'), false)
 			} finally {
 				restoreAll(restores)
