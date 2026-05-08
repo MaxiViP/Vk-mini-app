@@ -1,83 +1,84 @@
 <template>
 	<div :class="['message', message.role, { 'message--quick-context-open': isQuickContextVisible }]">
-		<button
-			v-if="isQuickContextAvailable"
-			:class="['avatar', 'avatar--assistant', 'avatar--button']"
-			type="button"
-			:aria-expanded="quickContextOpen"
-			title="Изменить быстрый контекст"
-			aria-label="Изменить быстрый контекст AI"
-			@click="toggleQuickContext"
-		>
-			<svg class="avatar__icon avatar__icon--assistant" viewBox="0 0 24 24">
-				<rect x="5" y="7" width="14" height="11" rx="4" />
-				<path d="M12 3v4" />
-				<path d="M8.5 12h.01" />
-				<path d="M15.5 12h.01" />
-				<path d="M9.5 15.5c1.35 1 3.65 1 5 0" />
-				<path d="M4 12h1" />
-				<path d="M19 12h1" />
-			</svg>
-		</button>
-
-		<div v-else :class="['avatar', `avatar--${message.role}`]" aria-hidden="true">
-			<svg v-if="message.role === 'user'" class="avatar__icon" viewBox="0 0 24 24">
-				<path d="M20 21a8 8 0 0 0-16 0" />
-				<circle cx="12" cy="7" r="4" />
-			</svg>
-
-			<svg v-else class="avatar__icon avatar__icon--assistant" viewBox="0 0 24 24">
-				<rect x="5" y="7" width="14" height="11" rx="4" />
-				<path d="M12 3v4" />
-				<path d="M8.5 12h.01" />
-				<path d="M15.5 12h.01" />
-				<path d="M9.5 15.5c1.35 1 3.65 1 5 0" />
-				<path d="M4 12h1" />
-				<path d="M19 12h1" />
-			</svg>
-		</div>
-
-		<Transition name="quick-context-slide">
-			<form
-				v-if="isQuickContextVisible"
-				ref="quickContextRef"
-				class="assistant-quick-context"
-				@submit.prevent="saveQuickContext"
+		<div class="assistant-avatar-stack">
+			<button
+				v-if="isQuickContextAvailable"
+				:class="['avatar', 'avatar--assistant', 'avatar--button']"
+				type="button"
+				:aria-expanded="quickContextOpen"
+				title="Изменить быстрый контекст"
+				aria-label="Изменить быстрый контекст AI"
+				@click="toggleQuickContext"
 			>
-				<label class="assistant-quick-context__label" :for="quickContextInputId">Быстрый контекст</label>
-				<textarea
-					:id="quickContextInputId"
-					ref="quickContextInputRef"
-					v-model="quickContextDraft"
-					class="assistant-quick-context__input"
-					rows="2"
-					:maxlength="quickContextMaxLength"
-					placeholder="Например: отвечай короче, учитывай текущую задачу..."
-					@keydown.esc.prevent="closeQuickContext"
-					@keydown.ctrl.enter.prevent="saveQuickContext"
-				></textarea>
+				<svg class="avatar__icon avatar__icon--assistant" viewBox="0 0 24 24">
+					<rect x="5" y="7" width="14" height="11" rx="4" />
+					<path d="M12 3v4" />
+					<path d="M8.5 12h.01" />
+					<path d="M15.5 12h.01" />
+					<path d="M9.5 15.5c1.35 1 3.65 1 5 0" />
+					<path d="M4 12h1" />
+					<path d="M19 12h1" />
+				</svg>
+			</button>
 
-				<div class="assistant-quick-context__actions">
-					<button
-						class="assistant-quick-context__btn assistant-quick-context__btn--primary"
-						type="submit"
-						:disabled="!canSaveQuickContext"
-					>
-						Сохранить
-					</button>
-					<button
-						class="assistant-quick-context__btn"
-						type="button"
-						:disabled="!canClearQuickContext"
-						@click="clearQuickContext"
-					>
-						Очистить
-					</button>
-					<button class="assistant-quick-context__btn" type="button" @click="closeQuickContext">Закрыть</button>
-				</div>
-			</form>
-		</Transition>
+			<div v-else :class="['avatar', `avatar--${message.role}`]" aria-hidden="true">
+				<svg v-if="message.role === 'user'" class="avatar__icon" viewBox="0 0 24 24">
+					<path d="M20 21a8 8 0 0 0-16 0" />
+					<circle cx="12" cy="7" r="4" />
+				</svg>
 
+				<svg v-else class="avatar__icon avatar__icon--assistant" viewBox="0 0 24 24">
+					<rect x="5" y="7" width="14" height="11" rx="4" />
+					<path d="M12 3v4" />
+					<path d="M8.5 12h.01" />
+					<path d="M15.5 12h.01" />
+					<path d="M9.5 15.5c1.35 1 3.65 1 5 0" />
+					<path d="M4 12h1" />
+					<path d="M19 12h1" />
+				</svg>
+			</div>
+
+			<Transition name="quick-context-slide">
+				<form
+					v-if="isQuickContextVisible"
+					ref="quickContextRef"
+					class="assistant-quick-context"
+					@submit.prevent="saveQuickContext"
+				>
+					<label class="assistant-quick-context__label" :for="quickContextInputId">Быстрый контекст</label>
+					<textarea
+						:id="quickContextInputId"
+						ref="quickContextInputRef"
+						v-model="quickContextDraft"
+						class="assistant-quick-context__input"
+						rows="2"
+						:maxlength="quickContextMaxLength"
+						placeholder="Например: отвечай короче, учитывай текущую задачу..."
+						@keydown.esc.prevent="closeQuickContext"
+						@keydown.ctrl.enter.prevent="saveQuickContext"
+					></textarea>
+
+					<div class="assistant-quick-context__actions">
+						<button
+							class="assistant-quick-context__btn assistant-quick-context__btn--primary"
+							type="submit"
+							:disabled="!canSaveQuickContext"
+						>
+							Сохранить
+						</button>
+						<button
+							class="assistant-quick-context__btn"
+							type="button"
+							:disabled="!canClearQuickContext"
+							@click="clearQuickContext"
+						>
+							Очистить
+						</button>
+						<button class="assistant-quick-context__btn" type="button" @click="closeQuickContext">Закрыть</button>
+					</div>
+				</form>
+			</Transition>
+		</div>
 		<div :class="['bubble', { 'bubble--editing': isEditing }]">
 			<!-- <div v-if="metaSummary.length" class="meta-row">
 				<span v-for="item in metaSummary" :key="item" class="meta-chip">{{ item }}</span>
