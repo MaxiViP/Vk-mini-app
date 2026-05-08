@@ -40,6 +40,7 @@
 		<Transition name="quick-context-slide">
 			<form
 				v-if="isQuickContextVisible"
+				ref="quickContextRef"
 				class="assistant-quick-context"
 				@submit.prevent="saveQuickContext"
 			>
@@ -57,10 +58,19 @@
 				></textarea>
 
 				<div class="assistant-quick-context__actions">
-					<button class="assistant-quick-context__btn assistant-quick-context__btn--primary" type="submit" :disabled="!canSaveQuickContext">
+					<button
+						class="assistant-quick-context__btn assistant-quick-context__btn--primary"
+						type="submit"
+						:disabled="!canSaveQuickContext"
+					>
 						Сохранить
 					</button>
-					<button class="assistant-quick-context__btn" type="button" :disabled="!canClearQuickContext" @click="clearQuickContext">
+					<button
+						class="assistant-quick-context__btn"
+						type="button"
+						:disabled="!canClearQuickContext"
+						@click="clearQuickContext"
+					>
 						Очистить
 					</button>
 					<button class="assistant-quick-context__btn" type="button" @click="closeQuickContext">Закрыть</button>
@@ -231,7 +241,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { Message } from '../../types'
 
@@ -317,6 +327,7 @@ const emit = defineEmits<{
 
 const audioReplyRef = ref<HTMLAudioElement | null>(null)
 const editTextareaRef = ref<HTMLTextAreaElement | null>(null)
+const quickContextRef = ref<HTMLElement | null>(null)
 const quickContextInputRef = ref<HTMLTextAreaElement | null>(null)
 const renderedContent = ref('')
 const isEditing = ref(false)
@@ -329,6 +340,19 @@ const resendStatus = ref<'idle' | 'sent'>('idle')
 let renderToken = 0
 let copyStatusTimer: number | null = null
 let resendStatusTimer: number | null = null
+
+const handleOutsideQuickContextClick = (event: MouseEvent) => {
+	if (!props.quickContextOpen) return
+
+	const target = event.target as Node | null
+
+	const clickedInsideContext = quickContextRef.value?.contains(target)
+	const clickedAvatar = target instanceof HTMLElement ? target.closest('.avatar--button') : null
+
+	if (clickedInsideContext || clickedAvatar) return
+
+	closeQuickContext()
+}
 
 const renderMessageContent = async () => {
 	const content = props.message.content
@@ -384,7 +408,9 @@ const normalizedQuickContextDraft = computed(() =>
 		.trim(),
 )
 const canSaveQuickContext = computed(() => normalizedQuickContextDraft.value !== normalizedQuickContextValue.value)
-const canClearQuickContext = computed(() => Boolean(normalizedQuickContextDraft.value || normalizedQuickContextValue.value))
+const canClearQuickContext = computed(() =>
+	Boolean(normalizedQuickContextDraft.value || normalizedQuickContextValue.value),
+)
 const copyTitle = computed(() => (copyStatus.value === 'copied' ? 'Скопировано' : 'Копировать'))
 const copyAriaLabel = computed(() => (copyStatus.value === 'copied' ? 'Сообщение скопировано' : 'Копировать сообщение'))
 
@@ -566,7 +592,13 @@ const resendMessage = () => {
 	showResendFeedback()
 }
 
+onMounted(() => {
+	document.addEventListener('mousedown', handleOutsideQuickContextClick)
+})
+
 onBeforeUnmount(() => {
+	document.removeEventListener('mousedown', handleOutsideQuickContextClick)
+
 	if (copyStatusTimer) window.clearTimeout(copyStatusTimer)
 	if (resendStatusTimer) window.clearTimeout(resendStatusTimer)
 })
