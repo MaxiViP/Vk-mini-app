@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken'
 
 import prisma from '../src/db/prisma.js'
 import { authService } from '../src/modules/auth/auth.service.js'
+import { oauthService } from '../src/modules/auth/oauth.service.js'
 import { createAccessToken, startTestServer, stopTestServer } from './helpers/http.js'
 import { patchMethod, restoreAll } from './helpers/patch.js'
 
@@ -140,6 +141,48 @@ const createRegularPhoneFlowMocks = user => {
 }
 
 export const cases = [
+	{
+		name: 'VK bridge numeric code is stored as raw provider user id',
+		run: async () => {
+			let capturedUpsert = null
+			const user = {
+				id: 'vk_bridge_user',
+				email: '123456789@oauth.local',
+				phoneE164: null,
+				firstName: 'VK',
+				lastName: 'User',
+				avatarUrl: null,
+				status: 'active',
+			}
+			const restores = [
+				patchMethod(authService, 'upsertOAuthUser', async payload => {
+					capturedUpsert = payload
+					return user
+				}),
+				patchMethod(authService, 'issueTokens', async ({ user: issuedUser }) => ({
+					accessToken: `access:${issuedUser.id}`,
+					refreshToken: `refresh:${issuedUser.id}`,
+				})),
+			]
+
+			try {
+				const result = await oauthService.finalize({
+					provider: 'vk',
+					code: '123456789',
+					state: 'vk-bridge',
+					userAgent: 'test-agent',
+					ip: '127.0.0.1',
+				})
+
+				assert.equal(result.accessToken, 'access:vk_bridge_user')
+				assert.equal(capturedUpsert.provider, 'vk')
+				assert.equal(capturedUpsert.providerUserId, '123456789')
+				assert.doesNotMatch(capturedUpsert.providerUserId, /^vk_[a-f0-9]{24}$/)
+			} finally {
+				restoreAll(restores)
+			}
+		},
+	},
 	{
 		name: 'dev auth/profile lifecycle stays consistent after refresh',
 		run: async () => {

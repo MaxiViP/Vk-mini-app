@@ -25,6 +25,8 @@ const env = {
 	vkAiBackendApiKey: process.env.VK_AI_BACKEND_API_KEY || 'default-dev-key',
 	vkAiBackendTimeoutMs: toInt(process.env.VK_AI_BACKEND_TIMEOUT_MS, 60000),
 	vkAiClientId: process.env.VK_AI_CLIENT_ID || 'main-prod',
+	vkAiProfileId: process.env.VK_AI_PROFILE_ID || 'fast_chat',
+	vkAiBillingMode: process.env.VK_AI_BILLING_MODE || 'auto',
 	vkAiMaxFileBytes: toInt(process.env.VK_AI_MAX_FILE_BYTES, 20 * 1024 * 1024),
 	vkAiMaxAudioBytes: toInt(process.env.VK_AI_MAX_AUDIO_BYTES, 25 * 1024 * 1024),
 	logLevel: process.env.LOG_LEVEL || 'info',

@@ -14,6 +14,8 @@ const normalizeOptionalText = value => String(value || '').trim()
 const getBaseUrl = () => sanitizeUrl(env.vkAiBackendUrl)
 const getApiKey = () => String(env.vkAiBackendApiKey || '').trim()
 const getClientId = () => normalizeOptionalText(env.vkAiClientId) || 'main-prod'
+const getAiProfileId = () => normalizeOptionalText(env.vkAiProfileId) || 'fast_chat'
+const getBillingMode = () => normalizeOptionalText(env.vkAiBillingMode) || 'auto'
 
 const MIN_TIMEOUT_MS = 60000
 const DEFAULT_TIMEOUT_MS = 60000
@@ -259,38 +261,27 @@ const requestFormData = async (path, formData, { method = 'POST', retryAttempts 
 	throw lastError
 }
 
-const isRouteNotFoundAppError = error =>
-	error instanceof AppError && (error.statusCode === 404 || Number(error.details?.upstreamStatus || 0) === 404)
-
-const buildFeatureUnsupportedError = ({ feature, path, error }) =>
-	new AppError('AI backend feature is unsupported by configured upstream', 501, {
-		code: 'AI_BACKEND_FEATURE_UNSUPPORTED',
-		feature,
-		path,
-		upstreamStatus: error?.details?.upstreamStatus || error?.statusCode || null,
-		upstreamMessage: error?.details?.upstreamMessage || error?.message || null,
-	})
-
-const requestLegacyJsonFeature = async (feature, path, options) => {
-	try {
-		return await requestJson(path, options)
-	} catch (error) {
-		if (isRouteNotFoundAppError(error)) {
-			throw buildFeatureUnsupportedError({ feature, path, error })
-		}
-		throw error
+const compactPayload = value => {
+	if (Array.isArray(value)) {
+		return value
+			.map(item => (item && typeof item === 'object' ? compactPayload(item) : item))
+			.filter(item => item !== undefined && item !== null && item !== '')
 	}
-}
 
-const requestLegacyFormDataFeature = async (feature, path, formData, options) => {
-	try {
-		return await requestFormData(path, formData, options)
-	} catch (error) {
-		if (isRouteNotFoundAppError(error)) {
-			throw buildFeatureUnsupportedError({ feature, path, error })
-		}
-		throw error
+	if (value && typeof value === 'object') {
+		const entries = Object.entries(value)
+			.map(([key, item]) => [key, compactPayload(item)])
+			.filter(([, item]) => {
+				if (item === undefined || item === null || item === '') return false
+				if (Array.isArray(item) && item.length === 0) return false
+				if (item && typeof item === 'object' && Object.keys(item).length === 0) return false
+				return true
+			})
+
+		return Object.fromEntries(entries)
 	}
+
+	return value
 }
 
 export const aiClient = {
@@ -312,17 +303,33 @@ export const aiClient = {
 		})
 	},
 
-	chat({ externalUserId, userId, message }) {
+	chat({
+		externalUserId,
+		userId,
+		conversationId,
+		message,
+		aiProfileId,
+		billingMode,
+		metadata,
+		idempotencyKey,
+	}) {
 		const normalizedExternalUserId = normalizeOptionalText(externalUserId || userId)
+		const normalizedUserId = normalizeOptionalText(userId || normalizedExternalUserId)
 
 		return requestJson('/v1/chat/messages', {
 			method: 'POST',
-			body: {
+			body: compactPayload({
 				client_id: getClientId(),
 				platform: 'vk',
 				external_user_id: normalizedExternalUserId,
+				user_id: normalizedUserId,
+				conversation_id: normalizeOptionalText(conversationId),
 				message,
-			},
+				ai_profile_id: normalizeOptionalText(aiProfileId) || getAiProfileId(),
+				billing_mode: normalizeOptionalText(billingMode) || getBillingMode(),
+				metadata,
+				idempotency_key: idempotencyKey,
+			}),
 			retryAttempts: CHAT_RETRY_ATTEMPTS,
 		})
 	},
@@ -332,7 +339,7 @@ export const aiClient = {
 		formData.set('user_id', userId)
 		formData.set('conversation_id', conversationId)
 		formData.set('file', file, file.name || 'upload.bin')
-		return requestLegacyFormDataFeature('file_upload', '/api/files/upload', formData)
+		return requestFormData('/api/files/upload', formData)
 	},
 
 	voice({ userId, conversationId, file }) {
@@ -340,12 +347,12 @@ export const aiClient = {
 		formData.set('user_id', userId)
 		formData.set('conversation_id', conversationId)
 		formData.set('audio', file, file.name || 'voice.webm')
-		return requestLegacyFormDataFeature('voice', '/api/voice', formData)
+		return requestFormData('/api/voice', formData)
 	},
 
 	getConversation({ userId, conversationId }) {
 		const path = `/api/conversations/${encodeURIComponent(conversationId)}`
-		return requestLegacyJsonFeature('conversation_history', path, {
+		return requestJson(path, {
 			method: 'GET',
 			query: {
 				user_id: userId,
@@ -355,7 +362,7 @@ export const aiClient = {
 
 	resetConversation({ userId, conversationId }) {
 		const path = `/api/conversations/${encodeURIComponent(conversationId)}/reset`
-		return requestLegacyJsonFeature('conversation_reset', path, {
+		return requestJson(path, {
 			method: 'POST',
 			query: {
 				user_id: userId,

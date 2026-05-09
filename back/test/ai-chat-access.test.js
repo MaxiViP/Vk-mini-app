@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 
+import env from '../src/config/env.js'
 import prisma from '../src/db/prisma.js'
 import { aiClient } from '../src/modules/ai/ai.client.js'
+import { aiService } from '../src/modules/ai/ai.service.js'
 import { workspaceService } from '../src/modules/workspace/workspace.service.js'
 import { startTestServer, stopTestServer, createAccessToken } from './helpers/http.js'
-import { patchMethod, restoreAll } from './helpers/patch.js'
+import { patchMethod, patchValue, restoreAll } from './helpers/patch.js'
 
 const activeAiSubscription = {
 	id: 'sub_ai_1',
@@ -83,7 +85,10 @@ export const cases = [
 	{
 		name: 'POST /api/ai/chat proxies clean message with resolved VK external user id',
 		run: async () => {
+			let capturedChatPayload = null
 			const restores = [
+				patchValue(env, 'vkAiProfileId', 'fast_chat'),
+				patchValue(env, 'vkAiBillingMode', 'auto'),
 				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
 				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
 				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
@@ -94,15 +99,22 @@ export const cases = [
 				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({ ...storedConversation, ...data })),
 				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_1', ...data })),
 				patchMethod(workspaceService, 'getAiMemory', async () => ({ aiMemory: 'persistent memory' })),
-				patchMethod(aiClient, 'chat', async payload => ({
-					reply: 'AI reply',
-					user_id: payload.externalUserId,
-					conversation_id: `vk_${payload.externalUserId}_default`,
-					upstream_message: payload.message,
-					upstream_external_user_id: payload.externalUserId,
-					upstream_has_user_memory: Object.hasOwn(payload, 'userMemory'),
-					upstream_has_session_context: Object.hasOwn(payload, 'sessionContext'),
-				})),
+				patchMethod(aiClient, 'chat', async payload => {
+					capturedChatPayload = payload
+					return {
+						reply: 'AI reply',
+						user_id: payload.externalUserId,
+						conversation_id: payload.conversationId,
+						upstream_message: payload.message,
+						upstream_external_user_id: payload.externalUserId,
+						upstream_user_id: payload.userId,
+						upstream_conversation_id: payload.conversationId,
+						upstream_metadata: payload.metadata,
+						upstream_has_idempotency_key: Boolean(payload.idempotencyKey),
+						upstream_has_user_memory: Object.hasOwn(payload, 'userMemory'),
+						upstream_has_session_context: Object.hasOwn(payload, 'sessionContext'),
+					}
+				}),
 			]
 
 			const token = createAccessToken()
@@ -128,9 +140,19 @@ export const cases = [
 				assert.equal(payload.conversation_id, 'vk_vk-test-user_default')
 				assert.equal(payload.upstream_message, 'hello')
 				assert.equal(payload.upstream_external_user_id, 'vk-test-user')
+				assert.equal(payload.upstream_user_id, 'vk-test-user')
+				assert.equal(payload.upstream_conversation_id, 'vk_vk-test-user_default')
+				assert.deepEqual(payload.upstream_metadata, {
+					local_user_id: 'test-user',
+					local_conversation_id: 'conv-with-access',
+					mode: 'context',
+				})
+				assert.equal(payload.upstream_has_idempotency_key, true)
 				assert.equal(payload.upstream_has_user_memory, false)
 				assert.equal(payload.upstream_has_session_context, false)
 				assert.equal(payload.upstream_message.includes('[TEMPORARY SESSION RULES - HIGH PRIORITY]'), false)
+				assert.equal(capturedChatPayload.aiProfileId, 'fast_chat')
+				assert.equal(capturedChatPayload.billingMode, 'auto')
 			} finally {
 				restoreAll(restores)
 				await stopTestServer(server)
@@ -189,10 +211,12 @@ export const cases = [
 	{
 		name: 'GET /api/ai/history/:conversationId proxies external AI history',
 		run: async () => {
+			let capturedHistoryRequest = null
 			const restores = [
 				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
 				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
 				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
+				patchMethod(prisma.authIdentity, 'findFirst', async () => ({ providerUserId: 'vk-test-user' })),
 				patchMethod(prisma.aiConversation, 'findFirst', async () => ({
 					...storedConversation,
 					conversationKey: 'conv-db',
@@ -211,17 +235,20 @@ export const cases = [
 						metadataJson: null,
 					},
 				]),
-				patchMethod(aiClient, 'getConversation', async ({ conversationId }) => ({
-					user_id: 'test-user',
-					conversation_id: conversationId,
-					message_count: 2,
-					messages: [
-						{ role: 'user', content: 'hello' },
-						{ role: 'assistant', content: 'AI reply' },
-					],
-					files: [],
-					voice_records: [],
-				})),
+				patchMethod(aiClient, 'getConversation', async payload => {
+					capturedHistoryRequest = payload
+					return {
+						user_id: payload.userId,
+						conversation_id: payload.conversationId,
+						message_count: 2,
+						messages: [
+							{ role: 'user', content: 'hello' },
+							{ role: 'assistant', content: 'AI reply' },
+						],
+						files: [],
+						voice_records: [],
+					}
+				}),
 			]
 
 			const token = createAccessToken()
@@ -236,7 +263,10 @@ export const cases = [
 				const payload = await response.json()
 
 				assert.equal(response.status, 200)
-				assert.equal(payload.conversation_id, 'conv-db')
+				assert.equal(capturedHistoryRequest.userId, 'vk-test-user')
+				assert.equal(capturedHistoryRequest.conversationId, 'vk_vk-test-user_default')
+				assert.equal(payload.conversation_id, 'vk_vk-test-user_default')
+				assert.equal(payload.local_conversation_id, 'conv-db')
 				assert.equal(payload.message_count, 2)
 				assert.equal(payload.messages[0].content, 'hello')
 				assert.equal(payload.messages[1].content, 'AI reply')
@@ -285,10 +315,12 @@ export const cases = [
 	{
 		name: 'POST /api/ai/history/:conversationId/reset proxies external reset',
 		run: async () => {
+			let capturedResetRequest = null
 			const restores = [
 				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
 				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
 				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
+				patchMethod(prisma.authIdentity, 'findFirst', async () => ({ providerUserId: 'vk-test-user' })),
 				patchMethod(prisma.aiConversation, 'findFirst', async () => ({
 					...storedConversation,
 					conversationKey: 'conv-db',
@@ -299,11 +331,14 @@ export const cases = [
 					...data,
 				})),
 				patchMethod(prisma.aiMessage, 'deleteMany', async () => ({ count: 2 })),
-				patchMethod(aiClient, 'resetConversation', async ({ userId, conversationId }) => ({
-					status: 'ok',
-					user_id: userId,
-					conversation_id: conversationId,
-				})),
+				patchMethod(aiClient, 'resetConversation', async payload => {
+					capturedResetRequest = payload
+					return {
+						status: 'ok',
+						user_id: payload.userId,
+						conversation_id: payload.conversationId,
+					}
+				}),
 			]
 
 			const token = createAccessToken()
@@ -320,10 +355,111 @@ export const cases = [
 
 				assert.equal(response.status, 200)
 				assert.equal(payload.status, 'ok')
-				assert.equal(payload.conversation_id, 'conv-db')
+				assert.equal(capturedResetRequest.userId, 'vk-test-user')
+				assert.equal(capturedResetRequest.conversationId, 'vk_vk-test-user_default')
+				assert.equal(payload.conversation_id, 'vk_vk-test-user_default')
+				assert.equal(payload.local_conversation_id, 'conv-db')
 			} finally {
 				restoreAll(restores)
 				await stopTestServer(server)
+			}
+		},
+	},
+	{
+		name: 'aiService.uploadFile uses resolved VK external user and conversation ids',
+		run: async () => {
+			let capturedUploadRequest = null
+			const restores = [
+				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
+				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
+				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
+				patchMethod(prisma.usageEvent, 'create', async data => ({ id: 'usage_upload_1', ...data })),
+				patchMethod(prisma.authIdentity, 'findFirst', async () => ({ providerUserId: 'vk-upload-user' })),
+				patchMethod(prisma.aiConversation, 'findUnique', async () => null),
+				patchMethod(prisma.aiConversation, 'create', async () => ({
+					...storedConversation,
+					conversationKey: 'vk-dialog-test-user',
+				})),
+				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({
+					...storedConversation,
+					conversationKey: 'vk-dialog-test-user',
+					...data,
+				})),
+				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_upload_1', ...data })),
+				patchMethod(aiClient, 'uploadFile', async payload => {
+					capturedUploadRequest = payload
+					return {
+						status: 'ok',
+						user_id: payload.userId,
+						conversation_id: payload.conversationId,
+						filename: payload.file.name,
+					}
+				}),
+			]
+
+			try {
+				const response = await aiService.uploadFile({
+					userId: 'test-user',
+					conversationId: 'vk-dialog-test-user',
+					file: { name: 'context.txt', size: 12, type: 'text/plain' },
+				})
+
+				assert.equal(capturedUploadRequest.userId, 'vk-upload-user')
+				assert.equal(capturedUploadRequest.conversationId, 'vk_vk-upload-user_default')
+				assert.equal(response.user_id, 'vk-upload-user')
+				assert.equal(response.conversation_id, 'vk_vk-upload-user_default')
+				assert.equal(response.local_conversation_id, 'vk-dialog-test-user')
+			} finally {
+				restoreAll(restores)
+			}
+		},
+	},
+	{
+		name: 'aiService.sendVoice uses resolved VK external user and conversation ids',
+		run: async () => {
+			let capturedVoiceRequest = null
+			const restores = [
+				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
+				patchMethod(prisma.subscription, 'findFirst', async () => activeAiSubscription),
+				patchMethod(prisma.usageEvent, 'groupBy', async () => []),
+				patchMethod(prisma.usageEvent, 'create', async data => ({ id: 'usage_voice_1', ...data })),
+				patchMethod(prisma.authIdentity, 'findFirst', async () => ({ providerUserId: 'vk-voice-user' })),
+				patchMethod(prisma.aiConversation, 'findUnique', async () => null),
+				patchMethod(prisma.aiConversation, 'create', async () => ({
+					...storedConversation,
+					conversationKey: 'vk-dialog-test-user',
+				})),
+				patchMethod(prisma.aiConversation, 'update', async ({ data }) => ({
+					...storedConversation,
+					conversationKey: 'vk-dialog-test-user',
+					...data,
+				})),
+				patchMethod(prisma.aiMessage, 'create', async data => ({ id: 'ai_msg_voice_1', ...data })),
+				patchMethod(aiClient, 'voice', async payload => {
+					capturedVoiceRequest = payload
+					return {
+						transcript: 'voice text',
+						reply: 'voice reply',
+						user_id: payload.userId,
+						conversation_id: payload.conversationId,
+					}
+				}),
+			]
+
+			try {
+				const response = await aiService.sendVoice({
+					userId: 'test-user',
+					conversationId: 'vk-dialog-test-user',
+					file: { name: 'voice.webm', size: 12, type: 'audio/webm' },
+				})
+
+				assert.equal(capturedVoiceRequest.userId, 'vk-voice-user')
+				assert.equal(capturedVoiceRequest.conversationId, 'vk_vk-voice-user_default')
+				assert.equal(response.user_id, 'vk-voice-user')
+				assert.equal(response.conversation_id, 'vk_vk-voice-user_default')
+				assert.equal(response.local_conversation_id, 'vk-dialog-test-user')
+			} finally {
+				restoreAll(restores)
 			}
 		},
 	},

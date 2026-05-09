@@ -224,8 +224,21 @@ const createUsageEvent = ({ userId, subscription, modelName }) =>
 
 const AI_HISTORY_SOURCE = 'vk_ai'
 const AI_CONVERSATION_TITLE_MAX_LENGTH = 255
-const toExternalUserId = userId => String(userId)
 const buildDefaultVkConversationId = externalUserId => `vk_${externalUserId}_default`
+const resolveExternalVkConversationId = ({ externalUserId, conversationId }) => {
+	const normalizedConversationId = String(conversationId || '').trim()
+	if (normalizedConversationId.startsWith('vk_')) return normalizedConversationId
+	return buildDefaultVkConversationId(externalUserId)
+}
+const buildAiChatIdempotencyKey = ({ externalUserId, conversationId }) => {
+	const nonce = crypto.randomUUID()
+	const digest = crypto
+		.createHash('sha256')
+		.update(`${externalUserId}:${conversationId}:${nonce}`)
+		.digest('hex')
+		.slice(0, 32)
+	return `vk_ai_chat_${digest}`
+}
 const isAiBackendFeatureUnsupported = error =>
 	error instanceof AppError && error.details?.code === 'AI_BACKEND_FEATURE_UNSUPPORTED'
 const normalizeAiBlock = (value, maxLength) =>
@@ -266,11 +279,11 @@ const resolveExternalVkUserId = async userId => {
 		const providerUserId = String(identity?.providerUserId || '').trim()
 		if (providerUserId) return providerUserId
 
-		aiServiceLogger.warn('VK auth identity not found; using internal user id for AI chat', {
+		aiServiceLogger.warn('VK auth identity not found; using internal user id for AI backend request', {
 			userId: fallbackUserId,
 		})
 	} catch (error) {
-		aiServiceLogger.warn('VK auth identity lookup failed; using internal user id for AI chat', {
+		aiServiceLogger.warn('VK auth identity lookup failed; using internal user id for AI backend request', {
 			userId: fallbackUserId,
 			code: error?.code || null,
 			message: error?.message || 'Unknown DB error',
@@ -852,12 +865,19 @@ export const aiService = {
 		const normalizedSessionContext =
 			chatMode === 'context' ? normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH) : ''
 		const externalUserId = await resolveExternalVkUserId(userId)
-		const defaultExternalConversationId = buildDefaultVkConversationId(externalUserId)
+		const externalConversationId = resolveExternalVkConversationId({
+			externalUserId,
+			conversationId: resolvedConversationId,
+		})
+		const idempotencyKey = buildAiChatIdempotencyKey({
+			externalUserId,
+			conversationId: externalConversationId,
+		})
 
 		aiServiceLogger.debug('Dispatching AI chat to external backend', {
 			externalEndpoint: '/v1/chat/messages',
 			localConversationId: resolvedConversationId,
-			expectedExternalConversationId: defaultExternalConversationId,
+			expectedExternalConversationId: externalConversationId,
 			messageLength: normalizedUserMessage.length,
 			sessionContextLength: normalizedSessionContext.length,
 			mode: chatMode,
@@ -884,12 +904,22 @@ export const aiService = {
 		try {
 			response = await aiClient.chat({
 				externalUserId,
+				userId: externalUserId,
+				conversationId: externalConversationId,
 				message: normalizedUserMessage,
+				aiProfileId: env.vkAiProfileId,
+				billingMode: env.vkAiBillingMode,
+				metadata: {
+					local_user_id: userId,
+					local_conversation_id: resolvedConversationId,
+					mode: chatMode,
+				},
+				idempotencyKey,
 			})
 
 			aiServiceLogger.debug('AI chat response received from external backend', {
 				localConversationId: resolvedConversationId,
-				externalConversationId: response?.conversation_id || defaultExternalConversationId,
+				externalConversationId: response?.conversation_id || externalConversationId,
 				hasReply: Boolean(response?.reply),
 				replyLength: String(response?.reply || '').length,
 				externalMessageCount: response?.message_count ?? null,
@@ -897,7 +927,7 @@ export const aiService = {
 		} catch (error) {
 			aiServiceLogger.error('AI chat request failed', {
 				localConversationId: resolvedConversationId,
-				expectedExternalConversationId: defaultExternalConversationId,
+				expectedExternalConversationId: externalConversationId,
 				message: error?.message || 'AI request failed',
 				code: error?.details?.code || error?.code || null,
 				upstreamStatus: error?.details?.upstreamStatus || null,
@@ -916,13 +946,13 @@ export const aiService = {
 					upstreamStatus: error?.details?.upstreamStatus || null,
 					upstreamMessage: error?.details?.upstreamMessage || error?.message || null,
 					localConversationId: resolvedConversationId,
-					expectedExternalConversationId: defaultExternalConversationId,
+					expectedExternalConversationId: externalConversationId,
 				},
 			})
 			throw error
 		}
 
-		const externalConversationId = response?.conversation_id || defaultExternalConversationId
+		const responseConversationId = response?.conversation_id || externalConversationId
 
 		await persistAiMessage({
 			userId,
@@ -938,7 +968,7 @@ export const aiService = {
 				transcript: response?.transcript || null,
 				message_count: response?.message_count ?? null,
 				localConversationId: resolvedConversationId,
-				externalConversationId,
+				externalConversationId: responseConversationId,
 				promptMode: 'plain-user-message',
 			},
 		})
@@ -951,14 +981,14 @@ export const aiService = {
 
 		aiServiceLogger.debug('AI chat completed', {
 			localConversationId: resolvedConversationId,
-			externalConversationId,
+			externalConversationId: responseConversationId,
 			savedToLocalDb: true,
 		})
 
 		return {
 			...response,
 			user_id: response?.user_id || externalUserId,
-			conversation_id: externalConversationId,
+			conversation_id: responseConversationId,
 			local_conversation_id: resolvedConversationId,
 		}
 	},
@@ -970,24 +1000,16 @@ export const aiService = {
 		assertContextFileAllowed(file)
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
-		const externalResponse = await aiClient.uploadFile({
-			userId: toExternalUserId(userId),
+		const externalUserId = await resolveExternalVkUserId(userId)
+		const externalConversationId = resolveExternalVkConversationId({
+			externalUserId,
 			conversationId: resolvedConversationId,
+		})
+		const externalResponse = await aiClient.uploadFile({
+			userId: externalUserId,
+			conversationId: externalConversationId,
 			file,
 		})
-
-		await createUsageEvent({
-			userId,
-			subscription: access.activeSubscription,
-			modelName: USAGE_MODELS.fileUpload,
-		})
-
-		return {
-			...externalResponse,
-			user_id: externalResponse?.user_id || toExternalUserId(userId),
-			conversation_id: externalResponse?.conversation_id || resolvedConversationId,
-			filename: externalResponse?.filename || file?.name || null,
-		}
 
 		const conversation = await ensureAiConversation({
 			userId,
@@ -996,11 +1018,8 @@ export const aiService = {
 			title: file?.name || 'upload',
 		})
 
-		const response = await aiClient.uploadFile({
-			userId: toExternalUserId(userId),
-			conversationId: resolvedConversationId,
-			file,
-		})
+		const responseConversationId = externalResponse?.conversation_id || externalConversationId
+		const response = externalResponse
 
 		await persistAiMessage({
 			userId,
@@ -1014,6 +1033,8 @@ export const aiService = {
 				filename: response?.filename || file?.name || null,
 				status: response?.status || null,
 				file_id: response?.file_id || null,
+				localConversationId: resolvedConversationId,
+				externalConversationId: responseConversationId,
 			},
 		})
 
@@ -1023,7 +1044,13 @@ export const aiService = {
 			modelName: USAGE_MODELS.fileUpload,
 		})
 
-		return response
+		return {
+			...response,
+			user_id: response?.user_id || externalUserId,
+			conversation_id: responseConversationId,
+			local_conversation_id: resolvedConversationId,
+			filename: response?.filename || file?.name || null,
+		}
 	},
 
 	async sendVoice({ userId, conversationId, file }) {
@@ -1033,23 +1060,16 @@ export const aiService = {
 		assertVoiceFileAllowed(file)
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
-		const externalResponse = await aiClient.voice({
-			userId: toExternalUserId(userId),
+		const externalUserId = await resolveExternalVkUserId(userId)
+		const externalConversationId = resolveExternalVkConversationId({
+			externalUserId,
 			conversationId: resolvedConversationId,
+		})
+		const externalResponse = await aiClient.voice({
+			userId: externalUserId,
+			conversationId: externalConversationId,
 			file,
 		})
-
-		await createUsageEvent({
-			userId,
-			subscription: access.activeSubscription,
-			modelName: USAGE_MODELS.voice,
-		})
-
-		return {
-			...externalResponse,
-			user_id: externalResponse?.user_id || toExternalUserId(userId),
-			conversation_id: externalResponse?.conversation_id || resolvedConversationId,
-		}
 
 		const conversation = await ensureAiConversation({
 			userId,
@@ -1058,11 +1078,8 @@ export const aiService = {
 			title: file?.name || 'voice',
 		})
 
-		const response = await aiClient.voice({
-			userId: toExternalUserId(userId),
-			conversationId: resolvedConversationId,
-			file,
-		})
+		const responseConversationId = externalResponse?.conversation_id || externalConversationId
+		const response = externalResponse
 
 		await persistAiMessage({
 			userId,
@@ -1075,6 +1092,8 @@ export const aiService = {
 				kind: 'voice_input',
 				fileName: file?.name || null,
 				transcript: response?.transcript || null,
+				localConversationId: resolvedConversationId,
+				externalConversationId: responseConversationId,
 			},
 		})
 
@@ -1092,6 +1111,8 @@ export const aiService = {
 				source_type: response?.source_type || null,
 				sources: Array.isArray(response?.sources) ? response.sources : [],
 				audio_reply_url: response?.audio_reply_url || null,
+				localConversationId: resolvedConversationId,
+				externalConversationId: responseConversationId,
 			},
 		})
 
@@ -1101,7 +1122,12 @@ export const aiService = {
 			modelName: USAGE_MODELS.voice,
 		})
 
-		return response
+		return {
+			...response,
+			user_id: response?.user_id || externalUserId,
+			conversation_id: responseConversationId,
+			local_conversation_id: resolvedConversationId,
+		}
 	},
 
 	async listConversations({ userId }) {
@@ -1125,16 +1151,22 @@ export const aiService = {
 		assertCapability(access, 'chat')
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
+		const externalUserId = await resolveExternalVkUserId(userId)
+		const externalConversationId = resolveExternalVkConversationId({
+			externalUserId,
+			conversationId: resolvedConversationId,
+		})
 		try {
 			const externalConversation = await aiClient.getConversation({
-				userId: toExternalUserId(userId),
-				conversationId: resolvedConversationId,
+				userId: externalUserId,
+				conversationId: externalConversationId,
 			})
 
 			return {
 				...externalConversation,
-				user_id: externalConversation?.user_id || toExternalUserId(userId),
-				conversation_id: externalConversation?.conversation_id || resolvedConversationId,
+				user_id: externalConversation?.user_id || externalUserId,
+				conversation_id: externalConversation?.conversation_id || externalConversationId,
+				local_conversation_id: resolvedConversationId,
 				message_count: Number(externalConversation?.message_count || externalConversation?.messages?.length || 0),
 				messages: Array.isArray(externalConversation?.messages) ? externalConversation.messages : [],
 				files: Array.isArray(externalConversation?.files) ? externalConversation.files : [],
@@ -1183,13 +1215,18 @@ export const aiService = {
 		await assertSubscriptionActive(userId)
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
+		const externalUserId = await resolveExternalVkUserId(userId)
+		const externalConversationId = resolveExternalVkConversationId({
+			externalUserId,
+			conversationId: resolvedConversationId,
+		})
 		let externalReset = null
 		let upstreamResetOk = false
 
 		try {
 			externalReset = await aiClient.resetConversation({
-				userId: toExternalUserId(userId),
-				conversationId: resolvedConversationId,
+				userId: externalUserId,
+				conversationId: externalConversationId,
 			})
 			upstreamResetOk = true
 		} catch (error) {
@@ -1223,8 +1260,9 @@ export const aiService = {
 			return {
 				...externalReset,
 				status: 'ok',
-				user_id: externalReset?.user_id || String(userId),
-				conversation_id: resolvedConversationId,
+				user_id: externalReset?.user_id || externalUserId,
+				conversation_id: externalReset?.conversation_id || externalConversationId,
+				local_conversation_id: resolvedConversationId,
 				upstreamResetOk,
 				localOnly: !upstreamResetOk,
 			}
@@ -1238,8 +1276,9 @@ export const aiService = {
 		return {
 			...externalReset,
 			status: 'ok',
-			user_id: externalReset?.user_id || String(userId),
-			conversation_id: resolvedConversationId,
+			user_id: externalReset?.user_id || externalUserId,
+			conversation_id: externalReset?.conversation_id || externalConversationId,
+			local_conversation_id: resolvedConversationId,
 			upstreamResetOk,
 			localOnly: !upstreamResetOk,
 			localResetSkipped: true,

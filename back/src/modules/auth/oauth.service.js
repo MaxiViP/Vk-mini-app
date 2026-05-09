@@ -67,8 +67,11 @@ const buildProviderAuthUrl = ({ provider, state, redirectUri }) => {
 	return `${config.authBase}?${params.toString()}`
 }
 
-const fallbackProfileFromCode = ({ provider, code }) => {
-	const providerUserId = `${provider}_${crypto.createHash('sha1').update(code).digest('hex').slice(0, 24)}`
+const isNumericVkBridgeCode = code => /^\d+$/.test(String(code || '').trim())
+
+const fallbackProfileFromCode = ({ provider, code, providerUserId: explicitProviderUserId }) => {
+	const providerUserId =
+		explicitProviderUserId || `${provider}_${crypto.createHash('sha1').update(code).digest('hex').slice(0, 24)}`
 	return {
 		providerUserId,
 		profile: {
@@ -155,7 +158,7 @@ const toProviderErrorDetails = error => ({
 	providerMessage: error?.response?.data?.error_description || error?.response?.data?.error || null,
 })
 
-const exchangeOAuthCode = async ({ provider, code, redirectUri, codeVerifier }) => {
+const exchangeOAuthCode = async ({ provider, code, state, redirectUri, codeVerifier }) => {
 	logger.info('OAuth code exchange started', {
 		provider,
 		redirectUri,
@@ -164,6 +167,15 @@ const exchangeOAuthCode = async ({ provider, code, redirectUri, codeVerifier }) 
 		hasCodeVerifier: Boolean(codeVerifier),
 		providerConfigPresent: isProviderConfigPresent(provider),
 	})
+
+	if (provider === 'vk' && state === 'vk-bridge' && isNumericVkBridgeCode(code)) {
+		const providerUserId = String(code).trim()
+		logger.info('OAuth VK bridge numeric code resolved as provider user id', {
+			provider,
+			providerUserId: maskValue(providerUserId),
+		})
+		return fallbackProfileFromCode({ provider, code, providerUserId })
+	}
 
 	if (shouldUseFallback(provider)) {
 		logger.warn('OAuth provider config missing, fallback profile will be used', {
@@ -310,6 +322,7 @@ export const oauthService = {
 		const { providerUserId, profile } = await exchangeOAuthCode({
 			provider,
 			code,
+			state,
 			redirectUri: saved.redirectUri,
 			codeVerifier,
 		})
