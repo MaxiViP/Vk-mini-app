@@ -1151,70 +1151,91 @@ export const aiService = {
 		return conversations
 	},
 
-	async getConversation({ userId, conversationId }) {
-		const access = await assertSubscriptionActive(userId)
-		assertCapability(access, 'chat')
+async getConversation({ userId, conversationId }) {
+	const access = await assertSubscriptionActive(userId)
+	assertCapability(access, 'chat')
 
-		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
-		const { externalUserId, vkUserId } = await resolveExternalVkUserId(userId)
-		const externalConversationId = resolveExternalVkConversationId({
-			externalUserId,
-			conversationId: resolvedConversationId,
-		})
-		try {
-			const externalConversation = await aiClient.getConversation({
-				userId: externalUserId,
-				conversationId: externalConversationId,
-			})
+	const resolvedConversationId = resolveConversationKey({
+		userId,
+		conversationId,
+		mode: 'context',
+	})
 
-			return {
-				...externalConversation,
-				user_id: externalConversation?.user_id || externalUserId,
-				conversation_id: externalConversation?.conversation_id || externalConversationId,
-				local_conversation_id: resolvedConversationId,
-				message_count: Number(externalConversation?.message_count || externalConversation?.messages?.length || 0),
-				messages: Array.isArray(externalConversation?.messages) ? externalConversation.messages : [],
-				files: Array.isArray(externalConversation?.files) ? externalConversation.files : [],
-				voice_records: Array.isArray(externalConversation?.voice_records) ? externalConversation.voice_records : [],
-			}
-		} catch (error) {
-			if (!isAiBackendFeatureUnsupported(error)) {
-				throw error
-			}
-
-			aiServiceLogger.warn('External AI history is unsupported; falling back to local history', {
-				userId: String(userId),
-				conversationId: resolvedConversationId,
-				code: error?.details?.code || null,
-			})
-		}
-
+	// ЛОКАЛЬНЫЕ UI conversation никогда не отправляем во внешний AIVK
+	if (resolvedConversationId.startsWith('vk-dialog-')) {
 		const storedConversation = await loadStoredConversation({
 			userId,
 			conversationId: resolvedConversationId,
 		})
 
 		if (storedConversation !== AI_HISTORY_STORAGE_UNAVAILABLE) {
-			console.log('[ai-context] getConversation:local_db', {
-				userId: String(userId),
-				conversationId: resolvedConversationId,
-				messageCount: storedConversation.message_count,
-			})
-
 			return storedConversation
 		}
-
-		console.warn('[ai-context] getConversation:local_storage_unavailable_return_empty', {
-			userId: String(userId),
-			conversationId: resolvedConversationId,
-		})
 
 		return serializeStoredConversation({
 			userId,
 			conversationId: resolvedConversationId,
 			rows: [],
 		})
-	},
+	}
+
+	// OPTIONAL external history only for real external conversation ids
+	const externalUserId = String(userId)
+
+	try {
+		const externalConversation = await aiClient.getConversation({
+			userId: externalUserId,
+			conversationId: resolvedConversationId,
+		})
+
+		return {
+			...externalConversation,
+			user_id: externalConversation?.user_id || externalUserId,
+			conversation_id:
+				externalConversation?.conversation_id || resolvedConversationId,
+			local_conversation_id: resolvedConversationId,
+			message_count: Number(
+				externalConversation?.message_count ||
+					externalConversation?.messages?.length ||
+					0
+			),
+			messages: Array.isArray(externalConversation?.messages)
+				? externalConversation.messages
+				: [],
+			files: Array.isArray(externalConversation?.files)
+				? externalConversation.files
+				: [],
+			voice_records: Array.isArray(externalConversation?.voice_records)
+				? externalConversation.voice_records
+				: [],
+		}
+	} catch (error) {
+		aiServiceLogger.warn(
+			'External AI history failed; falling back to local history',
+			{
+				userId: String(userId),
+				conversationId: resolvedConversationId,
+				message: error?.message || 'Unknown error',
+				code: error?.details?.code || error?.code || null,
+			}
+		)
+	}
+
+	const storedConversation = await loadStoredConversation({
+		userId,
+		conversationId: resolvedConversationId,
+	})
+
+	if (storedConversation !== AI_HISTORY_STORAGE_UNAVAILABLE) {
+		return storedConversation
+	}
+
+	return serializeStoredConversation({
+		userId,
+		conversationId: resolvedConversationId,
+		rows: [],
+	})
+}
 
 	async resetConversation({ userId, conversationId }) {
 		await assertSubscriptionActive(userId)
