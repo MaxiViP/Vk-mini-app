@@ -1155,39 +1155,16 @@ export const aiService = {
 		const access = await assertSubscriptionActive(userId)
 		assertCapability(access, 'chat')
 
-		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
-		const { externalUserId, vkUserId } = await resolveExternalVkUserId(userId)
-		const externalConversationId = resolveExternalVkConversationId({
-			externalUserId,
+		const resolvedConversationId = resolveConversationKey({
+			userId,
+			conversationId,
+			mode: 'context',
+		})
+
+		console.log('[ai-context] getConversation:local_only_start', {
+			userId: String(userId),
 			conversationId: resolvedConversationId,
 		})
-		try {
-			const externalConversation = await aiClient.getConversation({
-				userId: externalUserId,
-				conversationId: externalConversationId,
-			})
-
-			return {
-				...externalConversation,
-				user_id: externalConversation?.user_id || externalUserId,
-				conversation_id: externalConversation?.conversation_id || externalConversationId,
-				local_conversation_id: resolvedConversationId,
-				message_count: Number(externalConversation?.message_count || externalConversation?.messages?.length || 0),
-				messages: Array.isArray(externalConversation?.messages) ? externalConversation.messages : [],
-				files: Array.isArray(externalConversation?.files) ? externalConversation.files : [],
-				voice_records: Array.isArray(externalConversation?.voice_records) ? externalConversation.voice_records : [],
-			}
-		} catch (error) {
-			if (!isAiBackendFeatureUnsupported(error)) {
-				throw error
-			}
-
-			aiServiceLogger.warn('External AI history is unsupported; falling back to local history', {
-				userId: String(userId),
-				conversationId: resolvedConversationId,
-				code: error?.details?.code || null,
-			})
-		}
 
 		const storedConversation = await loadStoredConversation({
 			userId,
@@ -1219,32 +1196,11 @@ export const aiService = {
 	async resetConversation({ userId, conversationId }) {
 		await assertSubscriptionActive(userId)
 
-		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
-		const { externalUserId, vkUserId } = await resolveExternalVkUserId(userId)
-		const externalConversationId = resolveExternalVkConversationId({
-			externalUserId,
-			conversationId: resolvedConversationId,
+		const resolvedConversationId = resolveConversationKey({
+			userId,
+			conversationId,
+			mode: 'context',
 		})
-		let externalReset = null
-		let upstreamResetOk = false
-
-		try {
-			externalReset = await aiClient.resetConversation({
-				userId: externalUserId,
-				conversationId: externalConversationId,
-			})
-			upstreamResetOk = true
-		} catch (error) {
-			if (!isAiBackendFeatureUnsupported(error)) {
-				throw error
-			}
-
-			aiServiceLogger.warn('External AI reset is unsupported; resetting local history only', {
-				userId: String(userId),
-				conversationId: resolvedConversationId,
-				code: error?.details?.code || null,
-			})
-		}
 
 		console.log('[ai-context] resetConversation:local_only_start', {
 			userId: String(userId),
@@ -1263,13 +1219,10 @@ export const aiService = {
 			})
 
 			return {
-				...externalReset,
 				status: 'ok',
-				user_id: externalReset?.user_id || externalUserId,
-				conversation_id: externalReset?.conversation_id || externalConversationId,
-				local_conversation_id: resolvedConversationId,
-				upstreamResetOk,
-				localOnly: !upstreamResetOk,
+				user_id: String(userId),
+				conversation_id: resolvedConversationId,
+				localOnly: true,
 			}
 		}
 
@@ -1279,13 +1232,10 @@ export const aiService = {
 		})
 
 		return {
-			...externalReset,
 			status: 'ok',
-			user_id: externalReset?.user_id || externalUserId,
-			conversation_id: externalReset?.conversation_id || externalConversationId,
-			local_conversation_id: resolvedConversationId,
-			upstreamResetOk,
-			localOnly: !upstreamResetOk,
+			user_id: String(userId),
+			conversation_id: resolvedConversationId,
+			localOnly: true,
 			localResetSkipped: true,
 		}
 	},
