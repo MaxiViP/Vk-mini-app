@@ -1,11 +1,21 @@
 <template>
-	<div :class="['message', message.role, { 'message--quick-context-open': isQuickContextVisible }]">
+	<div
+		:class="[
+			'message',
+			message.role,
+			{
+				'message--quick-context-open': isQuickContextVisible,
+				'message--user-profile-open': isUserProfileVisible,
+			},
+		]"
+	>
 		<div class="assistant-avatar-stack">
 			<button
 				v-if="isQuickContextAvailable"
 				:class="['avatar', 'avatar--assistant', 'avatar--button']"
 				type="button"
 				:aria-expanded="quickContextOpen"
+				:aria-controls="quickContextInputId"
 				title="Изменить быстрый контекст"
 				aria-label="Изменить быстрый контекст AI"
 				@click="toggleQuickContext"
@@ -18,6 +28,22 @@
 					<path d="M9.5 15.5c1.35 1 3.65 1 5 0" />
 					<path d="M4 12h1" />
 					<path d="M19 12h1" />
+				</svg>
+			</button>
+
+			<button
+				v-else-if="isUserProfileAvailable"
+				:class="['avatar', 'avatar--user', 'avatar--button']"
+				type="button"
+				:aria-expanded="userProfileOpen"
+				:aria-controls="userProfileId"
+				title="Информация о пользователе"
+				aria-label="Открыть быстрый профиль пользователя"
+				@click="toggleUserProfile"
+			>
+				<svg class="avatar__icon" viewBox="0 0 24 24">
+					<path d="M20 21a8 8 0 0 0-16 0" />
+					<circle cx="12" cy="7" r="4" />
 				</svg>
 			</button>
 
@@ -45,7 +71,38 @@
 					class="assistant-quick-context"
 					@submit.prevent="saveQuickContext"
 				>
-					<label class="assistant-quick-context__label" :for="quickContextInputId">Быстрый контекст</label>
+					<div class="assistant-quick-context__header">
+						<label class="assistant-quick-context__label" :for="quickContextInputId">Быстрый контекст</label>
+
+						<div class="assistant-quick-context__switch" role="tablist" aria-label="Тип быстрого контекста">
+							<button
+								type="button"
+								:class="[
+									'assistant-quick-context__switch-btn',
+									{ active: quickContextMode === 'session' },
+								]"
+								:aria-selected="quickContextMode === 'session'"
+								role="tab"
+								@click="switchQuickContextMode('session')"
+							>
+								Контекст для AI
+							</button>
+
+							<button
+								type="button"
+								:class="[
+									'assistant-quick-context__switch-btn',
+									{ active: quickContextMode === 'memory' },
+								]"
+								:aria-selected="quickContextMode === 'memory'"
+								role="tab"
+								@click="switchQuickContextMode('memory')"
+							>
+								Память AI
+							</button>
+						</div>
+					</div>
+
 					<textarea
 						:id="quickContextInputId"
 						ref="quickContextInputRef"
@@ -53,7 +110,7 @@
 						class="assistant-quick-context__input"
 						rows="2"
 						:maxlength="quickContextMaxLength"
-						placeholder="Например: отвечай короче, учитывай текущую задачу..."
+						:placeholder="quickContextPlaceholder"
 						@keydown.esc.prevent="closeQuickContext"
 						@keydown.ctrl.enter.prevent="saveQuickContext"
 					></textarea>
@@ -64,8 +121,9 @@
 							type="submit"
 							:disabled="!canSaveQuickContext"
 						>
-							Сохранить
+							{{ quickContextSaving ? 'Сохраняем...' : 'Сохранить' }}
 						</button>
+
 						<button
 							class="assistant-quick-context__btn"
 							type="button"
@@ -74,17 +132,60 @@
 						>
 							Очистить
 						</button>
-						<button class="assistant-quick-context__btn" type="button" @click="closeQuickContext">Закрыть</button>
+
+						<button class="assistant-quick-context__btn" type="button" @click="closeQuickContext">
+							Закрыть
+						</button>
 					</div>
 				</form>
 			</Transition>
-		</div>
-		<div :class="['bubble', { 'bubble--editing': isEditing }]">
-			<!-- <div v-if="metaSummary.length" class="meta-row">
-				<span v-for="item in metaSummary" :key="item" class="meta-chip">{{ item }}</span>
-			</div> -->
 
-			<div v-if="message.meta?.transcript" class="meta-transcript">Распознано: {{ message.meta.transcript }}</div>
+			<Transition name="quick-context-slide">
+				<div
+					v-if="isUserProfileVisible"
+					:id="userProfileId"
+					ref="userProfileRef"
+					class="user-quick-profile"
+				>
+					<div class="user-quick-profile__header">
+						<div>
+							<strong>{{ userDisplayName }}</strong>
+							<span>Быстрый доступ к данным аккаунта</span>
+						</div>
+
+						<button
+							class="user-quick-profile__close"
+							type="button"
+							title="Закрыть"
+							aria-label="Закрыть быстрый профиль"
+							@click="closeUserProfile"
+						>
+							✕
+						</button>
+					</div>
+
+					<div class="user-quick-profile__grid">
+						<div v-for="row in userProfileRows" :key="row.label" class="user-quick-profile__row">
+							<span>{{ row.label }}</span>
+							<b>{{ row.value }}</b>
+						</div>
+					</div>
+
+					<div v-if="aiAccess?.capabilities" class="user-quick-profile__chips">
+						<span :class="['user-quick-profile__chip', { active: aiAccess.capabilities.chat }]">Чат</span>
+						<span :class="['user-quick-profile__chip', { active: aiAccess.capabilities.fileUpload }]">
+							Файлы
+						</span>
+						<span :class="['user-quick-profile__chip', { active: aiAccess.capabilities.voice }]">Голос</span>
+					</div>
+				</div>
+			</Transition>
+		</div>
+
+		<div :class="['bubble', { 'bubble--editing': isEditing }]">
+			<div v-if="message.meta?.transcript" class="meta-transcript">
+				Распознано: {{ message.meta.transcript }}
+			</div>
 
 			<form v-if="isEditing" class="message-edit-form" @submit.prevent="confirmEdit">
 				<textarea
@@ -119,12 +220,6 @@
 			</form>
 
 			<div v-else class="content" v-html="renderedContent"></div>
-
-			<!-- <div v-if="message.meta?.sources?.length" class="source-list">
-				<span v-for="source in message.meta.sources" :key="`${source.type}:${source.name}`" class="source-chip">
-					{{ source.type }} · {{ source.name }}
-				</span>
-			</div> -->
 
 			<audio
 				v-if="resolvedAudioReplyUrl"
@@ -172,6 +267,7 @@
 						>
 							<path d="M20 6 9 17l-5-5" />
 						</svg>
+
 						<svg v-else key="copy" class="message-action__icon" viewBox="0 0 24 24" aria-hidden="true">
 							<rect x="9" y="9" width="11" height="11" rx="2" />
 							<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
@@ -229,6 +325,7 @@
 							>
 								<path d="M20 6 9 17l-5-5" />
 							</svg>
+
 							<svg v-else key="resend" class="message-action__icon" viewBox="0 0 24 24" aria-hidden="true">
 								<path d="M21 12a9 9 0 1 1-2.64-6.36" />
 								<path d="M21 3v6h-6" />
@@ -248,6 +345,14 @@ import type { Message } from '../../types'
 
 type MarkdownRenderer = {
 	parse: (value: string) => string
+}
+
+type QuickContextMode = 'session' | 'memory'
+
+type UserQuickProfile = {
+	user?: Record<string, unknown> | null
+	aiAccess?: Record<string, any> | null
+	isAuthenticated?: boolean
 }
 
 let markdownRendererPromise: Promise<MarkdownRenderer> | null = null
@@ -307,6 +412,11 @@ const props = withDefaults(
 		quickContextOpen?: boolean
 		quickContextValue?: string
 		quickContextMaxLength?: number
+		quickContextMode?: QuickContextMode
+		quickContextSaving?: boolean
+		userProfileEnabled?: boolean
+		userProfileOpen?: boolean
+		userProfile?: UserQuickProfile
 	}>(),
 	{
 		index: -1,
@@ -315,6 +425,15 @@ const props = withDefaults(
 		quickContextOpen: false,
 		quickContextValue: '',
 		quickContextMaxLength: 1200,
+		quickContextMode: 'session',
+		quickContextSaving: false,
+		userProfileEnabled: false,
+		userProfileOpen: false,
+		userProfile: () => ({
+			user: null,
+			aiAccess: null,
+			isAuthenticated: false,
+		}),
 	},
 )
 
@@ -322,14 +441,19 @@ const emit = defineEmits<{
 	(e: 'edit-message', payload: { index: number; content: string }): void
 	(e: 'resend-message', payload: { index: number; content: string }): void
 	(e: 'toggle-quick-context', payload: { index: number }): void
-	(e: 'save-quick-context', payload: { index: number; content: string }): void
+	(e: 'switch-quick-context-mode', payload: { index: number; mode: QuickContextMode }): void
+	(e: 'save-quick-context', payload: { index: number; content: string; mode: QuickContextMode }): void
 	(e: 'close-quick-context', payload: { index: number }): void
+	(e: 'toggle-user-profile', payload: { index: number }): void
+	(e: 'close-user-profile', payload: { index: number }): void
 }>()
 
 const audioReplyRef = ref<HTMLAudioElement | null>(null)
 const editTextareaRef = ref<HTMLTextAreaElement | null>(null)
 const quickContextRef = ref<HTMLElement | null>(null)
 const quickContextInputRef = ref<HTMLTextAreaElement | null>(null)
+const userProfileRef = ref<HTMLElement | null>(null)
+
 const renderedContent = ref('')
 const isEditing = ref(false)
 const areActionsOpen = ref(false)
@@ -342,17 +466,47 @@ let renderToken = 0
 let copyStatusTimer: number | null = null
 let resendStatusTimer: number | null = null
 
-const handleOutsideQuickContextClick = (event: MouseEvent) => {
-	if (!props.quickContextOpen) return
+const getProfileValue = (keys: string[]) => {
+	const user = props.userProfile?.user || {}
 
+	for (const key of keys) {
+		const value = user[key]
+		if (value !== undefined && value !== null && value !== '') return value
+	}
+
+	return ''
+}
+
+const formatDate = (value?: string | number | Date | null) => {
+	if (!value) return '—'
+
+	const date = new Date(value)
+	if (Number.isNaN(date.getTime())) return '—'
+
+	return date.toLocaleDateString()
+}
+
+const formatCounter = (value?: number | null) => Number(value ?? 0)
+
+const formatMoney = (value: unknown) => {
+	if (value === undefined || value === null || value === '') return '—'
+	if (typeof value === 'number') return `${value}`
+	return String(value)
+}
+
+const handleOutsidePopupClick = (event: MouseEvent) => {
 	const target = event.target as Node | null
-
-	const clickedInsideContext = quickContextRef.value?.contains(target)
 	const clickedAvatar = target instanceof HTMLElement ? target.closest('.avatar--button') : null
 
-	if (clickedInsideContext || clickedAvatar) return
+	if (props.quickContextOpen) {
+		const clickedInsideContext = quickContextRef.value?.contains(target)
+		if (!clickedInsideContext && !clickedAvatar) closeQuickContext()
+	}
 
-	closeQuickContext()
+	if (props.userProfileOpen) {
+		const clickedInsideProfile = userProfileRef.value?.contains(target)
+		if (!clickedInsideProfile && !clickedAvatar) closeUserProfile()
+	}
 }
 
 const renderMessageContent = async () => {
@@ -399,19 +553,85 @@ const metaSummary = computed(() => {
 })
 
 const resolvedAudioReplyUrl = computed(() => props.message.meta?.audioReplyUrl || '')
+
 const isQuickContextAvailable = computed(() => props.message.role === 'assistant' && props.quickContextEnabled)
 const isQuickContextVisible = computed(() => isQuickContextAvailable.value && props.quickContextOpen)
+
+const isUserProfileAvailable = computed(() => props.message.role === 'user' && props.userProfileEnabled)
+const isUserProfileVisible = computed(() => isUserProfileAvailable.value && props.userProfileOpen)
+
 const quickContextInputId = computed(() => `assistant-quick-context-${props.index}`)
+const userProfileId = computed(() => `user-quick-profile-${props.index}`)
+const quickContextMode = computed(() => props.quickContextMode)
+
+const quickContextPlaceholder = computed(() =>
+	props.quickContextMode === 'memory'
+		? 'Например: обращайся ко мне на вы, отвечай по делу, учитывай мой стиль работы...'
+		: 'Например: отвечай короче, учитывай текущую задачу...',
+)
+
+const aiAccess = computed(() => props.userProfile?.aiAccess || null)
+
+const userDisplayName = computed(() => {
+	const directName = getProfileValue(['name', 'displayName', 'fullName', 'username'])
+	if (directName) return String(directName)
+
+	const firstName = getProfileValue(['firstName', 'first_name'])
+	const lastName = getProfileValue(['lastName', 'last_name'])
+
+	const fullName = `${firstName || ''} ${lastName || ''}`.trim()
+	return fullName || 'Пользователь'
+})
+
+const userPlanLabel = computed(() => {
+	if (aiAccess.value?.hasAccess && aiAccess.value?.plan?.name) return aiAccess.value.plan.name
+	if (aiAccess.value?.plan?.name) return aiAccess.value.plan.name
+	return 'Нет активного тарифа'
+})
+
+const userSubscriptionStatus = computed(() => {
+	if (aiAccess.value?.subscription?.status) return aiAccess.value.subscription.status
+	if (aiAccess.value?.hasAccess) return 'active'
+	return 'inactive'
+})
+
+const userBalance = computed(() => {
+	const userBalanceValue = getProfileValue(['balance', 'money', 'amount'])
+	if (userBalanceValue !== '') return formatMoney(userBalanceValue)
+
+	if (aiAccess.value?.balance !== undefined) return formatMoney(aiAccess.value.balance)
+	if (aiAccess.value?.account?.balance !== undefined) return formatMoney(aiAccess.value.account.balance)
+
+	return '—'
+})
+
+const userProfileRows = computed(() => [
+	{ label: 'Авторизация', value: props.userProfile?.isAuthenticated ? 'Выполнена' : 'Гость' },
+	{ label: 'ID', value: String(getProfileValue(['id', 'vkId', 'vk_id', 'userId', 'user_id']) || '—') },
+	{ label: 'Тариф', value: userPlanLabel.value },
+	{ label: 'Статус подписки', value: userSubscriptionStatus.value },
+	{ label: 'Доступ до', value: formatDate(aiAccess.value?.subscription?.expiresAt) },
+	{ label: 'Баланс', value: userBalance.value },
+	{ label: 'Осталось чатов', value: formatCounter(aiAccess.value?.remaining?.chat) },
+	{ label: 'Осталось файлов', value: formatCounter(aiAccess.value?.remaining?.fileUpload) },
+	{ label: 'Осталось голоса', value: formatCounter(aiAccess.value?.remaining?.voice) },
+])
+
 const normalizedQuickContextValue = computed(() => String(props.quickContextValue || '').trim())
 const normalizedQuickContextDraft = computed(() =>
 	String(quickContextDraft.value || '')
 		.slice(0, props.quickContextMaxLength)
 		.trim(),
 )
-const canSaveQuickContext = computed(() => normalizedQuickContextDraft.value !== normalizedQuickContextValue.value)
-const canClearQuickContext = computed(() =>
-	Boolean(normalizedQuickContextDraft.value || normalizedQuickContextValue.value),
+
+const canSaveQuickContext = computed(
+	() => !props.quickContextSaving && normalizedQuickContextDraft.value !== normalizedQuickContextValue.value,
 )
+
+const canClearQuickContext = computed(() =>
+	!props.quickContextSaving && Boolean(normalizedQuickContextDraft.value || normalizedQuickContextValue.value),
+)
+
 const copyTitle = computed(() => (copyStatus.value === 'copied' ? 'Скопировано' : 'Копировать'))
 const copyAriaLabel = computed(() => (copyStatus.value === 'copied' ? 'Сообщение скопировано' : 'Копировать сообщение'))
 
@@ -436,6 +656,7 @@ const toggleActionsMenu = () => {
 const toggleQuickContext = () => {
 	if (!isQuickContextAvailable.value) return
 	closeActionsMenu()
+	if (props.userProfileOpen) closeUserProfile()
 	emit('toggle-quick-context', { index: props.index })
 }
 
@@ -443,27 +664,47 @@ const closeQuickContext = () => {
 	emit('close-quick-context', { index: props.index })
 }
 
+const switchQuickContextMode = (mode: QuickContextMode) => {
+	if (mode === props.quickContextMode) return
+	emit('switch-quick-context-mode', { index: props.index, mode })
+}
+
 const saveQuickContext = () => {
 	if (!canSaveQuickContext.value) return
+
 	emit('save-quick-context', {
 		index: props.index,
 		content: normalizedQuickContextDraft.value,
+		mode: props.quickContextMode,
 	})
 }
 
 const clearQuickContext = () => {
 	quickContextDraft.value = ''
 	if (!canClearQuickContext.value) return
+
 	emit('save-quick-context', {
 		index: props.index,
 		content: '',
+		mode: props.quickContextMode,
 	})
 }
 
+const toggleUserProfile = () => {
+	if (!isUserProfileAvailable.value) return
+	closeActionsMenu()
+	if (props.quickContextOpen) closeQuickContext()
+	emit('toggle-user-profile', { index: props.index })
+}
+
+const closeUserProfile = () => {
+	emit('close-user-profile', { index: props.index })
+}
+
 watch(
-	() => props.quickContextValue,
+	() => [props.quickContextValue, props.quickContextMode] as const,
 	value => {
-		if (props.quickContextOpen) quickContextDraft.value = value
+		if (props.quickContextOpen) quickContextDraft.value = value[0]
 	},
 )
 
@@ -471,11 +712,21 @@ watch(
 	() => props.quickContextOpen,
 	async isOpen => {
 		if (!isOpen) return
+
 		closeActionsMenu()
 		quickContextDraft.value = props.quickContextValue
+
 		await nextTick()
 		quickContextInputRef.value?.focus()
 		quickContextInputRef.value?.select()
+	},
+)
+
+watch(
+	() => props.userProfileOpen,
+	isOpen => {
+		if (!isOpen) return
+		closeActionsMenu()
 	},
 )
 
@@ -491,7 +742,9 @@ watch(
 	resolvedAudioReplyUrl,
 	async value => {
 		if (!value) return
+
 		await nextTick()
+
 		try {
 			await audioReplyRef.value?.play()
 		} catch (error) {
@@ -503,9 +756,11 @@ watch(
 
 const saveToNotes = () => {
 	closeActionsMenu()
+
 	const notesEvent = new CustomEvent('save-to-notes', {
 		detail: { text: props.message.content },
 	})
+
 	window.dispatchEvent(notesEvent)
 }
 
@@ -516,6 +771,7 @@ const writeTextFallback = (text: string) => {
 	textarea.style.position = 'fixed'
 	textarea.style.top = '-1000px'
 	textarea.style.left = '-1000px'
+
 	document.body.appendChild(textarea)
 	textarea.select()
 
@@ -554,6 +810,7 @@ const copyMessage = async () => {
 		} else {
 			writeTextFallback(props.message.content)
 		}
+
 		showCopiedFeedback()
 	} catch (error) {
 		try {
@@ -567,9 +824,11 @@ const copyMessage = async () => {
 
 const startEdit = async () => {
 	if (props.actionsDisabled) return
+
 	closeActionsMenu()
 	editText.value = props.message.content
 	isEditing.value = true
+
 	await nextTick()
 	editTextareaRef.value?.focus()
 	editTextareaRef.value?.select()
@@ -582,23 +841,26 @@ const cancelEdit = () => {
 
 const confirmEdit = () => {
 	if (!canConfirmEdit.value) return
+
 	const content = editText.value.trim()
 	isEditing.value = false
+
 	emit('edit-message', { index: props.index, content })
 }
 
 const resendMessage = () => {
 	if (props.actionsDisabled) return
+
 	emit('resend-message', { index: props.index, content: props.message.content })
 	showResendFeedback()
 }
 
 onMounted(() => {
-	document.addEventListener('mousedown', handleOutsideQuickContextClick)
+	document.addEventListener('mousedown', handleOutsidePopupClick)
 })
 
 onBeforeUnmount(() => {
-	document.removeEventListener('mousedown', handleOutsideQuickContextClick)
+	document.removeEventListener('mousedown', handleOutsidePopupClick)
 
 	if (copyStatusTimer) window.clearTimeout(copyStatusTimer)
 	if (resendStatusTimer) window.clearTimeout(resendStatusTimer)

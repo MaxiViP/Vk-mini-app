@@ -359,6 +359,11 @@ const handleSessionContextUpdated = (event: Event) => {
 	loadSessionContext()
 }
 
+const handleUserMemoryUpdated = () => {
+	if (!props.visible) return
+	void loadUserMemory()
+}
+
 const loadUserMemory = async () => {
 	if (!userStore.token) {
 		userMemory.value = ''
@@ -584,10 +589,12 @@ watch(userMemory, value => {
 
 onMounted(() => {
 	window.addEventListener('ai-session-context-updated', handleSessionContextUpdated as EventListener)
+	window.addEventListener('ai-memory-updated', handleUserMemoryUpdated as EventListener)
 })
 
 onBeforeUnmount(() => {
 	window.removeEventListener('ai-session-context-updated', handleSessionContextUpdated as EventListener)
+	window.removeEventListener('ai-memory-updated', handleUserMemoryUpdated as EventListener)
 	clearPendingVoice()
 	stopRecordingTracks()
 })

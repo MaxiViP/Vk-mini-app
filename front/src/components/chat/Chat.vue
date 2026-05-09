@@ -100,12 +100,20 @@
 					:quick-context-enabled="chat.isAiMode"
 					:quick-context-open="quickContextOpenIndex === item.index"
 					:quick-context-value="quickContextValue"
-					:quick-context-max-length="SESSION_CONTEXT_MAX_LENGTH"
+					:quick-context-max-length="quickContextMode === 'memory' ? USER_MEMORY_MAX_LENGTH : SESSION_CONTEXT_MAX_LENGTH"
+					:quick-context-mode="quickContextMode"
+					:quick-context-saving="quickContextSaving || quickMemoryLoading"
 					@edit-message="handleEditMessage"
 					@resend-message="handleResendMessage"
 					@toggle-quick-context="handleQuickContextToggle"
+					@switch-quick-context-mode="handleQuickContextModeSwitch"
 					@save-quick-context="handleQuickContextSave"
 					@close-quick-context="handleQuickContextClose"
+					:user-profile-enabled="chat.isAiMode"
+					:user-profile-open="userProfileOpenIndex === item.index"
+					:user-profile="quickUserProfile"
+					@toggle-user-profile="handleUserProfileToggle"
+					@close-user-profile="handleUserProfileClose"
 				/>
 			</div>
 			<div v-if="bottomSpacerHeight > 0" aria-hidden="true" :style="{ height: `${bottomSpacerHeight}px` }"></div>
@@ -159,6 +167,7 @@ import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, 
 import type { ComponentPublicInstance } from 'vue'
 
 import type { ChatHistoryItem, Message as ChatMessage, Model } from '../../types'
+import { fetchAiMemory, saveAiMemory } from '../../api/workspace'
 import { useChatStore } from '../../stores/chat'
 import { useModelsStore } from '../../stores/models'
 import { useUserStore } from '../../stores/user'
@@ -171,14 +180,23 @@ const DEFAULT_MESSAGE_HEIGHT = 112
 const VIRTUALIZATION_BUFFER_PX = 600
 const AUTO_SCROLL_THRESHOLD_PX = 48
 const SESSION_CONTEXT_MAX_LENGTH = 1200
+const USER_MEMORY_MAX_LENGTH = 1200
+
+type QuickContextMode = 'session' | 'memory'
 
 const chat = useChatStore()
 const modelsStore = useModelsStore()
 const userStore = useUserStore()
 const showContextPanel = ref(false)
 const isContextPrimaryOpen = ref(false)
+const userProfileOpenIndex = ref<number | null>(null)
 const quickContextOpenIndex = ref<number | null>(null)
+const quickContextMode = ref<QuickContextMode>('session')
 const quickContextValue = ref('')
+const quickContextSaving = ref(false)
+const quickMemoryLoading = ref(false)
+const quickMemoryValue = ref('')
+const quickMemoryLoadedToken = ref('')
 const messagesContainerRef = ref<HTMLElement | null>(null)
 const scrollTop = ref(0)
 const viewportHeight = ref(0)
@@ -188,6 +206,37 @@ const messageRowRefs = new Map<number, HTMLElement>()
 
 const switchMode = (mode: 'core' | 'ai') => {
 	void chat.setChatMode(mode)
+}
+
+const quickUserProfile = computed(() => ({
+	user: userStore.user,
+	aiAccess: userStore.aiAccess,
+	isAuthenticated: userStore.isAuthenticated,
+}))
+
+const handleUserProfileToggle = async ({ index }: { index: number }) => {
+	if (index < 0) return
+
+	quickContextOpenIndex.value = null
+
+	if (userProfileOpenIndex.value === index) {
+		userProfileOpenIndex.value = null
+		await nextTick()
+		measureVisibleRows()
+		return
+	}
+
+	await ensureAiAccessLoaded()
+	userProfileOpenIndex.value = index
+
+	await nextTick()
+	measureVisibleRows()
+}
+
+const handleUserProfileClose = async () => {
+	userProfileOpenIndex.value = null
+	await nextTick()
+	measureVisibleRows()
 }
 
 const fallbackExternalModel: Model = {
@@ -488,12 +537,43 @@ const handleToggleChatContext = (event: Event) => {
 }
 
 const normalizeQuickSessionContext = (value: string) => String(value || '').slice(0, SESSION_CONTEXT_MAX_LENGTH).trim()
+const normalizeQuickUserMemory = (value: string) => String(value || '').slice(0, USER_MEMORY_MAX_LENGTH).trim()
 
 const loadQuickSessionContext = () => normalizeQuickSessionContext(chat.readSessionContext(userStore.user?.vkId, chat.conversationId))
+
+const loadQuickUserMemory = async (force = false) => {
+	if (!userStore.token) {
+		quickMemoryValue.value = ''
+		quickMemoryLoadedToken.value = ''
+		return ''
+	}
+
+	if (!force && quickMemoryLoadedToken.value === userStore.token) {
+		return quickMemoryValue.value
+	}
+
+	quickMemoryLoading.value = true
+	try {
+		const payload = await fetchAiMemory(userStore.token)
+		const normalized = normalizeQuickUserMemory(payload.aiMemory || '')
+		quickMemoryValue.value = normalized
+		quickMemoryLoadedToken.value = userStore.token
+		return normalized
+	} catch (error) {
+		console.warn('Failed to load quick AI memory', error)
+		return quickMemoryValue.value
+	} finally {
+		quickMemoryLoading.value = false
+	}
+}
+
+const loadQuickContextValue = async (mode: QuickContextMode) =>
+	mode === 'memory' ? loadQuickUserMemory() : loadQuickSessionContext()
 
 type QuickContextPayload = {
 	index: number
 	content?: string
+	mode?: QuickContextMode
 }
 
 const handleQuickContextToggle = async ({ index }: QuickContextPayload) => {
@@ -506,14 +586,64 @@ const handleQuickContextToggle = async ({ index }: QuickContextPayload) => {
 		return
 	}
 
-	quickContextValue.value = loadQuickSessionContext()
+	const mode = quickContextMode.value
+	quickContextValue.value = mode === 'memory' ? quickMemoryValue.value : loadQuickSessionContext()
 	quickContextOpenIndex.value = index
+	quickContextValue.value = await loadQuickContextValue(mode)
 	await nextTick()
 	measureVisibleRows()
 }
 
-const handleQuickContextSave = async ({ content = '' }: QuickContextPayload) => {
+const handleQuickContextModeSwitch = async ({ index, mode }: { index: number; mode: QuickContextMode }) => {
+	if (!chat.isAiMode || quickContextOpenIndex.value !== index) return
+
+	quickContextMode.value = mode
+	quickContextValue.value = mode === 'memory' ? quickMemoryValue.value : loadQuickSessionContext()
+	quickContextValue.value = await loadQuickContextValue(mode)
+	await nextTick()
+	measureVisibleRows()
+}
+
+const saveQuickUserMemory = async (content: string) => {
+	if (!userStore.token) {
+		chat.addSystemMessage('Чтобы сохранить память AI, войдите в аккаунт.')
+		return
+	}
+
+	quickContextSaving.value = true
+	try {
+		const normalized = normalizeQuickUserMemory(content)
+		const payload = await saveAiMemory(userStore.token, normalized)
+		const saved = normalizeQuickUserMemory(payload.aiMemory || '')
+		quickMemoryValue.value = saved
+		quickMemoryLoadedToken.value = userStore.token
+		quickContextValue.value = saved
+		quickContextOpenIndex.value = null
+
+		window.dispatchEvent(
+			new CustomEvent('ai-memory-updated', {
+				detail: {
+					length: saved.length,
+				},
+			}),
+		)
+	} catch (error) {
+		console.warn('Failed to save quick AI memory', error)
+		chat.addSystemMessage(`Не удалось сохранить память AI: ${(error as Error).message}`)
+	} finally {
+		quickContextSaving.value = false
+	}
+}
+
+const handleQuickContextSave = async ({ content = '', mode = quickContextMode.value }: QuickContextPayload) => {
 	if (!chat.isAiMode) return
+
+	if (mode === 'memory') {
+		await saveQuickUserMemory(content)
+		await nextTick()
+		measureVisibleRows()
+		return
+	}
 
 	const normalized = normalizeQuickSessionContext(content)
 	chat.writeSessionContext(normalized, userStore.user?.vkId, chat.conversationId)
@@ -686,6 +816,7 @@ watch(
 		if (!isAiMode) {
 			isContextPrimaryOpen.value = false
 			quickContextOpenIndex.value = null
+			userProfileOpenIndex.value = null
 		}
 	},
 )
