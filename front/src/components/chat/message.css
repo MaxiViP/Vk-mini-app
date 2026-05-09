@@ -82,9 +82,7 @@
 }
 
 .messages .avatar--user {
-	background:
-		radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.22), transparent 36%),
-		var(--mode-accent-soft);
+	background: radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.22), transparent 36%), var(--mode-accent-soft);
 	border-color: var(--mode-accent-border);
 	color: var(--mode-accent-strong);
 }
@@ -92,8 +90,7 @@
 .messages .avatar--assistant {
 	background:
 		radial-gradient(circle at 28% 20%, rgba(255, 255, 255, 0.2), transparent 36%),
-		linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
-		var(--color-surface-3);
+		linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)), var(--color-surface-3);
 	color: var(--color-text-soft);
 }
 
@@ -167,14 +164,19 @@
 
 	background:
 		linear-gradient(135deg, rgba(255, 255, 255, 0.07), transparent 48%),
-		var(--mode-panel-bg-strong, rgba(24, 27, 34, 0.96));
+		linear-gradient(
+			var(--mode-panel-bg-strong, rgba(24, 27, 34, 0.96)),
+			var(--mode-panel-bg-strong, rgba(24, 27, 34, 0.96))
+		),
+		#181b22;
 	border: 1px solid var(--mode-accent-border);
 	box-shadow:
 		0 0 0 1px rgba(255, 255, 255, 0.03),
 		0 14px 34px rgba(0, 0, 0, 0.22);
 	box-sizing: border-box;
+	opacity: 1;
+	isolation: isolate;
 }
-
 .messages .message--quick-context-open .bubble {
 	order: initial;
 	margin-left: 0;
@@ -406,9 +408,7 @@
 	padding: 12px;
 	border-radius: 18px 1px 18px 18px;
 
-	background:
-		linear-gradient(135deg, rgba(255, 255, 255, 0.07), transparent 48%),
-		#181b22;
+	background: linear-gradient(135deg, rgba(255, 255, 255, 0.07), transparent 48%), #181b22;
 	border: 1px solid var(--mode-accent-border);
 	box-shadow:
 		0 0 0 1px rgba(255, 255, 255, 0.03),
@@ -799,9 +799,7 @@
 }
 
 .messages .typing-indicator--ai {
-	background:
-		linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent),
-		var(--mode-accent-soft);
+	background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent), var(--mode-accent-soft);
 	border: 1px solid var(--mode-accent-border);
 	box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
 	gap: 10px;

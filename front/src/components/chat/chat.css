@@ -70,7 +70,6 @@
 }
 
 .chat-context-bar--ai {
-	/* min-height: 182px; */
 	border-color: var(--mode-accent-border);
 	background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent), var(--mode-panel-bg-strong);
 	box-shadow:
@@ -146,15 +145,6 @@
 	line-height: 1;
 	color: var(--mode-accent-strong);
 }
-
-/* .chat .context-primary,
-.chat .context-secondary,
-.chat .context-chips {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 8px;
-	align-items: center;
-} */
 
 .chat .context-status,
 .chat .context-pill,
@@ -438,74 +428,314 @@
 	display: none;
 }
 
+/* ===== INPUT ACTION BUTTONS ===== */
 .chat .attach-btn,
-.chat .voice-btn,
 .chat .send-btn {
+	position: relative;
+	isolation: isolate;
+	overflow: hidden;
+
 	width: 44px;
 	height: 44px;
+	flex: 0 0 auto;
+	padding: 0;
+
+	display: inline-grid;
+	place-items: center;
+
+	border-radius: 15px;
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 52%), rgba(255, 255, 255, 0.06);
+	color: var(--color-text-soft);
+
+	box-shadow:
+		0 10px 24px rgba(0, 0, 0, 0.18),
+		inset 0 1px 0 rgba(255, 255, 255, 0.08);
+
+	cursor: pointer;
+	transform: translateZ(0);
+
+	transition:
+		transform var(--transition-fast),
+		background var(--transition-base),
+		border-color var(--transition-base),
+		box-shadow var(--transition-base),
+		color var(--transition-base),
+		opacity var(--transition-base);
+}
+
+.chat .attach-btn::before,
+.chat .send-btn::before {
+	content: '';
+	position: absolute;
+	inset: -58%;
+	z-index: -2;
+
+	background: conic-gradient(
+		from 180deg,
+		transparent 0deg,
+		var(--mode-accent-soft) 80deg,
+		var(--mode-accent-border) 135deg,
+		transparent 210deg,
+		transparent 360deg
+	);
+
+	opacity: 0;
+	transform: rotate(0deg) scale(0.74);
+	transition:
+		opacity var(--transition-base),
+		transform var(--transition-base);
+}
+
+.chat .attach-btn::after,
+.chat .send-btn::after {
+	content: '';
+	position: absolute;
+	inset: 1px;
+	z-index: -1;
+	border-radius: inherit;
+
+	background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 52%), rgba(21, 24, 31, 0.96);
+}
+
+.chat .attach-btn:hover:not(:disabled),
+.chat .send-btn:hover:not(:disabled) {
+	transform: translateY(-2px);
+	border-color: var(--mode-accent-border);
+	color: var(--mode-accent-strong);
+	box-shadow:
+		0 0 0 1px var(--mode-accent-soft),
+		0 14px 34px rgba(0, 0, 0, 0.26),
+		0 0 26px var(--mode-accent-soft);
+}
+
+.chat .attach-btn:hover:not(:disabled)::before,
+.chat .send-btn:hover:not(:disabled)::before {
+	opacity: 1;
+	transform: rotate(90deg) scale(1);
+	animation: inputActionAuraSpin 2.8s linear infinite;
+}
+
+.chat .attach-btn:active:not(:disabled),
+.chat .send-btn:active:not(:disabled) {
+	transform: translateY(0) scale(0.94);
+}
+
+.chat .attach-btn:disabled,
+.chat .send-btn:disabled {
+	opacity: 0.48;
+	cursor: not-allowed;
+	box-shadow: none;
+}
+
+.chat .action-icon-btn__glow {
+	position: absolute;
+	inset: 5px;
+	z-index: 0;
+	border-radius: 12px;
+	background: radial-gradient(circle, var(--mode-accent-soft), transparent 68%);
+	opacity: 0;
+	transform: scale(0.82);
+	transition:
+		opacity var(--transition-base),
+		transform var(--transition-base);
+}
+
+.chat .attach-btn:hover:not(:disabled) .action-icon-btn__glow,
+.chat .send-btn:hover:not(:disabled) .action-icon-btn__glow {
+	opacity: 1;
+	transform: scale(1);
+}
+
+.chat .action-icon-btn__icon {
+	position: relative;
+	z-index: 1;
+
+	width: 21px;
+	height: 21px;
+
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 2.25;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+
+	filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.05));
+	transition:
+		transform var(--transition-base),
+		stroke-width var(--transition-fast),
+		filter var(--transition-base);
+}
+
+.chat .attach-btn:hover:not(:disabled) .action-icon-btn__icon,
+.chat .send-btn:hover:not(:disabled) .action-icon-btn__icon {
+	stroke-width: 2.45;
+	filter: drop-shadow(0 0 10px var(--mode-accent-soft));
+}
+
+/* ===== ATTACH BUTTON ===== */
+.chat .attach-btn--ai {
+	border-color: var(--mode-accent-border);
+	color: var(--mode-accent-strong);
+	background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 52%), var(--mode-accent-soft);
+}
+
+.chat .attach-btn__circle {
+	opacity: 0.38;
+	stroke-dasharray: 52;
+	stroke-dashoffset: 0;
+	transition:
+		opacity var(--transition-base),
+		stroke-dashoffset var(--transition-base);
+}
+
+.chat .attach-btn__line {
+	transform-origin: 12px 12px;
+	transition:
+		transform var(--transition-base),
+		opacity var(--transition-base);
+}
+
+.chat .attach-btn:hover:not(:disabled) .attach-btn__icon {
+	transform: rotate(90deg) scale(1.08);
+}
+
+.chat .attach-btn:hover:not(:disabled) .attach-btn__circle {
+	opacity: 0.72;
+	stroke-dashoffset: -10;
+}
+
+.chat .attach-btn.action-icon-btn--burst .attach-btn__icon {
+	animation: attachIconBurst 0.56s cubic-bezier(0.2, 0.9, 0.2, 1.25);
+}
+
+.chat .attach-btn.action-icon-btn--burst .attach-btn__circle {
+	animation: attachCircleSpark 0.56s ease-out;
+}
+
+/* ===== SEND BUTTON ===== */
+.chat .send-btn {
+	background: linear-gradient(135deg, rgba(255, 255, 255, 0.09), transparent 52%), var(--color-primary);
+	color: #fff;
+	border-color: rgba(255, 255, 255, 0.12);
+}
+
+.chat .send-btn--ai {
+	border-color: var(--mode-accent-border);
+	color: #fff;
+	background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), transparent 52%), var(--mode-accent);
+}
+
+.chat .send-btn .action-icon-btn__icon {
+	color: currentColor;
+	stroke: currentColor;
+}
+
+.chat .send-btn--ai .action-icon-btn__icon {
+	color: #fff;
+	stroke: #fff;
+}
+
+.chat .send-btn--empty:not(.send-btn--stop) {
+	color: var(--color-text-muted);
+	background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 52%), rgba(255, 255, 255, 0.055);
+}
+
+.chat .send-btn__trail {
+	opacity: 0.42;
+	stroke-dasharray: 10 16;
+	stroke-dashoffset: 0;
+	transition:
+		opacity var(--transition-base),
+		stroke-dashoffset var(--transition-base);
+}
+
+.chat .send-btn__arrow {
+	transform-origin: 12px 12px;
+}
+
+.chat .send-btn:hover:not(:disabled) .send-btn__trail {
+	opacity: 1;
+	stroke-dashoffset: -18;
+}
+
+.chat .send-btn:hover:not(:disabled) .send-btn__icon {
+	transform: translateX(1px) scale(1.08);
+}
+
+.chat .send-btn.action-icon-btn--burst .send-btn__arrow {
+	animation: sendArrowFlight 0.56s cubic-bezier(0.2, 0.75, 0.25, 1);
+}
+
+.chat .send-btn.action-icon-btn--burst .send-btn__trail {
+	animation: sendTrailFlash 0.56s ease-out;
+}
+
+/* ===== STOP STATE ===== */
+.chat .send-btn--stop {
+	color: var(--color-danger, #ff6b6b);
+	border-color: rgba(255, 107, 107, 0.38);
+	background: linear-gradient(135deg, rgba(255, 107, 107, 0.16), transparent 52%), rgba(255, 255, 255, 0.06);
+}
+
+.chat .send-btn--stop:hover:not(:disabled) {
+	color: var(--color-danger, #ff6b6b);
+	border-color: rgba(255, 107, 107, 0.55);
+	box-shadow:
+		0 0 0 1px rgba(255, 107, 107, 0.16),
+		0 14px 34px rgba(0, 0, 0, 0.26),
+		0 0 24px rgba(255, 107, 107, 0.16);
+}
+
+.chat .send-btn__icon--stop {
+	fill: currentColor;
+	stroke: none;
+	animation: stopIconPulse 1.05s ease-in-out infinite;
+}
+
+/* ===== VOICE BUTTON ===== */
+.chat .voice-btn {
+	width: 44px;
+	height: 44px;
+	flex: 0 0 auto;
+
 	border: none;
 	border-radius: 50%;
-	color: #fff;
+	background: rgba(255, 107, 107, 0.18);
+	color: #ffc3c3;
+
 	cursor: pointer;
-	display: flex;
+
+	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+
 	font-size: 18px;
+	box-shadow: 0 0 0 1px rgba(255, 107, 107, 0.22);
+
 	transition:
 		transform var(--transition-fast),
 		background var(--transition-base),
 		opacity var(--transition-base),
-		box-shadow var(--transition-base);
+		box-shadow var(--transition-base),
+		color var(--transition-base);
 }
 
-.chat .attach-btn {
-	background: rgba(255, 255, 255, 0.1);
-	flex-shrink: 0;
+.chat .voice-btn--ai {
+	box-shadow:
+		0 0 0 1px var(--mode-accent-border),
+		0 10px 24px rgba(0, 0, 0, 0.16);
 }
 
-.chat .attach-btn--ai {
-	background: var(--mode-accent-soft);
-	box-shadow: 0 0 0 1px var(--mode-accent-border);
-	color: var(--mode-accent-strong);
-}
-
-.chat .voice-btn {
-	background: rgba(255, 107, 107, 0.18);
-	color: #ffc3c3;
-	box-shadow: 0 0 0 1px rgba(255, 107, 107, 0.22);
-}
-
-.chat .send-btn {
-	background: var(--color-primary);
-}
-
-.chat .voice-btn--ai,
-.chat .send-btn--ai {
-	box-shadow: 0 0 0 1px var(--mode-accent-border);
-}
-
-.chat .send-btn--ai {
-	background: var(--mode-accent);
-	color: #04261f;
-}
-
-.chat .attach-btn:hover:not(:disabled),
-.chat .voice-btn:hover:not(:disabled),
-.chat .send-btn:hover:not(:disabled) {
+.chat .voice-btn:hover:not(:disabled) {
 	transform: translateY(-1px);
+	background: rgba(255, 107, 107, 0.26);
+	box-shadow:
+		0 0 0 1px rgba(255, 107, 107, 0.28),
+		0 12px 28px rgba(0, 0, 0, 0.2);
 }
 
-.chat .send-btn:hover:not(:disabled) {
-	background: var(--color-primary-hover);
-}
-
-.chat .send-btn--ai:hover:not(:disabled) {
-	background: #35dec1;
-}
-
-.chat .attach-btn:disabled,
-.chat .voice-btn:disabled,
-.chat .send-btn:disabled {
+.chat .voice-btn:disabled {
 	opacity: 0.5;
 	cursor: not-allowed;
 }
@@ -584,6 +814,100 @@
 .chat .delete-zone__label {
 	line-height: 1;
 	white-space: nowrap;
+}
+
+/* ===== INPUT BUTTON ANIMATIONS ===== */
+@keyframes inputActionAuraSpin {
+	to {
+		transform: rotate(450deg) scale(1);
+	}
+}
+
+@keyframes attachIconBurst {
+	0% {
+		transform: rotate(0deg) scale(1);
+	}
+
+	42% {
+		transform: rotate(135deg) scale(1.22);
+	}
+
+	72% {
+		transform: rotate(90deg) scale(0.94);
+	}
+
+	100% {
+		transform: rotate(90deg) scale(1.08);
+	}
+}
+
+@keyframes attachCircleSpark {
+	0% {
+		opacity: 0.35;
+		stroke-dashoffset: 0;
+	}
+
+	45% {
+		opacity: 1;
+		stroke-dashoffset: -18;
+	}
+
+	100% {
+		opacity: 0.72;
+		stroke-dashoffset: -10;
+	}
+}
+
+@keyframes sendArrowFlight {
+	0% {
+		opacity: 1;
+		transform: translateX(0) scale(1);
+	}
+
+	42% {
+		opacity: 0;
+		transform: translateX(9px) scale(0.82);
+	}
+
+	43% {
+		opacity: 0;
+		transform: translateX(-9px) scale(0.82);
+	}
+
+	100% {
+		opacity: 1;
+		transform: translateX(0) scale(1);
+	}
+}
+
+@keyframes sendTrailFlash {
+	0% {
+		opacity: 0.35;
+		stroke-dashoffset: 0;
+	}
+
+	45% {
+		opacity: 1;
+		stroke-dashoffset: -24;
+	}
+
+	100% {
+		opacity: 0.42;
+		stroke-dashoffset: -36;
+	}
+}
+
+@keyframes stopIconPulse {
+	0%,
+	100% {
+		transform: scale(0.88);
+		opacity: 0.78;
+	}
+
+	50% {
+		transform: scale(1);
+		opacity: 1;
+	}
 }
 
 /* ===== FOCUS ===== */
@@ -944,6 +1268,7 @@
 	from {
 		transform: translateX(100%);
 	}
+
 	to {
 		transform: translateX(0);
 	}
@@ -961,6 +1286,7 @@
 	from {
 		transform: translateX(0);
 	}
+
 	to {
 		transform: translateX(100%);
 	}
@@ -1174,6 +1500,33 @@
 	cursor: not-allowed;
 }
 
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+	.chat .attach-btn,
+	.chat .send-btn,
+	.chat .voice-btn,
+	.chat .attach-btn::before,
+	.chat .send-btn::before,
+	.chat .action-icon-btn__glow,
+	.chat .action-icon-btn__icon,
+	.chat .attach-btn__circle,
+	.chat .attach-btn__line,
+	.chat .send-btn__trail,
+	.chat .send-btn__arrow,
+	.chat .send-btn__icon--stop {
+		animation: none;
+		transition: none;
+	}
+
+	.chat .attach-btn:hover:not(:disabled),
+	.chat .send-btn:hover:not(:disabled),
+	.chat .voice-btn:hover:not(:disabled),
+	.chat .attach-btn:active:not(:disabled),
+	.chat .send-btn:active:not(:disabled) {
+		transform: none;
+	}
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
 	.notes-overlay {
@@ -1203,20 +1556,8 @@
 	}
 
 	.chat .ai-status-head {
-		/* flex-direction: column; */
 		align-items: flex-start;
 	}
-
-	/* .chat .ai-limit-grid {
-		grid-template-columns: 1fr;
-	} */
-
-	/* .chat .context-primary,
-	.chat .context-secondary,
-	.chat .context-chips {
-		display: flex;
-		flex-wrap: nowrap;
-	} */
 
 	.context-secondary {
 		display: flex;
@@ -1229,10 +1570,6 @@
 		border-radius: 16px;
 	}
 
-	/* .chat-context-bar--ai {
-		min-height: 286px;
-	} */
-
 	.chat .context-status,
 	.chat .context-pill,
 	.chat .context-chip {
@@ -1240,11 +1577,24 @@
 	}
 
 	.chat .attach-btn,
-	.chat .voice-btn,
 	.chat .send-btn,
+	.chat .voice-btn,
 	.chat .action-slot {
 		width: 40px;
 		height: 40px;
+	}
+
+	.chat .attach-btn,
+	.chat .send-btn {
+		border-radius: 14px;
+	}
+
+	.chat .action-icon-btn__icon {
+		width: 19px;
+		height: 19px;
+	}
+
+	.chat .voice-btn {
 		font-size: 15px;
 	}
 
