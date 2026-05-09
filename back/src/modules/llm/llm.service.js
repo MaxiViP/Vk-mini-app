@@ -69,6 +69,8 @@ const FREE_MODEL_PROVIDERS = new Set(['groq', 'openrouter', 'cloudflare', 'cereb
 
 const REQUESTS_PER_ROTATION = 3
 const CACHE_TTL_MS = 5 * 60 * 1000
+const MODEL_DISCOVERY_TIMEOUT_MS = 4000
+const LLM_DYNAMIC_MODEL_DISCOVERY = sanitizeEnv(process.env.LLM_DYNAMIC_MODEL_DISCOVERY).toLowerCase() === 'true'
 
 const userRequestCounters = new Map()
 
@@ -212,6 +214,19 @@ const dedupeModels = models => {
 	})
 }
 
+const getStaticModelFallbacks = () =>
+	dedupeModels([
+		...OPENAI_FALLBACK_MODELS,
+		...GROQ_FALLBACK_MODELS,
+		...OPENROUTER_FALLBACK_MODELS,
+		...CEREBRAS_FALLBACK_MODELS,
+		...VERCEL_FALLBACK_MODELS,
+		...MISTRAL_FALLBACK_MODELS,
+		...(cloudflareClient ? CLOUDFLARE_MODELS : []),
+		...GITHUB_MODELS,
+		...LOCAL_MODELS,
+	])
+
 const getClientForModel = selectedModel => {
 	switch (selectedModel.provider) {
 		case 'openai':
@@ -284,11 +299,24 @@ const resolveModelForRequest = (allModels, selectedModel, userId) => {
 	return rotatedModel
 }
 
+const withTimeout = (promise, timeoutMs, errorMessage = 'Timeout') => {
+	let timeoutId
+	const timeoutPromise = new Promise((_, reject) => {
+		timeoutId = setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+	})
+
+	return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutId))
+}
+
 const safeListModels = async (client, provider, fallbackModels = []) => {
 	if (!client?.models?.list) return fallbackModels
 
 	try {
-		const response = await client.models.list()
+		const response = await withTimeout(
+			client.models.list(),
+			MODEL_DISCOVERY_TIMEOUT_MS,
+			`Model discovery timeout after ${MODEL_DISCOVERY_TIMEOUT_MS}ms`,
+		)
 		const dynamicModels = Array.isArray(response?.data)
 			? response.data.map(model =>
 					decorateModel({
@@ -303,15 +331,12 @@ const safeListModels = async (client, provider, fallbackModels = []) => {
 		return dedupeModels([...dynamicModels, ...fallbackModels])
 	} catch (error) {
 		logger.warn(`Failed to load models from ${provider}`, {
-			message: error.message,
-			status: error.status || null,
+			message: error?.message || 'Unknown model discovery error',
+			status: error?.status || null,
 		})
 		return fallbackModels
 	}
 }
-
-const withTimeout = (promise, timeoutMs, errorMessage = 'Timeout') =>
-	Promise.race([promise, new Promise((_, reject) => setTimeout(() => reject(new Error(errorMessage)), timeoutMs))])
 
 const withRetry = async (fn, maxRetries = 3, delayMs = 1000) => {
 	for (let index = 0; index < maxRetries; index += 1) {
@@ -330,31 +355,56 @@ export const llmService = {
 		const now = Date.now()
 		if (modelsCache && now - cacheTimestamp < CACHE_TTL_MS) return modelsCache
 
-		const [openaiModels, groqModels, openrouterModels, cerebrasModels, vercelModels, mistralModels] = await Promise.all(
-			[
-				safeListModels(openaiClient, 'openai', OPENAI_FALLBACK_MODELS),
-				safeListModels(groqClient, 'groq', GROQ_FALLBACK_MODELS),
-				safeListModels(openrouterClient, 'openrouter', OPENROUTER_FALLBACK_MODELS),
-				safeListModels(cerebrasClient, 'cerebras', CEREBRAS_FALLBACK_MODELS),
-				safeListModels(vercelClient, 'vercel', VERCEL_FALLBACK_MODELS),
-				safeListModels(mistralClient, 'mistral', MISTRAL_FALLBACK_MODELS),
-			],
-		)
+		try {
+			if (!LLM_DYNAMIC_MODEL_DISCOVERY) {
+				modelsCache = getStaticModelFallbacks()
+				cacheTimestamp = now
+				return modelsCache
+			}
 
-		modelsCache = dedupeModels([
-			...openaiModels,
-			...groqModels,
-			...openrouterModels,
-			...cerebrasModels,
-			...vercelModels,
-			...mistralModels,
-			...(cloudflareClient ? CLOUDFLARE_MODELS : []),
-			...GITHUB_MODELS,
-			...LOCAL_MODELS,
-		])
+			const providers = [
+				{ client: openaiClient, name: 'openai', fallbackModels: OPENAI_FALLBACK_MODELS },
+				{ client: groqClient, name: 'groq', fallbackModels: GROQ_FALLBACK_MODELS },
+				{ client: openrouterClient, name: 'openrouter', fallbackModels: OPENROUTER_FALLBACK_MODELS },
+				{ client: cerebrasClient, name: 'cerebras', fallbackModels: CEREBRAS_FALLBACK_MODELS },
+				{ client: vercelClient, name: 'vercel', fallbackModels: VERCEL_FALLBACK_MODELS },
+				{ client: mistralClient, name: 'mistral', fallbackModels: MISTRAL_FALLBACK_MODELS },
+			]
 
-		cacheTimestamp = now
-		return modelsCache
+			const settledResults = await Promise.allSettled(
+				providers.map(provider =>
+					safeListModels(provider.client, provider.name, provider.fallbackModels),
+				),
+			)
+
+			const discoveredModels = settledResults.flatMap((result, index) => {
+				if (result.status === 'fulfilled') return result.value
+
+				const provider = providers[index]
+				logger.warn(`Failed to load models from ${provider.name}`, {
+					message: result.reason?.message || 'Unknown model discovery error',
+					status: result.reason?.status || null,
+				})
+				return provider.fallbackModels
+			})
+
+			modelsCache = dedupeModels([
+				...discoveredModels,
+				...(cloudflareClient ? CLOUDFLARE_MODELS : []),
+				...GITHUB_MODELS,
+				...LOCAL_MODELS,
+			])
+
+			cacheTimestamp = now
+			return modelsCache
+		} catch (error) {
+			logger.warn('Failed to list dynamic LLM models; returning static fallbacks', {
+				message: error?.message || 'Unknown model listing error',
+			})
+			modelsCache = getStaticModelFallbacks()
+			cacheTimestamp = now
+			return modelsCache
+		}
 	},
 
 	async resolveModel({ modelId, userId }) {
