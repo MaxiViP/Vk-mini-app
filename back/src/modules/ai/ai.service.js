@@ -263,7 +263,7 @@ const getFileExtension = file => {
 }
 
 const resolveExternalVkUserId = async userId => {
-	const fallbackUserId = String(userId)
+	const internalUserId = String(userId)
 
 	try {
 		const identity = await prisma.authIdentity.findFirst({
@@ -276,21 +276,24 @@ const resolveExternalVkUserId = async userId => {
 			},
 		})
 
-		const providerUserId = String(identity?.providerUserId || '').trim()
-		if (providerUserId) return providerUserId
+		const vkUserId = String(identity?.providerUserId || '').trim()
 
-		aiServiceLogger.warn('VK auth identity not found; using internal user id for AI backend request', {
-			userId: fallbackUserId,
-		})
+		return {
+			externalUserId: internalUserId,
+			vkUserId: vkUserId || null,
+		}
 	} catch (error) {
-		aiServiceLogger.warn('VK auth identity lookup failed; using internal user id for AI backend request', {
-			userId: fallbackUserId,
+		aiServiceLogger.warn('VK auth identity lookup failed', {
+			userId: internalUserId,
 			code: error?.code || null,
 			message: error?.message || 'Unknown DB error',
 		})
-	}
 
-	return fallbackUserId
+		return {
+			externalUserId: internalUserId,
+			vkUserId: null,
+		}
+	}
 }
 
 const assertUploadSize = ({ file, maxBytes, code, message }) => {
@@ -864,7 +867,7 @@ export const aiService = {
 		const normalizedUserMessage = normalizeAiMessageContent(message)
 		const normalizedSessionContext =
 			chatMode === 'context' ? normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH) : ''
-		const externalUserId = await resolveExternalVkUserId(userId)
+		const { externalUserId, vkUserId } = await resolveExternalVkUserId(userId)
 		const externalConversationId = resolveExternalVkConversationId({
 			externalUserId,
 			conversationId: resolvedConversationId,
@@ -910,9 +913,11 @@ export const aiService = {
 				aiProfileId: env.vkAiProfileId,
 				billingMode: env.vkAiBillingMode,
 				metadata: {
-					local_user_id: userId,
+					local_user_id: String(userId),
 					local_conversation_id: resolvedConversationId,
 					mode: chatMode,
+					vk_user_id: vkUserId,
+					auth_provider: vkUserId ? 'vk' : 'internal',
 				},
 				idempotencyKey,
 			})
@@ -1000,7 +1005,7 @@ export const aiService = {
 		assertContextFileAllowed(file)
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
-		const externalUserId = await resolveExternalVkUserId(userId)
+		const { externalUserId, vkUserId } = await resolveExternalVkUserId(userId)
 		const externalConversationId = resolveExternalVkConversationId({
 			externalUserId,
 			conversationId: resolvedConversationId,
@@ -1060,7 +1065,7 @@ export const aiService = {
 		assertVoiceFileAllowed(file)
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
-		const externalUserId = await resolveExternalVkUserId(userId)
+		const { externalUserId, vkUserId } = await resolveExternalVkUserId(userId)
 		const externalConversationId = resolveExternalVkConversationId({
 			externalUserId,
 			conversationId: resolvedConversationId,
@@ -1151,7 +1156,7 @@ export const aiService = {
 		assertCapability(access, 'chat')
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
-		const externalUserId = await resolveExternalVkUserId(userId)
+		const { externalUserId, vkUserId } = await resolveExternalVkUserId(userId)
 		const externalConversationId = resolveExternalVkConversationId({
 			externalUserId,
 			conversationId: resolvedConversationId,
@@ -1215,7 +1220,7 @@ export const aiService = {
 		await assertSubscriptionActive(userId)
 
 		const resolvedConversationId = resolveConversationKey({ userId, conversationId, mode: 'context' })
-		const externalUserId = await resolveExternalVkUserId(userId)
+		const { externalUserId, vkUserId } = await resolveExternalVkUserId(userId)
 		const externalConversationId = resolveExternalVkConversationId({
 			externalUserId,
 			conversationId: resolvedConversationId,
