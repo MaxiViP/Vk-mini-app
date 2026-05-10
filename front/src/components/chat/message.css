@@ -211,7 +211,7 @@
 .messages .assistant-quick-context__switch-btn {
 	min-height: 26px;
 	padding: 5px 9px;
-	border: 0;
+	border: 1px solid ;
 	border-radius: 999px;
 	background: transparent;
 	color: var(--color-text-soft);
@@ -1043,14 +1043,14 @@
 		flex-direction: column;
 	}
 
-.messages .assistant-quick-context__switch {
-	width: 100%;
-	display: grid;
-	grid-template-columns: repeat(2, minmax(0, 1fr));
-	gap: 4px;
-	padding: 3px;
-	border-radius: 16px;
-}
+	.messages .assistant-quick-context__switch {
+		width: 100%;
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 4px;
+		padding: 3px;
+		border-radius: 16px;
+	}
 
 	.messages .assistant-quick-context__switch-btn {
 		flex: 1 1 0;
