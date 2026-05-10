@@ -52,14 +52,16 @@
 			</div>
 
 			<div v-show="isContextPrimaryOpen" class="context-primary">
-				<span v-for="pill in aiCapabilityPills" :key="pill" class="context-pill context-pill--highlight">{{
-					pill
-				}}</span>
+				<span v-for="pill in aiCapabilityPills" :key="pill" class="context-pill context-pill--highlight">
+					{{ pill }}
+				</span>
 				<span class="context-pill">Сессия: {{ chat.conversationId }}</span>
 				<span v-if="chat.contextFiles.length" class="context-pill">
 					Файлы: {{ chat.activeContextFiles.length }}/{{ chat.contextFiles.length }}
 				</span>
-				<span v-if="chat.voiceRecords.length" class="context-pill">Голос: {{ chat.voiceRecords.length }}</span>
+				<span v-if="chat.voiceRecords.length" class="context-pill">
+					Аудио: {{ activeVoiceRecords.length }}/{{ chat.voiceRecords.length }}
+				</span>
 				<span class="context-pill context-pill--muted">{{ chat.backendBaseUrl }}</span>
 			</div>
 
@@ -93,14 +95,20 @@
 			</div>
 
 			<div v-if="chat.voiceRecords.length" class="context-chips">
-				<span v-for="voice in chat.voiceRecords" :key="voice" class="context-chip context-chip--voice">
-					Voice: {{ voice }}
-				</span>
+				<ConfirmDeleteChip
+					v-for="voice in chat.voiceRecords"
+					:key="voice"
+					class="context-chip context-chip--voice"
+					:label="voice"
+					title="Аудио в контексте"
+					@delete="removeVoiceRecord(voice)"
+				/>
 			</div>
 		</div>
 
 		<div ref="messagesContainerRef" class="messages" @scroll="handleMessagesScroll">
 			<div v-if="topSpacerHeight > 0" aria-hidden="true" :style="{ height: `${topSpacerHeight}px` }"></div>
+
 			<div v-for="item in visibleMessages" :key="item.key" :ref="setMessageRowRef(item.index)">
 				<Message
 					:message="item.message"
@@ -111,21 +119,23 @@
 					:quick-context-value="quickContextValue"
 					:quick-context-max-length="quickContextMode === 'memory' ? USER_MEMORY_MAX_LENGTH : SESSION_CONTEXT_MAX_LENGTH"
 					:quick-context-mode="quickContextMode"
-					:quick-context-saving="quickContextMode !== 'files' && (quickContextSaving || quickMemoryLoading)"
+					:quick-context-saving="!isQuickContextListMode && (quickContextSaving || quickMemoryLoading)"
+					:user-profile-enabled="chat.isAiMode"
+					:user-profile-open="userProfileOpenIndex === item.index"
+					:user-profile="quickUserProfile"
 					@edit-message="handleEditMessage"
 					@resend-message="handleResendMessage"
 					@toggle-quick-context="handleQuickContextToggle"
 					@switch-quick-context-mode="handleQuickContextModeSwitch"
 					@save-quick-context="handleQuickContextSave"
 					@close-quick-context="handleQuickContextClose"
-					:user-profile-enabled="chat.isAiMode"
-					:user-profile-open="userProfileOpenIndex === item.index"
-					:user-profile="quickUserProfile"
 					@toggle-user-profile="handleUserProfileToggle"
 					@close-user-profile="handleUserProfileClose"
 				/>
 			</div>
+
 			<div v-if="bottomSpacerHeight > 0" aria-hidden="true" :style="{ height: `${bottomSpacerHeight}px` }"></div>
+
 			<div v-if="chat.isLoading" class="message assistant">
 				<div class="avatar avatar--assistant" aria-hidden="true">
 					<svg class="avatar__icon avatar__icon--assistant" viewBox="0 0 24 24">
@@ -185,6 +195,7 @@ import ChatInput from './ChatInput.vue'
 import ConfirmDeleteChip from './ConfirmDeleteChip.vue'
 
 const ChatContextPanel = defineAsyncComponent(() => import('./ChatContextPanel.vue'))
+
 const VIRTUALIZATION_MIN_ITEMS = 40
 const DEFAULT_MESSAGE_HEIGHT = 112
 const VIRTUALIZATION_BUFFER_PX = 600
@@ -192,11 +203,13 @@ const AUTO_SCROLL_THRESHOLD_PX = 48
 const SESSION_CONTEXT_MAX_LENGTH = 1200
 const USER_MEMORY_MAX_LENGTH = 1200
 
-type QuickContextMode = 'session' | 'memory' | 'files'
+type QuickContextMode = 'session' | 'memory' | 'files' | 'audio'
 
 const chat = useChatStore()
+const chatApi = chat as any
 const modelsStore = useModelsStore()
 const userStore = useUserStore()
+
 const showContextPanel = ref(false)
 const isContextPrimaryOpen = ref(false)
 const userProfileOpenIndex = ref<number | null>(null)
@@ -213,6 +226,32 @@ const viewportHeight = ref(0)
 const isNearBottom = ref(false)
 const measuredHeights = ref<Record<number, number>>({})
 const messageRowRefs = new Map<number, HTMLElement>()
+
+const isQuickContextListMode = computed(() => quickContextMode.value === 'files' || quickContextMode.value === 'audio')
+
+const voiceRecords = computed<string[]>(() => (Array.isArray(chat.voiceRecords) ? chat.voiceRecords : []))
+
+const selectedVoiceRecords = computed<string[]>(() =>
+	Array.isArray(chatApi.selectedVoiceRecords) ? chatApi.selectedVoiceRecords : voiceRecords.value,
+)
+
+const activeVoiceRecords = computed<string[]>(() =>
+	Array.isArray(chatApi.activeVoiceRecords)
+		? chatApi.activeVoiceRecords
+		: voiceRecords.value.filter(voice => selectedVoiceRecords.value.includes(voice)),
+)
+
+const removeVoiceRecord = (voice: string) => {
+	const handler =
+		chatApi.removeVoiceRecord ||
+		chatApi.removeContextVoice ||
+		chatApi.removeVoice ||
+		chatApi.removeAudioRecord
+
+	if (typeof handler === 'function') {
+		handler.call(chat, voice)
+	}
+}
 
 const switchMode = (mode: 'core' | 'ai') => {
 	void chat.setChatMode(mode)
@@ -311,6 +350,7 @@ const aiCapabilityPills = computed(() => {
 
 const typingLabel = computed(() => 'Модель думает')
 const aiTypingLabel = computed(() => (chat.isExternalBackend ? 'AI анализирует контекст' : 'AI готовит ответ'))
+
 const transferStatusItems = computed(() => {
 	const items: Array<{ key: string; label: string; className: string }> = []
 	const fileStatus = chat.fileTransfer.status
@@ -342,11 +382,14 @@ const transferStatusItems = computed(() => {
 })
 
 const shouldVirtualize = computed(() => chat.messages.length > VIRTUALIZATION_MIN_ITEMS)
+
 const getMeasuredHeight = (index: number) => measuredHeights.value[index] ?? DEFAULT_MESSAGE_HEIGHT
+
 const getMessageStableKey = (message: ChatMessage, index: number) => {
 	const keyedMessage = message as ChatMessage & { id?: string | number }
 	return String(keyedMessage.id ?? message.timestamp ?? index)
 }
+
 const cumulativeHeights = computed(() => {
 	const result = new Array(chat.messages.length + 1).fill(0)
 
@@ -356,6 +399,7 @@ const cumulativeHeights = computed(() => {
 
 	return result
 })
+
 const totalMessagesHeight = computed(() => cumulativeHeights.value[cumulativeHeights.value.length - 1] ?? 0)
 
 const findStartIndexByOffset = (targetOffset: number) => {
@@ -441,6 +485,7 @@ const visibleMessages = computed(() => visibleWindow.value.items)
 const topSpacerHeight = computed(() => visibleWindow.value.top)
 const bottomSpacerHeight = computed(() => visibleWindow.value.bottom)
 const visibleRangeSignature = computed(() => visibleMessages.value.map(item => item.index).join(':'))
+
 const lastMessageSignature = computed(() => {
 	const lastMessage = chat.messages[chat.messages.length - 1]
 	if (!lastMessage) return ''
@@ -543,6 +588,7 @@ const handleToggleChatContext = (event: Event) => {
 		showContextPanel.value = customEvent.detail.open
 		return
 	}
+
 	showContextPanel.value = !showContextPanel.value
 }
 
@@ -578,7 +624,7 @@ const loadQuickUserMemory = async (force = false) => {
 }
 
 const loadQuickContextValue = async (mode: QuickContextMode) => {
-	if (mode === 'files') return ''
+	if (mode === 'files' || mode === 'audio') return ''
 	return mode === 'memory' ? loadQuickUserMemory() : loadQuickSessionContext()
 }
 
@@ -599,9 +645,10 @@ const handleQuickContextToggle = async ({ index }: QuickContextPayload) => {
 	}
 
 	const mode = quickContextMode.value
-	quickContextValue.value = mode === 'memory' ? quickMemoryValue.value : mode === 'files' ? '' : loadQuickSessionContext()
+	quickContextValue.value = mode === 'memory' ? quickMemoryValue.value : mode === 'files' || mode === 'audio' ? '' : loadQuickSessionContext()
 	quickContextOpenIndex.value = index
 	quickContextValue.value = await loadQuickContextValue(mode)
+
 	await nextTick()
 	measureVisibleRows()
 }
@@ -610,8 +657,9 @@ const handleQuickContextModeSwitch = async ({ index, mode }: { index: number; mo
 	if (!chat.isAiMode || quickContextOpenIndex.value !== index) return
 
 	quickContextMode.value = mode
-	quickContextValue.value = mode === 'memory' ? quickMemoryValue.value : mode === 'files' ? '' : loadQuickSessionContext()
+	quickContextValue.value = mode === 'memory' ? quickMemoryValue.value : mode === 'files' || mode === 'audio' ? '' : loadQuickSessionContext()
 	quickContextValue.value = await loadQuickContextValue(mode)
+
 	await nextTick()
 	measureVisibleRows()
 }
@@ -649,7 +697,7 @@ const saveQuickUserMemory = async (content: string) => {
 
 const handleQuickContextSave = async ({ content = '', mode = quickContextMode.value }: QuickContextPayload) => {
 	if (!chat.isAiMode) return
-	if (mode === 'files') return
+	if (mode === 'files' || mode === 'audio') return
 
 	if (mode === 'memory') {
 		await saveQuickUserMemory(content)
@@ -721,6 +769,7 @@ const getHistoryBeforeIndex = (index: number) => chat.messages.slice(0, Math.max
 
 async function sendWithFallback(messageText: string, options: DispatchMessageOptions = {}) {
 	if (chat.isLoading) return
+
 	const appendUserMessage = options.appendUserMessage !== false
 
 	if (chat.isExternalBackend) {
@@ -790,6 +839,7 @@ async function handleEditMessage(payload: MessageActionPayload) {
 
 	const history = getHistoryBeforeIndex(payload.index)
 	if (!chat.updateMessageContent(payload.index, payload.content)) return
+
 	await sendWithFallback(payload.content, {
 		appendUserMessage: false,
 		history,
@@ -838,7 +888,7 @@ watch(
 	() => `${userStore.user?.vkId || 'guest'}:${chat.conversationId}`,
 	() => {
 		quickContextOpenIndex.value = null
-		quickContextValue.value = quickContextMode.value === 'files' ? '' : loadQuickSessionContext()
+		quickContextValue.value = isQuickContextListMode.value ? '' : loadQuickSessionContext()
 	},
 )
 

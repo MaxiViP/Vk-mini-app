@@ -117,11 +117,27 @@
 									{{ chat.activeContextFiles.length }}/{{ chat.contextFiles.length }}
 								</span>
 							</button>
+
+							<button
+								type="button"
+								:class="[
+									'assistant-quick-context__switch-btn',
+									{ active: quickContextMode === 'audio' },
+								]"
+								:aria-selected="quickContextMode === 'audio'"
+								role="tab"
+								@click="switchQuickContextMode('audio')"
+							>
+								Аудио
+								<span v-if="voiceRecords.length" class="assistant-quick-context__tab-count">
+									{{ activeVoiceRecords.length }}/{{ voiceRecords.length }}
+								</span>
+							</button>
 						</div>
 					</div>
 
 					<textarea
-						v-if="!isQuickContextFilesMode"
+						v-if="!isQuickContextListMode"
 						:id="quickContextInputId"
 						ref="quickContextInputRef"
 						v-model="quickContextDraft"
@@ -134,7 +150,12 @@
 						@keydown.ctrl.enter.prevent="saveQuickContext"
 					></textarea>
 
-					<div v-else class="assistant-quick-context__files" role="tabpanel" aria-label="Файлы в контексте">
+					<div
+						v-else-if="isQuickContextFilesMode"
+						class="assistant-quick-context__files"
+						role="tabpanel"
+						aria-label="Файлы в контексте"
+					>
 						<ConfirmDeleteChip
 							v-for="file in chat.contextFiles"
 							:key="file"
@@ -152,9 +173,32 @@
 						</p>
 					</div>
 
+					<div
+						v-else-if="isQuickContextAudioMode"
+						class="assistant-quick-context__files"
+						role="tabpanel"
+						aria-label="Аудио в контексте"
+					>
+						<ConfirmDeleteChip
+							v-for="audio in voiceRecords"
+							:key="audio"
+							class="assistant-quick-context__file"
+							:label="audio"
+							selectable
+							:selected="isVoiceRecordSelected(audio)"
+							title="Аудио в контексте"
+							@update:selected="setVoiceRecordSelected(audio, $event)"
+							@delete="removeVoiceRecord(audio)"
+						/>
+
+						<p v-if="!voiceRecords.length" class="assistant-quick-context__empty">
+							Аудиофайлы в контекст пока не добавлены.
+						</p>
+					</div>
+
 					<div class="assistant-quick-context__actions">
 						<button
-							v-if="!isQuickContextFilesMode"
+							v-if="!isQuickContextListMode"
 							class="assistant-quick-context__btn assistant-quick-context__btn--primary"
 							type="submit"
 							:disabled="!canSaveQuickContext"
@@ -163,7 +207,7 @@
 						</button>
 
 						<button
-							v-if="!isQuickContextFilesMode"
+							v-if="!isQuickContextListMode"
 							class="assistant-quick-context__btn"
 							type="button"
 							:disabled="!canClearQuickContext"
@@ -388,7 +432,7 @@ type MarkdownRenderer = {
 	parse: (value: string) => string
 }
 
-type QuickContextMode = 'session' | 'memory' | 'files'
+type QuickContextMode = 'session' | 'memory' | 'files' | 'audio'
 
 type UserQuickProfile = {
 	user?: Record<string, unknown> | null
@@ -490,6 +534,8 @@ const emit = defineEmits<{
 }>()
 
 const chat = useChatStore()
+const chatApi = chat as any
+
 const audioReplyRef = ref<HTMLAudioElement | null>(null)
 const editTextareaRef = ref<HTMLTextAreaElement | null>(null)
 const quickContextRef = ref<HTMLElement | null>(null)
@@ -507,6 +553,44 @@ const resendStatus = ref<'idle' | 'sent'>('idle')
 let renderToken = 0
 let copyStatusTimer: number | null = null
 let resendStatusTimer: number | null = null
+
+const voiceRecords = computed<string[]>(() => (Array.isArray(chat.voiceRecords) ? chat.voiceRecords : []))
+
+const selectedVoiceRecords = computed<string[]>(() =>
+	Array.isArray(chatApi.selectedVoiceRecords) ? chatApi.selectedVoiceRecords : voiceRecords.value,
+)
+
+const activeVoiceRecords = computed<string[]>(() =>
+	Array.isArray(chatApi.activeVoiceRecords)
+		? chatApi.activeVoiceRecords
+		: voiceRecords.value.filter(voice => selectedVoiceRecords.value.includes(voice)),
+)
+
+const isVoiceRecordSelected = (voice: string) => selectedVoiceRecords.value.includes(voice)
+
+const setVoiceRecordSelected = (voice: string, selected: boolean) => {
+	const handler =
+		chatApi.setVoiceRecordSelected ||
+		chatApi.setContextVoiceSelected ||
+		chatApi.setVoiceSelected ||
+		chatApi.setAudioRecordSelected
+
+	if (typeof handler === 'function') {
+		handler.call(chat, voice, selected)
+	}
+}
+
+const removeVoiceRecord = (voice: string) => {
+	const handler =
+		chatApi.removeVoiceRecord ||
+		chatApi.removeContextVoice ||
+		chatApi.removeVoice ||
+		chatApi.removeAudioRecord
+
+	if (typeof handler === 'function') {
+		handler.call(chat, voice)
+	}
+}
 
 const getProfileValue = (keys: string[]) => {
 	const user = props.userProfile?.user || {}
@@ -606,7 +690,10 @@ const quickContextInputId = computed(() => `assistant-quick-context-${props.inde
 const quickContextPanelId = computed(() => `assistant-quick-context-panel-${props.index}`)
 const userProfileId = computed(() => `user-quick-profile-${props.index}`)
 const quickContextMode = computed(() => props.quickContextMode)
+
 const isQuickContextFilesMode = computed(() => props.quickContextMode === 'files')
+const isQuickContextAudioMode = computed(() => props.quickContextMode === 'audio')
+const isQuickContextListMode = computed(() => isQuickContextFilesMode.value || isQuickContextAudioMode.value)
 
 const quickContextPlaceholder = computed(() =>
 	props.quickContextMode === 'memory'
@@ -663,7 +750,7 @@ const userProfileRows = computed(() => [
 
 const normalizedQuickContextValue = computed(() => String(props.quickContextValue || '').trim())
 const normalizedQuickContextDraft = computed(() =>
-	isQuickContextFilesMode.value
+	isQuickContextListMode.value
 		? ''
 		: String(quickContextDraft.value || '')
 				.slice(0, props.quickContextMaxLength)
@@ -672,13 +759,13 @@ const normalizedQuickContextDraft = computed(() =>
 
 const canSaveQuickContext = computed(
 	() =>
-		!isQuickContextFilesMode.value &&
+		!isQuickContextListMode.value &&
 		!props.quickContextSaving &&
 		normalizedQuickContextDraft.value !== normalizedQuickContextValue.value,
 )
 
 const canClearQuickContext = computed(() =>
-	!isQuickContextFilesMode.value &&
+	!isQuickContextListMode.value &&
 	!props.quickContextSaving &&
 	Boolean(normalizedQuickContextDraft.value || normalizedQuickContextValue.value),
 )
@@ -721,7 +808,7 @@ const switchQuickContextMode = (mode: QuickContextMode) => {
 }
 
 const saveQuickContext = () => {
-	if (isQuickContextFilesMode.value) return
+	if (isQuickContextListMode.value) return
 	if (!canSaveQuickContext.value) return
 
 	emit('save-quick-context', {
@@ -732,7 +819,7 @@ const saveQuickContext = () => {
 }
 
 const clearQuickContext = () => {
-	if (isQuickContextFilesMode.value) return
+	if (isQuickContextListMode.value) return
 	quickContextDraft.value = ''
 	if (!canClearQuickContext.value) return
 
@@ -757,7 +844,7 @@ const closeUserProfile = () => {
 watch(
 	() => [props.quickContextValue, props.quickContextMode] as const,
 	value => {
-		if (props.quickContextOpen) quickContextDraft.value = value[1] === 'files' ? '' : value[0]
+		if (props.quickContextOpen) quickContextDraft.value = value[1] === 'files' || value[1] === 'audio' ? '' : value[0]
 	},
 )
 
@@ -767,10 +854,10 @@ watch(
 		if (!isOpen) return
 
 		closeActionsMenu()
-		quickContextDraft.value = isQuickContextFilesMode.value ? '' : props.quickContextValue
+		quickContextDraft.value = isQuickContextListMode.value ? '' : props.quickContextValue
 
 		await nextTick()
-		if (!isQuickContextFilesMode.value) {
+		if (!isQuickContextListMode.value) {
 			quickContextInputRef.value?.focus()
 			quickContextInputRef.value?.select()
 		}
