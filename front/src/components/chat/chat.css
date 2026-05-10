@@ -214,6 +214,88 @@
 	border-color: rgba(255, 107, 107, 0.22);
 }
 
+.confirm-delete-chip {
+	display: inline-flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	min-width: 0;
+	max-width: 100%;
+	box-sizing: border-box;
+}
+
+.chat .context-chip.confirm-delete-chip {
+	padding: 5px 6px 5px 10px;
+}
+
+.context-panel .context-list-item.confirm-delete-chip {
+	width: 100%;
+}
+
+.confirm-delete-chip--pending {
+	background: rgba(255, 107, 107, 0.12);
+	border-color: rgba(255, 107, 107, 0.35);
+	color: #ffb3b3;
+}
+
+.confirm-delete-chip__label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.confirm-delete-chip__delete {
+	flex: 0 0 22px;
+	width: 22px;
+	height: 22px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.05);
+	color: var(--color-text-muted);
+	font: inherit;
+	font-size: 15px;
+	font-weight: 700;
+	line-height: 1;
+	cursor: pointer;
+	transition:
+		background var(--transition-base),
+		border-color var(--transition-base),
+		color var(--transition-base),
+		box-shadow var(--transition-base),
+		transform var(--transition-fast);
+}
+
+.confirm-delete-chip__delete:hover {
+	background: rgba(255, 107, 107, 0.16);
+	border-color: rgba(255, 107, 107, 0.34);
+	color: #ffb3b3;
+}
+
+.confirm-delete-chip__delete--pending {
+	background: rgba(255, 107, 107, 0.22);
+	border-color: rgba(255, 107, 107, 0.55);
+	color: #ffd0d0;
+	box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.12);
+	animation: deleteCountdownPulse 0.75s ease-in-out infinite;
+}
+
+@keyframes deleteCountdownPulse {
+	0%,
+	100% {
+		transform: scale(1);
+		opacity: 1;
+	}
+
+	50% {
+		transform: scale(1.12);
+		opacity: 0.72;
+	}
+}
+
 .chat .context-action {
 	border: 1px solid rgba(255, 255, 255, 0.12);
 	background: rgba(255, 255, 255, 0.04);

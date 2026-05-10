@@ -102,9 +102,7 @@ onUnmounted(() => {
 	height: 44px;
 	border: 1px solid var(--mode-accent-border, rgba(255, 255, 255, 0.14));
 	border-radius: 15px;
-	background:
-		linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 52%),
-		rgba(21, 24, 31, 0.96);
+	background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 52%), rgba(21, 24, 31, 0.96);
 	color: var(--mode-accent-strong, #fff);
 
 	cursor: pointer;
@@ -131,15 +129,14 @@ onUnmounted(() => {
 	position: absolute;
 	inset: -58%;
 	z-index: -2;
-	background:
-		conic-gradient(
-			from 180deg,
-			transparent 0deg,
-			var(--mode-accent-soft, rgba(36, 209, 180, 0.14)) 80deg,
-			var(--mode-accent-border, rgba(36, 209, 180, 0.36)) 135deg,
-			transparent 210deg,
-			transparent 360deg
-		);
+	background: conic-gradient(
+		from 180deg,
+		transparent 0deg,
+		var(--mode-accent-soft, rgba(36, 209, 180, 0.14)) 80deg,
+		var(--mode-accent-border, rgba(36, 209, 180, 0.36)) 135deg,
+		transparent 210deg,
+		transparent 360deg
+	);
 	opacity: 0;
 	transform: rotate(0deg) scale(0.74);
 	transition:
@@ -153,9 +150,7 @@ onUnmounted(() => {
 	inset: 1px;
 	z-index: -1;
 	border-radius: inherit;
-	background:
-		linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 52%),
-		rgba(21, 24, 31, 0.96);
+	background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 52%), rgba(21, 24, 31, 0.96);
 }
 
 .scroll-btn:hover {

@@ -80,7 +80,14 @@
 			</div>
 
 			<div v-if="chat.contextFiles.length" class="context-chips">
-				<span v-for="file in chat.contextFiles" :key="file" class="context-chip">Файл: {{ file }}</span>
+				<ConfirmDeleteChip
+					v-for="file in chat.contextFiles"
+					:key="file"
+					class="context-chip"
+					:label="file"
+					title="Файл в контексте"
+					@delete="chat.removeContextFile(file)"
+				/>
 			</div>
 
 			<div v-if="chat.voiceRecords.length" class="context-chips">
@@ -173,6 +180,7 @@ import { useModelsStore } from '../../stores/models'
 import { useUserStore } from '../../stores/user'
 import Message from './Message.vue'
 import ChatInput from './ChatInput.vue'
+import ConfirmDeleteChip from './ConfirmDeleteChip.vue'
 
 const ChatContextPanel = defineAsyncComponent(() => import('./ChatContextPanel.vue'))
 const VIRTUALIZATION_MIN_ITEMS = 40

@@ -96,7 +96,7 @@ body {
 	flex: 0 0 auto;
 }
 
-/* адаптив */
+/* Mobile*/
 @media (max-width: 768px) {
 	.app-container {
 		padding-bottom: calc(132px + var(--input-bottom-safe));

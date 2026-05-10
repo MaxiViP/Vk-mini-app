@@ -181,7 +181,14 @@
 						<section class="context-section">
 							<h4>Файлы</h4>
 							<div v-if="chat.contextFiles.length" class="context-list">
-								<div v-for="file in chat.contextFiles" :key="file" class="context-list-item">{{ file }}</div>
+								<ConfirmDeleteChip
+									v-for="file in chat.contextFiles"
+									:key="file"
+									class="context-list-item"
+									:label="file"
+									title="Файл в контексте"
+									@delete="chat.removeContextFile(file)"
+								/>
 							</div>
 							<p v-else class="context-empty">Файлы в контекст пока не загружались.</p>
 						</section>
@@ -232,6 +239,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { fetchAiMemory, saveAiMemory } from '../../api/workspace'
 import { useChatStore } from '../../stores/chat'
 import { useUserStore } from '../../stores/user'
+import ConfirmDeleteChip from './ConfirmDeleteChip.vue'
 
 const props = defineProps<{ visible: boolean }>()
 const emit = defineEmits<{ (e: 'update:visible', value: boolean): void }>()

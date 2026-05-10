@@ -571,6 +571,20 @@ export const useChatStore = defineStore('chat', () => {
 		}
 	}
 
+	function removeContextFile(fileName: string) {
+		const normalized = String(fileName || '').trim()
+		if (!normalized) return
+
+		const nextFiles = contextFiles.value.filter(name => name !== normalized)
+		if (nextFiles.length === contextFiles.value.length) return
+
+		contextFiles.value = nextFiles
+
+		if (fileTransfer.value.status === 'success' && fileTransfer.value.name === normalized) {
+			fileTransfer.value = createTransferState()
+		}
+	}
+
 	async function resetConversation() {
 		const userId = userStore.user?.vkId || 'guest'
 		clearPersistTimers()
@@ -861,6 +875,7 @@ export const useChatStore = defineStore('chat', () => {
 		syncWithServer,
 		resetConversation,
 		uploadContextFile,
+		removeContextFile,
 		refreshExternalHealth,
 	}
 })
