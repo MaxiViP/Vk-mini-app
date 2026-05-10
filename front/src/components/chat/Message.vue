@@ -86,7 +86,7 @@
 								role="tab"
 								@click="switchQuickContextMode('session')"
 							>
-								Контекст для AI
+								Контекст
 							</button>
 
 							<button
@@ -99,7 +99,7 @@
 								role="tab"
 								@click="switchQuickContextMode('memory')"
 							>
-								Память AI
+								Память
 							</button>
 
 							<button
