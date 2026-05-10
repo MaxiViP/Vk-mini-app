@@ -242,10 +242,15 @@ onUnmounted(() => {
 	--mode-accent-glow: rgba(36, 209, 180, 0.24);
 	--mode-panel-bg: rgba(7, 34, 35, 0.5);
 	--mode-panel-bg-strong: rgba(10, 43, 44, 0.72);
+
 	background:
-		radial-gradient(circle at top right, rgba(0, 255, 194, 0.2), transparent 34%),
-		radial-gradient(circle at bottom left, rgba(63, 114, 255, 0.18), transparent 30%),
+		linear-gradient(180deg, rgba(0, 255, 194, 0.16) 0%, rgba(36, 209, 180, 0.12) 45%, rgba(36, 209, 180, 0.08) 100%),
+		radial-gradient(circle at top right, rgba(0, 255, 194, 0.22), transparent 34%),
+		radial-gradient(circle at bottom left, rgba(63, 114, 255, 0.12), transparent 30%),
 		linear-gradient(180deg, rgba(6, 24, 28, 0.98) 0%, rgba(4, 12, 18, 1) 100%);
+
+	background-attachment: fixed;
+	background-size: cover;
 }
 
 @media (max-width: 768px) {
