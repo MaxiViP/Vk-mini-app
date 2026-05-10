@@ -56,7 +56,9 @@
 					pill
 				}}</span>
 				<span class="context-pill">Сессия: {{ chat.conversationId }}</span>
-				<span v-if="chat.contextFiles.length" class="context-pill">Файлы: {{ chat.contextFiles.length }}</span>
+				<span v-if="chat.contextFiles.length" class="context-pill">
+					Файлы: {{ chat.activeContextFiles.length }}/{{ chat.contextFiles.length }}
+				</span>
 				<span v-if="chat.voiceRecords.length" class="context-pill">Голос: {{ chat.voiceRecords.length }}</span>
 				<span class="context-pill context-pill--muted">{{ chat.backendBaseUrl }}</span>
 			</div>

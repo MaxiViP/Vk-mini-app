@@ -1,5 +1,25 @@
 <template>
-	<span :class="['confirm-delete-chip', { 'confirm-delete-chip--pending': isPending }]" :title="title">
+	<span
+		:class="[
+			'confirm-delete-chip',
+			{
+				'confirm-delete-chip--pending': isPending,
+				'confirm-delete-chip--unselected': selectable && !selected,
+			},
+		]"
+		:title="title"
+	>
+		<input
+			v-if="selectable"
+			class="confirm-delete-chip__select"
+			type="checkbox"
+			:checked="selected"
+			title="Использовать файл в ответе"
+			:aria-label="`Использовать файл в ответе ${label}`"
+			@change="handleSelectedChange"
+			@click.stop
+		/>
+
 		<span class="confirm-delete-chip__label">{{ label }}</span>
 
 		<button
@@ -23,14 +43,19 @@ const props = withDefaults(
 	defineProps<{
 		label: string
 		title?: string
+		selectable?: boolean
+		selected?: boolean
 	}>(),
 	{
 		title: '',
+		selectable: false,
+		selected: true,
 	},
 )
 
 const emit = defineEmits<{
 	(e: 'delete'): void
+	(e: 'update:selected', value: boolean): void
 }>()
 
 const countdown = ref(0)
@@ -81,6 +106,11 @@ const handleDeleteClick = () => {
 	}
 
 	startDeleteCountdown()
+}
+
+const handleSelectedChange = (event: Event) => {
+	const input = event.target as HTMLInputElement
+	emit('update:selected', input.checked)
 }
 
 watch(() => props.label, cancelDeleteCountdown)

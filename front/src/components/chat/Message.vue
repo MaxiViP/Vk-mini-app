@@ -114,7 +114,7 @@
 							>
 								Файлы
 								<span v-if="chat.contextFiles.length" class="assistant-quick-context__tab-count">
-									{{ chat.contextFiles.length }}
+									{{ chat.activeContextFiles.length }}/{{ chat.contextFiles.length }}
 								</span>
 							</button>
 						</div>
@@ -140,7 +140,10 @@
 							:key="file"
 							class="assistant-quick-context__file"
 							:label="file"
+							selectable
+							:selected="chat.selectedContextFiles.includes(file)"
 							title="Файл в контексте"
+							@update:selected="chat.setContextFileSelected(file, $event)"
 							@delete="chat.removeContextFile(file)"
 						/>
 

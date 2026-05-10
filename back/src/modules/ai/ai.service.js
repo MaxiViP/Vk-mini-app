@@ -17,6 +17,7 @@ const AI_PROVIDER = 'vk_ai'
 const AI_HISTORY_PROVIDER = 'aivk'
 const AI_MEMORY_MAX_LENGTH = 1200
 const AI_SESSION_CONTEXT_MAX_LENGTH = 1200
+const AI_SELECTED_FILES_MAX_COUNT = 50
 const AI_LOCAL_HISTORY_MAX_MESSAGES = 20
 const AI_LOCAL_HISTORY_MAX_CHARS = 12000
 const AI_MEMORY_CACHE_TTL_MS = 0
@@ -247,6 +248,41 @@ const normalizeAiBlock = (value, maxLength) =>
 		.trim()
 const normalizeAiChatMode = value => (String(value || '').toLowerCase() === 'simple' ? 'simple' : 'context')
 const normalizeAiMessageContent = value => String(value || '').trim()
+const normalizeSelectedContextFiles = value =>
+	Array.isArray(value)
+		? Array.from(new Set(value.map(item => String(item || '').trim()).filter(Boolean))).slice(
+				0,
+				AI_SELECTED_FILES_MAX_COUNT,
+			)
+		: []
+const buildAiChatOutboundMessage = ({ message, sessionContext, selectedFiles, hasSelectedFileFilter }) => {
+	const normalizedMessage = normalizeAiMessageContent(message)
+	const normalizedSessionContext = normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH)
+	const normalizedSelectedFiles = normalizeSelectedContextFiles(selectedFiles)
+	const blocks = []
+
+	if (normalizedSessionContext) {
+		blocks.push(`ВРЕМЕННЫЙ КОНТЕКСТ ТЕКУЩЕЙ СЕССИИ:
+${normalizedSessionContext}`)
+	}
+
+	if (hasSelectedFileFilter) {
+		blocks.push(
+			normalizedSelectedFiles.length
+				? `ОГРАНИЧЕНИЕ ПО ФАЙЛАМ:
+Отвечай только по выбранным файлам из контекста. Не используй другие загруженные файлы этой беседы, даже если они доступны в conversation context.
+
+ВЫБРАННЫЕ ФАЙЛЫ:
+${normalizedSelectedFiles.map((fileName, index) => `${index + 1}. ${fileName}`).join('\n')}`
+				: `ОГРАНИЧЕНИЕ ПО ФАЙЛАМ:
+В этой отправке файлы не выбраны. Не используй загруженные файлы этой беседы как источник ответа.`,
+		)
+	}
+
+	if (!blocks.length) return normalizedMessage
+
+	return `${blocks.join('\n\n')}\n\nВОПРОС ПОЛЬЗОВАТЕЛЯ:\n${normalizedMessage}`
+}
 const normalizeAiConversationTitle = value => {
 	const normalized = normalizeAiMessageContent(value).slice(0, AI_CONVERSATION_TITLE_MAX_LENGTH)
 	return normalized || null
@@ -857,7 +893,7 @@ export const aiService = {
 		return aiClient.health()
 	},
 
-	async sendChat({ userId, conversationId, message, sessionContext = '', mode = 'context' }) {
+	async sendChat({ userId, conversationId, message, sessionContext = '', selectedFiles, mode = 'context' }) {
 		const access = await assertSubscriptionActive(userId)
 		assertCapability(access, 'chat')
 		assertRemaining(access, 'chat')
@@ -867,6 +903,14 @@ export const aiService = {
 		const normalizedUserMessage = normalizeAiMessageContent(message)
 		const normalizedSessionContext =
 			chatMode === 'context' ? normalizeAiBlock(sessionContext, AI_SESSION_CONTEXT_MAX_LENGTH) : ''
+		const hasSelectedFileFilter = Array.isArray(selectedFiles)
+		const normalizedSelectedFiles = normalizeSelectedContextFiles(selectedFiles)
+		const outboundMessage = buildAiChatOutboundMessage({
+			message: normalizedUserMessage,
+			sessionContext: normalizedSessionContext,
+			selectedFiles: normalizedSelectedFiles,
+			hasSelectedFileFilter,
+		})
 		const { externalUserId, vkUserId } = await resolveExternalVkUserId(userId)
 		const externalConversationId = resolveExternalVkConversationId({
 			externalUserId,
@@ -882,7 +926,10 @@ export const aiService = {
 			localConversationId: resolvedConversationId,
 			expectedExternalConversationId: externalConversationId,
 			messageLength: normalizedUserMessage.length,
+			outboundMessageLength: outboundMessage.length,
 			sessionContextLength: normalizedSessionContext.length,
+			selectedFilesCount: normalizedSelectedFiles.length,
+			hasSelectedFileFilter,
 			mode: chatMode,
 		})
 
@@ -909,13 +956,16 @@ export const aiService = {
 				externalUserId,
 				userId: externalUserId,
 				conversationId: externalConversationId,
-				message: normalizedUserMessage,
+				message: outboundMessage,
 				aiProfileId: env.vkAiProfileId,
 				billingMode: env.vkAiBillingMode,
 				metadata: {
 					local_user_id: String(userId),
 					local_conversation_id: resolvedConversationId,
 					mode: chatMode,
+					selected_context_files: normalizedSelectedFiles,
+					selected_context_files_count: normalizedSelectedFiles.length,
+					has_selected_file_filter: hasSelectedFileFilter,
 					vk_user_id: vkUserId,
 					auth_provider: vkUserId ? 'vk' : 'internal',
 				},
@@ -974,7 +1024,12 @@ export const aiService = {
 				message_count: response?.message_count ?? null,
 				localConversationId: resolvedConversationId,
 				externalConversationId: responseConversationId,
-				promptMode: 'plain-user-message',
+				selected_context_files: normalizedSelectedFiles,
+				has_selected_file_filter: hasSelectedFileFilter,
+				promptMode:
+					normalizedSessionContext || hasSelectedFileFilter
+						? 'message-with-local-instructions'
+						: 'plain-user-message',
 			},
 		})
 

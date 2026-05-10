@@ -144,6 +144,7 @@ export const useChatStore = defineStore('chat', () => {
 	const chatMode = ref<ChatMode>(localStorage.getItem(CHAT_MODE_STORAGE_KEY) === 'ai' ? 'ai' : 'core')
 	const conversationId = ref(localStorage.getItem(CONVERSATION_STORAGE_KEY) || createConversationId())
 	const contextFiles = ref<string[]>([])
+	const selectedContextFiles = ref<string[]>([])
 	const voiceRecords = ref<string[]>([])
 	const sourceHistory = ref<SourceHistoryItem[]>([])
 	let localPersistTimer: number | null = null
@@ -164,6 +165,25 @@ export const useChatStore = defineStore('chat', () => {
 	const isExternalBackend = computed(() => shouldUseAiApi(chatMode.value))
 	const backendLabel = computed(() => (isAiMode.value ? 'VK AI backend' : 'Internal LLM backend'))
 	const backendBaseUrl = computed(() => internalApiBaseUrl || window.location.origin)
+	const activeContextFiles = computed(() => {
+		const selected = new Set(selectedContextFiles.value)
+		return contextFiles.value.filter(fileName => selected.has(fileName))
+	})
+
+	const normalizeContextFileList = (files: string[]) => files.map(fileName => String(fileName || '').trim()).filter(Boolean)
+
+	const syncSelectedContextFiles = (files = contextFiles.value, previousFiles?: string[]) => {
+		const normalizedFiles = normalizeContextFileList(files)
+		const previous = previousFiles ? new Set(normalizeContextFileList(previousFiles)) : null
+		const existingFiles = new Set(normalizedFiles)
+		const selected = new Set(selectedContextFiles.value.filter(fileName => existingFiles.has(fileName)))
+
+		for (const fileName of normalizedFiles) {
+			if (!previous || !previous.has(fileName)) selected.add(fileName)
+		}
+
+		selectedContextFiles.value = normalizedFiles.filter(fileName => selected.has(fileName))
+	}
 
 	const setStoredChatMode = (mode: ChatMode) => {
 		chatMode.value = mode
@@ -319,6 +339,7 @@ export const useChatStore = defineStore('chat', () => {
 		if (!userStore.token || !isLikelyJwt(userStore.token)) {
 			setModeMessages('ai', [])
 			contextFiles.value = []
+			selectedContextFiles.value = []
 			voiceRecords.value = []
 			backendStatus.value = 'idle'
 			isHydrating.value = false
@@ -339,6 +360,7 @@ export const useChatStore = defineStore('chat', () => {
 			}))
 			setModeMessages('ai', nextMessages)
 			contextFiles.value = Array.isArray(conversation.files) ? conversation.files : []
+			syncSelectedContextFiles()
 			voiceRecords.value = Array.isArray(conversation.voice_records) ? conversation.voice_records : []
 			localStorage.setItem(getStorageKey(userId, 'ai'), JSON.stringify(nextMessages))
 			backendStatus.value = 'online'
@@ -346,6 +368,7 @@ export const useChatStore = defineStore('chat', () => {
 			console.warn('[chat] hydrateExternalConversation:external_failed', error)
 			setModeMessages('ai', [])
 			contextFiles.value = []
+			selectedContextFiles.value = []
 			voiceRecords.value = []
 			backendStatus.value = shouldKeepExternalBackendOnline(error) ? 'online' : 'offline'
 		} finally {
@@ -442,6 +465,7 @@ export const useChatStore = defineStore('chat', () => {
 	}
 
 	watch(messages, schedulePersist, { deep: true })
+	watch(contextFiles, (files, previousFiles) => syncSelectedContextFiles(files, previousFiles))
 
 	watch(
 		() => userStore.user?.vkId,
@@ -450,6 +474,7 @@ export const useChatStore = defineStore('chat', () => {
 			clearPersistTimers()
 			setConversationId(userId)
 			contextFiles.value = []
+			selectedContextFiles.value = []
 			voiceRecords.value = []
 			sourceHistory.value = []
 			fileTransfer.value = createTransferState()
@@ -546,6 +571,7 @@ export const useChatStore = defineStore('chat', () => {
 			})
 			const fileName = result.filename || file.name
 			contextFiles.value = Array.from(new Set([...contextFiles.value, fileName]))
+			selectedContextFiles.value = Array.from(new Set([...selectedContextFiles.value, fileName]))
 			fileTransfer.value = {
 				status: 'success',
 				name: fileName,
@@ -579,10 +605,23 @@ export const useChatStore = defineStore('chat', () => {
 		if (nextFiles.length === contextFiles.value.length) return
 
 		contextFiles.value = nextFiles
+		selectedContextFiles.value = selectedContextFiles.value.filter(name => name !== normalized)
 
 		if (fileTransfer.value.status === 'success' && fileTransfer.value.name === normalized) {
 			fileTransfer.value = createTransferState()
 		}
+	}
+
+	function setContextFileSelected(fileName: string, selected: boolean) {
+		const normalized = String(fileName || '').trim()
+		if (!normalized || !contextFiles.value.includes(normalized)) return
+
+		if (selected) {
+			selectedContextFiles.value = Array.from(new Set([...selectedContextFiles.value, normalized]))
+			return
+		}
+
+		selectedContextFiles.value = selectedContextFiles.value.filter(name => name !== normalized)
 	}
 
 	async function resetConversation() {
@@ -604,6 +643,7 @@ export const useChatStore = defineStore('chat', () => {
 
 		messages.value = []
 		contextFiles.value = []
+		selectedContextFiles.value = []
 		voiceRecords.value = []
 		sourceHistory.value = []
 		fileTransfer.value = createTransferState()
@@ -676,13 +716,15 @@ export const useChatStore = defineStore('chat', () => {
 			if (isExternalBackend.value) {
 				const sessionContext = readSessionContext().trim()
 				const hasSessionContext = Boolean(sessionContext)
-				const hasExternalContext = contextFiles.value.length > 0 || voiceRecords.value.length > 0
+				const hasSelectedFiles = activeContextFiles.value.length > 0
+				const hasExternalContext = hasSelectedFiles || voiceRecords.value.length > 0
 
 				const response = await vkAiApi.chat({
 					accessToken: getExternalAccessToken(),
 					conversationId: conversationId.value,
 					message: text,
 					sessionContext: hasSessionContext ? sessionContext : undefined,
+					selectedFiles: contextFiles.value.length ? activeContextFiles.value : undefined,
 					mode: hasSessionContext || hasExternalContext ? 'context' : 'simple',
 				})
 
@@ -860,6 +902,8 @@ export const useChatStore = defineStore('chat', () => {
 		backendBaseUrl,
 		conversationId,
 		contextFiles,
+		selectedContextFiles,
+		activeContextFiles,
 		voiceRecords,
 		sourceHistory,
 		readSessionContext,
@@ -876,6 +920,7 @@ export const useChatStore = defineStore('chat', () => {
 		resetConversation,
 		uploadContextFile,
 		removeContextFile,
+		setContextFileSelected,
 		refreshExternalHealth,
 	}
 })

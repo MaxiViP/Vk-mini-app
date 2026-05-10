@@ -238,6 +238,19 @@
 	color: #ffb3b3;
 }
 
+.confirm-delete-chip--unselected {
+	opacity: 0.68;
+}
+
+.confirm-delete-chip__select {
+	flex: 0 0 16px;
+	width: 16px;
+	height: 16px;
+	margin: 0;
+	accent-color: var(--mode-accent);
+	cursor: pointer;
+}
+
 .confirm-delete-chip__label {
 	min-width: 0;
 	overflow: hidden;

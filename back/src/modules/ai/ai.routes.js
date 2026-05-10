@@ -51,6 +51,9 @@ const getFileFromForm = (formData, key) => {
 	return value
 }
 
+const normalizeSelectedFiles = value =>
+	Array.isArray(value) ? value.map(item => String(item || '').trim()).filter(Boolean).slice(0, 50) : undefined
+
 router.get('/plans', async (_req, res, next) => {
 	try {
 		const result = await aiService.getPlans()
@@ -88,6 +91,7 @@ router.post('/chat', async (req, res, next) => {
 			conversationId: typeof req.body.conversationId === 'string' ? String(req.body.conversationId) : '',
 			message: String(req.body.message),
 			sessionContext: typeof req.body.sessionContext === 'string' ? req.body.sessionContext : '',
+			selectedFiles: normalizeSelectedFiles(req.body?.selectedFiles),
 			mode,
 		})
 

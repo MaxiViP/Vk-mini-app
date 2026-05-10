@@ -163,9 +163,13 @@ export const vkAiApi = {
 		conversationId: string
 		message: string
 		sessionContext?: string
+		selectedFiles?: string[]
 		mode?: 'context' | 'simple'
 	}) {
 		const normalizedSessionContext = normalizeVkAiSessionContext(payload.sessionContext)
+		const normalizedSelectedFiles = Array.isArray(payload.selectedFiles)
+			? payload.selectedFiles.map(fileName => String(fileName || '').trim()).filter(Boolean)
+			: undefined
 		const hasSessionContext = Boolean(normalizedSessionContext)
 		const finalMode = resolveVkAiRequestMode({
 			mode: payload.mode,
@@ -182,6 +186,7 @@ export const vkAiApi = {
 					conversationId: payload.conversationId,
 					message: payload.message,
 					sessionContext: hasSessionContext ? normalizedSessionContext : undefined,
+					selectedFiles: Array.isArray(payload.selectedFiles) ? normalizedSelectedFiles : undefined,
 				}),
 			},
 			{ accessToken: payload.accessToken },
