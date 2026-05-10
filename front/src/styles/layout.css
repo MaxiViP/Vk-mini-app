@@ -47,9 +47,8 @@ body {
 .top-bar::before {
 	content: '';
 	position: absolute;
-	inset: 0;
-	left: -24px;
-	right: -24px;
+	inset-block: 0;
+	inset-inline: calc(-1 * var(--app-gutter));
 	z-index: -1;
 
 	background: rgba(33, 33, 33, 0.72);
