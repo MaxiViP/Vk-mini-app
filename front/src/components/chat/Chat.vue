@@ -109,7 +109,7 @@
 					:quick-context-value="quickContextValue"
 					:quick-context-max-length="quickContextMode === 'memory' ? USER_MEMORY_MAX_LENGTH : SESSION_CONTEXT_MAX_LENGTH"
 					:quick-context-mode="quickContextMode"
-					:quick-context-saving="quickContextSaving || quickMemoryLoading"
+					:quick-context-saving="quickContextMode !== 'files' && (quickContextSaving || quickMemoryLoading)"
 					@edit-message="handleEditMessage"
 					@resend-message="handleResendMessage"
 					@toggle-quick-context="handleQuickContextToggle"
@@ -190,7 +190,7 @@ const AUTO_SCROLL_THRESHOLD_PX = 48
 const SESSION_CONTEXT_MAX_LENGTH = 1200
 const USER_MEMORY_MAX_LENGTH = 1200
 
-type QuickContextMode = 'session' | 'memory'
+type QuickContextMode = 'session' | 'memory' | 'files'
 
 const chat = useChatStore()
 const modelsStore = useModelsStore()
@@ -575,8 +575,10 @@ const loadQuickUserMemory = async (force = false) => {
 	}
 }
 
-const loadQuickContextValue = async (mode: QuickContextMode) =>
-	mode === 'memory' ? loadQuickUserMemory() : loadQuickSessionContext()
+const loadQuickContextValue = async (mode: QuickContextMode) => {
+	if (mode === 'files') return ''
+	return mode === 'memory' ? loadQuickUserMemory() : loadQuickSessionContext()
+}
 
 type QuickContextPayload = {
 	index: number
@@ -595,7 +597,7 @@ const handleQuickContextToggle = async ({ index }: QuickContextPayload) => {
 	}
 
 	const mode = quickContextMode.value
-	quickContextValue.value = mode === 'memory' ? quickMemoryValue.value : loadQuickSessionContext()
+	quickContextValue.value = mode === 'memory' ? quickMemoryValue.value : mode === 'files' ? '' : loadQuickSessionContext()
 	quickContextOpenIndex.value = index
 	quickContextValue.value = await loadQuickContextValue(mode)
 	await nextTick()
@@ -606,7 +608,7 @@ const handleQuickContextModeSwitch = async ({ index, mode }: { index: number; mo
 	if (!chat.isAiMode || quickContextOpenIndex.value !== index) return
 
 	quickContextMode.value = mode
-	quickContextValue.value = mode === 'memory' ? quickMemoryValue.value : loadQuickSessionContext()
+	quickContextValue.value = mode === 'memory' ? quickMemoryValue.value : mode === 'files' ? '' : loadQuickSessionContext()
 	quickContextValue.value = await loadQuickContextValue(mode)
 	await nextTick()
 	measureVisibleRows()
@@ -645,6 +647,7 @@ const saveQuickUserMemory = async (content: string) => {
 
 const handleQuickContextSave = async ({ content = '', mode = quickContextMode.value }: QuickContextPayload) => {
 	if (!chat.isAiMode) return
+	if (mode === 'files') return
 
 	if (mode === 'memory') {
 		await saveQuickUserMemory(content)
@@ -833,7 +836,7 @@ watch(
 	() => `${userStore.user?.vkId || 'guest'}:${chat.conversationId}`,
 	() => {
 		quickContextOpenIndex.value = null
-		quickContextValue.value = loadQuickSessionContext()
+		quickContextValue.value = quickContextMode.value === 'files' ? '' : loadQuickSessionContext()
 	},
 )
 

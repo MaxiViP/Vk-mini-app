@@ -15,7 +15,7 @@
 				:class="['avatar', 'avatar--assistant', 'avatar--button']"
 				type="button"
 				:aria-expanded="quickContextOpen"
-				:aria-controls="quickContextInputId"
+				:aria-controls="quickContextPanelId"
 				title="Изменить быстрый контекст"
 				aria-label="Изменить быстрый контекст AI"
 				@click="toggleQuickContext"
@@ -67,12 +67,13 @@
 			<Transition name="quick-context-slide">
 				<form
 					v-if="isQuickContextVisible"
+					:id="quickContextPanelId"
 					ref="quickContextRef"
 					class="assistant-quick-context"
 					@submit.prevent="saveQuickContext"
 				>
 					<div class="assistant-quick-context__header">
-						<label class="assistant-quick-context__label" :for="quickContextInputId">Быстрый контекст</label>
+						<span class="assistant-quick-context__label">Быстрый контекст</span>
 
 						<div class="assistant-quick-context__switch" role="tablist" aria-label="Тип быстрого контекста">
 							<button
@@ -100,10 +101,27 @@
 							>
 								Память AI
 							</button>
+
+							<button
+								type="button"
+								:class="[
+									'assistant-quick-context__switch-btn',
+									{ active: quickContextMode === 'files' },
+								]"
+								:aria-selected="quickContextMode === 'files'"
+								role="tab"
+								@click="switchQuickContextMode('files')"
+							>
+								Файлы
+								<span v-if="chat.contextFiles.length" class="assistant-quick-context__tab-count">
+									{{ chat.contextFiles.length }}
+								</span>
+							</button>
 						</div>
 					</div>
 
 					<textarea
+						v-if="!isQuickContextFilesMode"
 						:id="quickContextInputId"
 						ref="quickContextInputRef"
 						v-model="quickContextDraft"
@@ -111,12 +129,29 @@
 						rows="2"
 						:maxlength="quickContextMaxLength"
 						:placeholder="quickContextPlaceholder"
+						aria-label="Быстрый контекст"
 						@keydown.esc.prevent="closeQuickContext"
 						@keydown.ctrl.enter.prevent="saveQuickContext"
 					></textarea>
 
+					<div v-else class="assistant-quick-context__files" role="tabpanel" aria-label="Файлы в контексте">
+						<ConfirmDeleteChip
+							v-for="file in chat.contextFiles"
+							:key="file"
+							class="assistant-quick-context__file"
+							:label="file"
+							title="Файл в контексте"
+							@delete="chat.removeContextFile(file)"
+						/>
+
+						<p v-if="!chat.contextFiles.length" class="assistant-quick-context__empty">
+							Файлы в контекст пока не добавлены.
+						</p>
+					</div>
+
 					<div class="assistant-quick-context__actions">
 						<button
+							v-if="!isQuickContextFilesMode"
 							class="assistant-quick-context__btn assistant-quick-context__btn--primary"
 							type="submit"
 							:disabled="!canSaveQuickContext"
@@ -125,6 +160,7 @@
 						</button>
 
 						<button
+							v-if="!isQuickContextFilesMode"
 							class="assistant-quick-context__btn"
 							type="button"
 							:disabled="!canClearQuickContext"
@@ -342,12 +378,14 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { Message } from '../../types'
+import { useChatStore } from '../../stores/chat'
+import ConfirmDeleteChip from './ConfirmDeleteChip.vue'
 
 type MarkdownRenderer = {
 	parse: (value: string) => string
 }
 
-type QuickContextMode = 'session' | 'memory'
+type QuickContextMode = 'session' | 'memory' | 'files'
 
 type UserQuickProfile = {
 	user?: Record<string, unknown> | null
@@ -448,6 +486,7 @@ const emit = defineEmits<{
 	(e: 'close-user-profile', payload: { index: number }): void
 }>()
 
+const chat = useChatStore()
 const audioReplyRef = ref<HTMLAudioElement | null>(null)
 const editTextareaRef = ref<HTMLTextAreaElement | null>(null)
 const quickContextRef = ref<HTMLElement | null>(null)
@@ -561,8 +600,10 @@ const isUserProfileAvailable = computed(() => props.message.role === 'user' && p
 const isUserProfileVisible = computed(() => isUserProfileAvailable.value && props.userProfileOpen)
 
 const quickContextInputId = computed(() => `assistant-quick-context-${props.index}`)
+const quickContextPanelId = computed(() => `assistant-quick-context-panel-${props.index}`)
 const userProfileId = computed(() => `user-quick-profile-${props.index}`)
 const quickContextMode = computed(() => props.quickContextMode)
+const isQuickContextFilesMode = computed(() => props.quickContextMode === 'files')
 
 const quickContextPlaceholder = computed(() =>
 	props.quickContextMode === 'memory'
@@ -619,17 +660,24 @@ const userProfileRows = computed(() => [
 
 const normalizedQuickContextValue = computed(() => String(props.quickContextValue || '').trim())
 const normalizedQuickContextDraft = computed(() =>
-	String(quickContextDraft.value || '')
-		.slice(0, props.quickContextMaxLength)
-		.trim(),
+	isQuickContextFilesMode.value
+		? ''
+		: String(quickContextDraft.value || '')
+				.slice(0, props.quickContextMaxLength)
+				.trim(),
 )
 
 const canSaveQuickContext = computed(
-	() => !props.quickContextSaving && normalizedQuickContextDraft.value !== normalizedQuickContextValue.value,
+	() =>
+		!isQuickContextFilesMode.value &&
+		!props.quickContextSaving &&
+		normalizedQuickContextDraft.value !== normalizedQuickContextValue.value,
 )
 
 const canClearQuickContext = computed(() =>
-	!props.quickContextSaving && Boolean(normalizedQuickContextDraft.value || normalizedQuickContextValue.value),
+	!isQuickContextFilesMode.value &&
+	!props.quickContextSaving &&
+	Boolean(normalizedQuickContextDraft.value || normalizedQuickContextValue.value),
 )
 
 const copyTitle = computed(() => (copyStatus.value === 'copied' ? 'Скопировано' : 'Копировать'))
@@ -670,6 +718,7 @@ const switchQuickContextMode = (mode: QuickContextMode) => {
 }
 
 const saveQuickContext = () => {
+	if (isQuickContextFilesMode.value) return
 	if (!canSaveQuickContext.value) return
 
 	emit('save-quick-context', {
@@ -680,6 +729,7 @@ const saveQuickContext = () => {
 }
 
 const clearQuickContext = () => {
+	if (isQuickContextFilesMode.value) return
 	quickContextDraft.value = ''
 	if (!canClearQuickContext.value) return
 
@@ -704,7 +754,7 @@ const closeUserProfile = () => {
 watch(
 	() => [props.quickContextValue, props.quickContextMode] as const,
 	value => {
-		if (props.quickContextOpen) quickContextDraft.value = value[0]
+		if (props.quickContextOpen) quickContextDraft.value = value[1] === 'files' ? '' : value[0]
 	},
 )
 
@@ -714,11 +764,13 @@ watch(
 		if (!isOpen) return
 
 		closeActionsMenu()
-		quickContextDraft.value = props.quickContextValue
+		quickContextDraft.value = isQuickContextFilesMode.value ? '' : props.quickContextValue
 
 		await nextTick()
-		quickContextInputRef.value?.focus()
-		quickContextInputRef.value?.select()
+		if (!isQuickContextFilesMode.value) {
+			quickContextInputRef.value?.focus()
+			quickContextInputRef.value?.select()
+		}
 	},
 )
 

@@ -231,6 +231,20 @@
 	font-weight: 700;
 }
 
+.messages .assistant-quick-context__tab-count {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 16px;
+	height: 16px;
+	margin-left: 5px;
+	padding: 0 5px;
+	border-radius: 999px;
+	background: rgba(4, 38, 31, 0.18);
+	font-size: 10px;
+	line-height: 1;
+}
+
 .messages .assistant-quick-context__switch-btn:hover:not(.active) {
 	background: rgba(255, 255, 255, 0.08);
 	color: var(--color-text);
@@ -262,6 +276,41 @@
 
 .messages .assistant-quick-context__input::placeholder {
 	color: var(--color-text-muted);
+}
+
+.messages .assistant-quick-context__files {
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+	max-height: 190px;
+	overflow-y: auto;
+	padding-right: 2px;
+}
+
+.messages .assistant-quick-context__file {
+	width: 100%;
+	padding: 8px 8px 8px 10px;
+	border-radius: 13px;
+	background: rgba(255, 255, 255, 0.045);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	color: var(--color-text-soft);
+}
+
+.messages .assistant-quick-context__file.confirm-delete-chip--pending {
+	background: rgba(255, 107, 107, 0.12);
+	border-color: rgba(255, 107, 107, 0.35);
+	color: #ffb3b3;
+}
+
+.messages .assistant-quick-context__empty {
+	margin: 0;
+	padding: 10px;
+	border-radius: 13px;
+	background: rgba(255, 255, 255, 0.045);
+	border: 1px dashed rgba(255, 255, 255, 0.12);
+	color: var(--color-text-muted);
+	font-size: 13px;
+	line-height: 1.35;
 }
 
 .messages .assistant-quick-context__actions {
