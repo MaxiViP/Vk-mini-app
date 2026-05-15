@@ -52,7 +52,12 @@ const getFileFromForm = (formData, key) => {
 }
 
 const normalizeSelectedFiles = value =>
-	Array.isArray(value) ? value.map(item => String(item || '').trim()).filter(Boolean).slice(0, 50) : undefined
+	Array.isArray(value)
+		? value
+				.map(item => String(item || '').trim())
+				.filter(Boolean)
+				.slice(0, 50)
+		: undefined
 
 router.get('/plans', async (_req, res, next) => {
 	try {
@@ -215,4 +220,43 @@ router.post('/history/:conversationId/reset', async (req, res, next) => {
 	}
 })
 
+router.delete('/history/:conversationId/files/:fileName', async (req, res, next) => {
+	try {
+		const conversationId = String(req.params.conversationId || '').trim()
+		const fileName = String(req.params.fileName || '').trim()
+
+		if (!conversationId) throw new AppError('Missing required fields: conversationId', 400)
+		if (!fileName) throw new AppError('Missing required fields: fileName', 400)
+
+		const result = await aiService.removeContextFile({
+			userId: req.user.id,
+			conversationId,
+			fileName,
+		})
+
+		res.json(result)
+	} catch (error) {
+		next(error)
+	}
+})
+
+router.delete('/conversations/:conversationId/files/:fileName', async (req, res, next) => {
+	try {
+		const conversationId = String(req.params.conversationId || '').trim()
+		const fileName = String(req.params.fileName || '').trim()
+
+		if (!conversationId) throw new AppError('Missing required fields: conversationId', 400)
+		if (!fileName) throw new AppError('Missing required fields: fileName', 400)
+
+		const result = await aiService.removeContextFile({
+			userId: req.user.id,
+			conversationId,
+			fileName,
+		})
+
+		res.json(result)
+	} catch (error) {
+		next(error)
+	}
+})
 export default router

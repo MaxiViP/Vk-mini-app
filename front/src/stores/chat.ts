@@ -4,7 +4,7 @@ import { computed, ref, watch } from 'vue'
 import type { Message, Model, ChatHistoryItem, MessageMeta, SourceHistoryItem } from '../types'
 import { fetchWorkspace, saveChatHistory, type WorkspaceMessage } from '../api/workspace'
 import { getVkAiErrorCode, vkAiApi } from '../api/vkAi'
-import { internalApiBaseUrl, vkAiChatMode } from '../config/chatBackend'
+import { internalApiBaseUrl } from '../config/chatBackend'
 import { shouldUseAiApi } from '../domain/chatModeRules'
 import { isDevSessionRefreshToken, useUserStore } from './user'
 
@@ -170,7 +170,8 @@ export const useChatStore = defineStore('chat', () => {
 		return contextFiles.value.filter(fileName => selected.has(fileName))
 	})
 
-	const normalizeContextFileList = (files: string[]) => files.map(fileName => String(fileName || '').trim()).filter(Boolean)
+	const normalizeContextFileList = (files: string[]) =>
+		files.map(fileName => String(fileName || '').trim()).filter(Boolean)
 
 	const syncSelectedContextFiles = (files = contextFiles.value, previousFiles?: string[]) => {
 		const normalizedFiles = normalizeContextFileList(files)
@@ -242,13 +243,19 @@ export const useChatStore = defineStore('chat', () => {
 
 	const readSessionContext = (userId = userStore.user?.vkId, currentConversationId = conversationId.value) => {
 		try {
-			return normalizeSessionContext(localStorage.getItem(getAiSessionContextStorageKey(userId, currentConversationId)) || '')
+			return normalizeSessionContext(
+				localStorage.getItem(getAiSessionContextStorageKey(userId, currentConversationId)) || '',
+			)
 		} catch {
 			return ''
 		}
 	}
 
-	const writeSessionContext = (value: string, userId = userStore.user?.vkId, currentConversationId = conversationId.value) => {
+	const writeSessionContext = (
+		value: string,
+		userId = userStore.user?.vkId,
+		currentConversationId = conversationId.value,
+	) => {
 		const key = getAiSessionContextStorageKey(userId, currentConversationId)
 		const normalized = normalizeSessionContext(value).trim()
 
@@ -610,9 +617,24 @@ export const useChatStore = defineStore('chat', () => {
 		}
 	}
 
-	function removeContextFile(fileName: string) {
+	async function removeContextFile(fileName: string) {
 		const normalized = String(fileName || '').trim()
 		if (!normalized) return
+
+		if (isExternalBackend.value) {
+			try {
+				await vkAiApi.removeContextFile({
+					accessToken: getExternalAccessToken(),
+					conversationId: conversationId.value,
+					fileName: normalized,
+				})
+				backendStatus.value = 'online'
+			} catch (error) {
+				backendStatus.value = shouldKeepExternalBackendOnline(error) ? 'online' : 'offline'
+				await refreshAiAccessAfterExternalError(error)
+				throw toExternalAiError(error)
+			}
+		}
 
 		const nextFiles = contextFiles.value.filter(name => name !== normalized)
 		if (nextFiles.length === contextFiles.value.length) return
@@ -775,6 +797,9 @@ export const useChatStore = defineStore('chat', () => {
 				modelId: model.id,
 				history: history ?? messages.value.map(toHistoryItem),
 			})
+
+			const currentAbortController = new AbortController()
+			abortController = currentAbortController
 			const executeChatRequest = () =>
 				fetch(`${internalApiBaseUrl}/api/llm/chat`, {
 					method: 'POST',
@@ -784,7 +809,7 @@ export const useChatStore = defineStore('chat', () => {
 						'X-Request-Id': requestId,
 					},
 					body: requestBody,
-					signal: abortController.signal,
+					signal: currentAbortController.signal,
 				})
 
 			let response = await executeChatRequest()

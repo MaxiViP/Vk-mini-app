@@ -258,4 +258,25 @@ export const vkAiApi = {
 		await ensureOk(response)
 		return response.json() as Promise<{ status: string; user_id: string; conversation_id: string }>
 	},
+
+	async removeContextFile(payload: { accessToken: string; conversationId: string; fileName: string }) {
+		const response = await authorizedFetch(
+			`${apiBaseUrl}/api/ai/history/${encodeURIComponent(payload.conversationId)}/files/${encodeURIComponent(payload.fileName)}`,
+			{
+				method: 'DELETE',
+				headers: createHeaders(payload.accessToken),
+			},
+			{ accessToken: payload.accessToken },
+		)
+
+		await ensureOk(response)
+		return response.json() as Promise<{
+			status: string
+			user_id: string
+			conversation_id: string
+			filename: string
+			removed: boolean
+			removed_count: number
+		}>
+	},
 }

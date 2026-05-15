@@ -870,6 +870,100 @@ const listStoredConversations = async ({ userId }) => {
 	}
 }
 
+const removeStoredContextFile = async ({ userId, conversationId, fileName }) => {
+	const normalizedFileName = normalizeAiMessageContent(fileName)
+
+	if (!normalizedFileName) {
+		throw new AppError('Missing required fields: fileName', 400, {
+			code: 'AI_FILE_NAME_REQUIRED',
+		})
+	}
+
+	try {
+		const conversation = await prisma.aiConversation.findFirst({
+			where: {
+				userId,
+				conversationKey: conversationId,
+				status: { not: 'deleted' },
+			},
+		})
+
+		if (!conversation) {
+			return {
+				status: 'ok',
+				user_id: String(userId),
+				conversation_id: conversationId,
+				filename: normalizedFileName,
+				removed: false,
+				removed_count: 0,
+			}
+		}
+
+		const rows = await prisma.aiMessage.findMany({
+			where: {
+				userId,
+				conversationId: conversation.id,
+			},
+			select: {
+				id: true,
+				metadataJson: true,
+			},
+		})
+
+		const idsToDelete = rows
+			.filter(row => {
+				const metadata = row.metadataJson && typeof row.metadataJson === 'object' ? row.metadataJson : null
+				if (!metadata) return false
+
+				return metadata.kind === 'file_upload' && String(metadata.filename || '').trim() === normalizedFileName
+			})
+			.map(row => row.id)
+
+		if (idsToDelete.length > 0) {
+			await prisma.aiMessage.deleteMany({
+				where: {
+					id: { in: idsToDelete },
+					userId,
+					conversationId: conversation.id,
+				},
+			})
+
+			await prisma.aiConversation.update({
+				where: { id: conversation.id },
+				data: {
+					messageCount: {
+						decrement: idsToDelete.length,
+					},
+					lastMessageAt: new Date(),
+				},
+			})
+		}
+
+		return {
+			status: 'ok',
+			user_id: String(userId),
+			conversation_id: conversationId,
+			filename: normalizedFileName,
+			removed: idsToDelete.length > 0,
+			removed_count: idsToDelete.length,
+		}
+	} catch (error) {
+		if (isAiHistoryStorageUnavailable(error)) {
+			return {
+				status: 'ok',
+				user_id: String(userId),
+				conversation_id: conversationId,
+				filename: normalizedFileName,
+				removed: false,
+				removed_count: 0,
+				localStorageUnavailable: true,
+			}
+		}
+
+		throw error
+	}
+}
+
 export const aiService = {
 	syncAiMemoryCache(userId, aiMemory) {
 		setCachedAiMemory(userId, aiMemory)
@@ -1304,5 +1398,20 @@ export const aiService = {
 			localOnly: true,
 			localResetSkipped: true,
 		}
+			async removeContextFile({ userId, conversationId, fileName }) {
+		await assertSubscriptionActive(userId)
+
+		const resolvedConversationId = resolveConversationKey({
+			userId,
+			conversationId,
+			mode: 'context',
+		})
+
+		return removeStoredContextFile({
+			userId,
+			conversationId: resolvedConversationId,
+			fileName,
+		})
+	},
 	},
 }
