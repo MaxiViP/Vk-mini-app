@@ -254,12 +254,12 @@
 						</div>
 					</div>
 
-					<div v-if="aiAccess?.capabilities" class="user-quick-profile__chips">
-						<span :class="['user-quick-profile__chip', { active: aiAccess.capabilities.chat }]">Чат</span>
-						<span :class="['user-quick-profile__chip', { active: aiAccess.capabilities.fileUpload }]">
+					<div v-if="aiAccess" class="user-quick-profile__chips">
+						<span :class="['user-quick-profile__chip', { active: aiCapabilities.chat }]">Чат</span>
+						<span :class="['user-quick-profile__chip', { active: aiCapabilities.fileUpload }]">
 							Файлы
 						</span>
-						<span :class="['user-quick-profile__chip', { active: aiAccess.capabilities.voice }]">Голос</span>
+						<span :class="['user-quick-profile__chip', { active: aiCapabilities.voice }]">Голос</span>
 					</div>
 				</div>
 			</Transition>
@@ -425,6 +425,13 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { Message } from '../../types'
+import {
+	buildAiCapabilities,
+	emptyAiCapabilities,
+	emptyAiCounters,
+	isAiSubscriptionActive,
+	normalizeAiCounters,
+} from '../../domain/aiSubscription'
 import { useChatStore } from '../../stores/chat'
 import ConfirmDeleteChip from './ConfirmDeleteChip.vue'
 
@@ -702,6 +709,16 @@ const quickContextPlaceholder = computed(() =>
 )
 
 const aiAccess = computed(() => props.userProfile?.aiAccess || null)
+const hasActiveAiSubscription = computed(() => isAiSubscriptionActive(aiAccess.value as any))
+const aiLimits = computed(() =>
+	hasActiveAiSubscription.value ? normalizeAiCounters(aiAccess.value?.limits) : emptyAiCounters(),
+)
+const aiRemaining = computed(() =>
+	hasActiveAiSubscription.value ? normalizeAiCounters(aiAccess.value?.remaining) : emptyAiCounters(),
+)
+const aiCapabilities = computed(() =>
+	hasActiveAiSubscription.value ? buildAiCapabilities(aiLimits.value) : emptyAiCapabilities(),
+)
 
 const userDisplayName = computed(() => {
 	const directName = getProfileValue(['name', 'displayName', 'fullName', 'username'])
@@ -715,14 +732,13 @@ const userDisplayName = computed(() => {
 })
 
 const userPlanLabel = computed(() => {
-	if (aiAccess.value?.hasAccess && aiAccess.value?.plan?.name) return aiAccess.value.plan.name
-	if (aiAccess.value?.plan?.name) return aiAccess.value.plan.name
+	if (hasActiveAiSubscription.value && aiAccess.value?.plan?.name) return aiAccess.value.plan.name
 	return 'Нет активного тарифа'
 })
 
 const userSubscriptionStatus = computed(() => {
+	if (hasActiveAiSubscription.value) return 'active'
 	if (aiAccess.value?.subscription?.status) return aiAccess.value.subscription.status
-	if (aiAccess.value?.hasAccess) return 'active'
 	return 'inactive'
 })
 
@@ -743,9 +759,9 @@ const userProfileRows = computed(() => [
 	{ label: 'Статус подписки', value: userSubscriptionStatus.value },
 	{ label: 'Доступ до', value: formatDate(aiAccess.value?.subscription?.expiresAt) },
 	{ label: 'Баланс', value: userBalance.value },
-	{ label: 'Осталось чатов', value: formatCounter(aiAccess.value?.remaining?.chat) },
-	{ label: 'Осталось файлов', value: formatCounter(aiAccess.value?.remaining?.fileUpload) },
-	{ label: 'Осталось голоса', value: formatCounter(aiAccess.value?.remaining?.voice) },
+	{ label: 'Осталось чатов', value: formatCounter(aiRemaining.value.chat) },
+	{ label: 'Осталось файлов', value: formatCounter(aiRemaining.value.fileUpload) },
+	{ label: 'Осталось голоса', value: formatCounter(aiRemaining.value.voice) },
 ])
 
 const normalizedQuickContextValue = computed(() => String(props.quickContextValue || '').trim())

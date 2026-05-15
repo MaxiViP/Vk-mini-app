@@ -307,13 +307,14 @@ const backendStatusLabel = computed(() => {
 })
 
 const aiAccess = computed(() => userStore.aiAccess)
+const isAiSubscriptionActive = computed(() => userStore.isAiSubscriptionActive)
 const formatAiCounter = (value?: number | null) => Number(value ?? 0)
 const formatShortDate = (value: string) => new Date(value).toLocaleDateString()
 
-const aiPlanLabel = computed(() => (aiAccess.value?.hasAccess && aiAccess.value.plan ? aiAccess.value.plan.name : ''))
+const aiPlanLabel = computed(() => (isAiSubscriptionActive.value && aiAccess.value?.plan ? aiAccess.value.plan.name : ''))
 
 const aiAccessSummary = computed(() => {
-	if (aiAccess.value?.hasAccess && aiAccess.value.subscription?.expiresAt) {
+	if (isAiSubscriptionActive.value && aiAccess.value?.subscription?.expiresAt) {
 		return `Доступ до ${formatShortDate(aiAccess.value.subscription.expiresAt)}`
 	}
 
@@ -330,16 +331,17 @@ const aiAccessSummary = computed(() => {
 
 const aiLimitItems = computed(() => {
 	if (!aiAccess.value) return []
+	const remaining = isAiSubscriptionActive.value ? aiAccess.value.remaining : { chat: 0, fileUpload: 0, voice: 0 }
 
 	return [
-		{ label: 'Чаты', value: formatAiCounter(aiAccess.value.remaining.chat) },
-		{ label: 'Файлы', value: formatAiCounter(aiAccess.value.remaining.fileUpload) },
-		{ label: 'Голос', value: formatAiCounter(aiAccess.value.remaining.voice) },
+		{ label: 'Чаты', value: formatAiCounter(remaining.chat) },
+		{ label: 'Файлы', value: formatAiCounter(remaining.fileUpload) },
+		{ label: 'Голос', value: formatAiCounter(remaining.voice) },
 	]
 })
 
 const aiCapabilityPills = computed(() => {
-	if (!aiAccess.value) return []
+	if (!aiAccess.value || !isAiSubscriptionActive.value) return []
 
 	const items: string[] = []
 	if (aiAccess.value.capabilities.chat) items.push('Чат активен')

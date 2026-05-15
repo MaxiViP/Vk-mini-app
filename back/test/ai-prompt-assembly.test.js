@@ -11,8 +11,8 @@ const activeAiSubscription = {
 	id: 'sub_ai_prompt',
 	userId: 'prompt-user',
 	status: 'active',
-	periodStart: new Date('2026-04-01T00:00:00.000Z'),
-	periodEnd: new Date('2026-05-01T00:00:00.000Z'),
+	periodStart: new Date(Date.now() - 24 * 60 * 60 * 1000),
+	periodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
 	cancelAtPeriodEnd: false,
 	createdAt: new Date('2026-04-01T00:00:00.000Z'),
 	plan: {

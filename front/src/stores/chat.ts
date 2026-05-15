@@ -331,6 +331,17 @@ export const useChatStore = defineStore('chat', () => {
 		}
 	}
 
+	const refreshAiAccessAfterExternalError = async (error: unknown) => {
+		const code = getVkAiErrorCode(error)
+		if (!code || !EXTERNAL_AI_BUSINESS_CODES.has(code)) return
+
+		try {
+			await userStore.loadAiAccess()
+		} catch (accessError) {
+			console.warn('[chat] ai access refresh after external error failed', accessError)
+		}
+	}
+
 	const hydrateExternalConversation = async () => {
 		const userId = userStore.user?.vkId || 'guest'
 		setConversationId(userId)
@@ -366,6 +377,7 @@ export const useChatStore = defineStore('chat', () => {
 			backendStatus.value = 'online'
 		} catch (error) {
 			console.warn('[chat] hydrateExternalConversation:external_failed', error)
+			await refreshAiAccessAfterExternalError(error)
 			setModeMessages('ai', [])
 			contextFiles.value = []
 			selectedContextFiles.value = []
@@ -585,6 +597,7 @@ export const useChatStore = defineStore('chat', () => {
 			await userStore.loadAiAccess()
 		} catch (error) {
 			backendStatus.value = shouldKeepExternalBackendOnline(error) ? 'online' : 'offline'
+			await refreshAiAccessAfterExternalError(error)
 			const externalError = toExternalAiError(error)
 			fileTransfer.value = {
 				status: 'error',
@@ -637,6 +650,7 @@ export const useChatStore = defineStore('chat', () => {
 				backendStatus.value = 'online'
 			} catch (error) {
 				backendStatus.value = shouldKeepExternalBackendOnline(error) ? 'online' : 'offline'
+				await refreshAiAccessAfterExternalError(error)
 				throw toExternalAiError(error)
 			}
 		}
@@ -696,6 +710,7 @@ export const useChatStore = defineStore('chat', () => {
 			await userStore.loadAiAccess()
 		} catch (error) {
 			backendStatus.value = shouldKeepExternalBackendOnline(error) ? 'online' : 'offline'
+			await refreshAiAccessAfterExternalError(error)
 			const externalError = toExternalAiError(error)
 			voiceTransfer.value = {
 				status: 'error',
@@ -876,6 +891,7 @@ export const useChatStore = defineStore('chat', () => {
 			}
 
 			if (isExternalBackend.value) {
+				await refreshAiAccessAfterExternalError(err)
 				throw toExternalAiError(err)
 			}
 

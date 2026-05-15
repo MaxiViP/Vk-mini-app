@@ -15,6 +15,14 @@ import type {
 import { getVkAiErrorCode, vkAiApi } from '../api/vkAi'
 import { billingApi } from '../api/billing'
 import {
+	buildAiCapabilities,
+	emptyAiCapabilities,
+	emptyAiCounters,
+	isAiSubscriptionActive as resolveIsAiSubscriptionActive,
+	normalizeAiAccess,
+	normalizeAiCounters,
+} from '../domain/aiSubscription'
+import {
 	confirmYooKassaPaymentRequest,
 	createYooKassaPaymentRequest,
 	previewYooKassaPaymentRequest,
@@ -44,18 +52,6 @@ const getHttpStatus = (error: unknown) => (error as { response?: { status?: numb
 const isUnauthorizedError = (error: unknown) => getHttpStatus(error) === 401
 export { isDevSessionRefreshToken }
 
-const emptyAiCounters = () => ({
-	chat: 0,
-	voice: 0,
-	fileUpload: 0,
-})
-
-const emptyAiCapabilities = () => ({
-	chat: false,
-	voice: false,
-	fileUpload: false,
-})
-
 const createEmptyAiAccess = (
 	status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'expired' | null = null,
 ): AiAccessResponse => ({
@@ -75,6 +71,48 @@ const createEmptyAiAccess = (
 	remaining: emptyAiCounters(),
 	capabilities: emptyAiCapabilities(),
 })
+
+const createAiAccessFromPurchase = (result: SubscriptionPurchaseResult): AiAccessResponse | null => {
+	const plan = result.subscription.plan
+	if (plan?.productType !== 'ai') return null
+
+	const limits = normalizeAiCounters({
+		chat: plan.aiChatLimit,
+		voice: plan.aiVoiceLimit,
+		fileUpload: plan.aiFileUploadLimit,
+	})
+
+	const access = normalizeAiAccess({
+		hasAccess: true,
+		subscription: {
+			id: result.subscription.id,
+			status: result.subscription.status,
+			startedAt: result.subscription.startedAt,
+			expiresAt: result.subscription.expiresAt,
+			cancelAtPeriodEnd: result.subscription.cancelAtPeriodEnd,
+		},
+		plan: {
+			id: plan.id,
+			code: plan.code,
+			name: plan.name,
+			productType: 'ai',
+			priceMinor: plan.priceMinor,
+			intervalDays: plan.intervalDays,
+			includedRequests: plan.includedRequests,
+			accessTier: plan.accessTier,
+			aiChatLimit: plan.aiChatLimit ?? null,
+			aiVoiceLimit: plan.aiVoiceLimit ?? null,
+			aiFileUploadLimit: plan.aiFileUploadLimit ?? null,
+			isActive: plan.isActive,
+		},
+		limits,
+		usage: emptyAiCounters(),
+		remaining: limits,
+		capabilities: buildAiCapabilities(limits),
+	})
+
+	return access
+}
 
 const DEFAULT_FALLBACK_PLANS = [
 	{
@@ -172,6 +210,7 @@ export const useUserStore = defineStore('user', () => {
 
 	const isAuthenticated = computed(() => Boolean(token.value && user.value))
 	const activeSubscription = computed(() => billing.value?.activeSubscription || null)
+	const isAiSubscriptionActive = computed(() => resolveIsAiSubscriptionActive(aiAccess.value))
 
 	const persistAuthState = () => {
 		if (token.value) localStorage.setItem(TOKEN_STORAGE_KEY, token.value)
@@ -513,8 +552,9 @@ export const useUserStore = defineStore('user', () => {
 
 		try {
 			const access = await vkAiApi.getAccess(token.value)
-			aiAccess.value = access
-			return access
+			const normalizedAccess = normalizeAiAccess(access)
+			aiAccess.value = normalizedAccess
+			return normalizedAccess
 		} catch (error) {
 			if (isUnauthorizedError(error)) {
 				dropLocalSession()
@@ -523,13 +563,13 @@ export const useUserStore = defineStore('user', () => {
 
 			const code = getVkAiErrorCode(error)
 			if (code === 'AI_SUBSCRIPTION_REQUIRED') {
-				const fallback = createEmptyAiAccess()
+				const fallback = normalizeAiAccess(createEmptyAiAccess())
 				aiAccess.value = fallback
 				return fallback
 			}
 
 			if (code === 'AI_SUBSCRIPTION_EXPIRED') {
-				const fallback = createEmptyAiAccess('expired')
+				const fallback = normalizeAiAccess(createEmptyAiAccess('expired'))
 				aiAccess.value = fallback
 				return fallback
 			}
@@ -615,10 +655,23 @@ export const useUserStore = defineStore('user', () => {
 			throw error
 		}
 
+		const optimisticAiAccess = createAiAccessFromPurchase(response)
+		if (optimisticAiAccess) {
+			aiAccess.value = optimisticAiAccess
+		}
+
 		try {
 			await syncProfileFromServer()
 		} catch (error) {
 			console.warn('Post-purchase profile sync failed:', error)
+		}
+
+		if (optimisticAiAccess) {
+			try {
+				await loadAiAccess()
+			} catch (error) {
+				console.warn('Post-purchase AI access sync failed:', error)
+			}
 		}
 
 		return response
@@ -672,6 +725,7 @@ export const useUserStore = defineStore('user', () => {
 		authPending,
 		phoneChallenge,
 		isAuthenticated,
+		isAiSubscriptionActive,
 		hydrateAuth,
 		initVKUser,
 		loginByProvider,

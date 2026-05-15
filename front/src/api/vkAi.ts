@@ -1,5 +1,6 @@
 import { internalApiBaseUrl } from '../config/chatBackend'
 import { normalizeVkAiSessionContext, resolveVkAiRequestMode } from '../domain/chatModeRules'
+import { normalizeAiAccess } from '../domain/aiSubscription'
 import { authorizedFetch } from '../services/authSession'
 import type { AiAccessPlan, AiAccessResponse } from '../types'
 
@@ -143,7 +144,8 @@ export const vkAiApi = {
 			{ accessToken },
 		)
 		await ensureOk(response)
-		return response.json() as Promise<AiAccessResponse>
+		const access = (await response.json()) as AiAccessResponse
+		return normalizeAiAccess(access) as AiAccessResponse
 	},
 
 	async health(accessToken: string) {

@@ -12,8 +12,8 @@ const activeAiSubscription = {
 	id: 'sub_ai_1',
 	userId: 'test-user',
 	status: 'active',
-	periodStart: new Date('2026-04-01T00:00:00.000Z'),
-	periodEnd: new Date('2026-05-01T00:00:00.000Z'),
+	periodStart: new Date(Date.now() - 24 * 60 * 60 * 1000),
+	periodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
 	cancelAtPeriodEnd: false,
 	createdAt: new Date('2026-04-01T00:00:00.000Z'),
 	plan: {
@@ -29,6 +29,24 @@ const activeAiSubscription = {
 		aiVoiceLimit: 1,
 		aiFileUploadLimit: 1,
 		isActive: true,
+	},
+}
+
+const expiredAiSubscription = {
+	...activeAiSubscription,
+	id: 'sub_ai_expired',
+	status: 'expired',
+	periodEnd: new Date(Date.now() - 24 * 60 * 60 * 1000),
+	endedAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+	plan: {
+		...activeAiSubscription.plan,
+		id: 'plan_ai_pro',
+		code: 'ai-pro',
+		name: 'AI Pro',
+		accessTier: 'premium',
+		aiChatLimit: 1500,
+		aiVoiceLimit: 150,
+		aiFileUploadLimit: 100,
 	},
 }
 
@@ -76,6 +94,48 @@ export const cases = [
 				assert.equal(response.status, 403)
 				assert.equal(payload.message, 'AI subscription is required')
 				assert.equal(payload.details?.code, 'AI_SUBSCRIPTION_REQUIRED')
+			} finally {
+				restoreAll(restores)
+				await stopTestServer(server)
+			}
+		},
+	},
+	{
+		name: 'GET /api/ai/access returns zero AI limits for expired subscription',
+		run: async () => {
+			let usageSnapshotRead = false
+			const restores = [
+				patchMethod(prisma.subscription, 'updateMany', async () => ({ count: 0 })),
+				patchMethod(prisma.subscription, 'findFirst', async args => {
+					if (args?.where?.status) return null
+					return expiredAiSubscription
+				}),
+				patchMethod(prisma.usageEvent, 'groupBy', async () => {
+					usageSnapshotRead = true
+					return []
+				}),
+			]
+
+			const token = createAccessToken()
+			const { server, baseUrl } = await startTestServer()
+
+			try {
+				const response = await fetch(`${baseUrl}/api/ai/access`, {
+					headers: {
+						Authorization: `Bearer ${token}`,
+					},
+				})
+				const payload = await response.json()
+
+				assert.equal(response.status, 200)
+				assert.equal(payload.hasAccess, false)
+				assert.equal(payload.subscription?.status, 'expired')
+				assert.equal(payload.plan, null)
+				assert.deepEqual(payload.limits, { chat: 0, voice: 0, fileUpload: 0 })
+				assert.deepEqual(payload.usage, { chat: 0, voice: 0, fileUpload: 0 })
+				assert.deepEqual(payload.remaining, { chat: 0, voice: 0, fileUpload: 0 })
+				assert.deepEqual(payload.capabilities, { chat: false, voice: false, fileUpload: false })
+				assert.equal(usageSnapshotRead, false)
 			} finally {
 				restoreAll(restores)
 				await stopTestServer(server)

@@ -81,7 +81,7 @@
 
 						<div class="stat-card">
 							<span class="stat-label">AI статус</span>
-							<strong>{{ aiAccess?.hasAccess ? 'Активен' : 'Не активен' }}</strong>
+							<strong>{{ isAiSubscriptionActive ? 'Активен' : 'Не активен' }}</strong>
 						</div>
 					</div>
 
@@ -250,12 +250,12 @@
 								<b>{{ aiStatusLabel }}</b>
 							</p>
 
-							<p v-if="aiAccess?.hasAccess && aiAccess?.plan">
+							<p v-if="isAiSubscriptionActive && aiAccess?.plan">
 								Активный AI-тариф:
 								<b>{{ aiAccess.plan.name }}</b>
 							</p>
 
-							<p v-if="aiAccess?.hasAccess && aiAccess?.subscription">
+							<p v-if="isAiSubscriptionActive && aiAccess?.subscription">
 								Действует до:
 								<b>{{ formatDate(aiAccess.subscription.expiresAt) }}</b>
 							</p>
@@ -270,20 +270,20 @@
 						<div class="ai-usage-grid">
 							<div class="ai-usage-card">
 								<span class="stat-label">Чат</span>
-								<strong>{{ formatAiCounter(aiAccess?.remaining.chat) }}</strong>
-								<small>из {{ formatAiCounter(aiAccess?.limits.chat) }}</small>
+								<strong>{{ formatAiCounter(aiRemaining.chat) }}</strong>
+								<small>из {{ formatAiCounter(aiLimits.chat) }}</small>
 							</div>
 
 							<div class="ai-usage-card">
 								<span class="stat-label">Voice</span>
-								<strong>{{ formatAiCounter(aiAccess?.remaining.voice) }}</strong>
-								<small>из {{ formatAiCounter(aiAccess?.limits.voice) }}</small>
+								<strong>{{ formatAiCounter(aiRemaining.voice) }}</strong>
+								<small>из {{ formatAiCounter(aiLimits.voice) }}</small>
 							</div>
 
 							<div class="ai-usage-card">
 								<span class="stat-label">Файлы</span>
-								<strong>{{ formatAiCounter(aiAccess?.remaining.fileUpload) }}</strong>
-								<small>из {{ formatAiCounter(aiAccess?.limits.fileUpload) }}</small>
+								<strong>{{ formatAiCounter(aiRemaining.fileUpload) }}</strong>
+								<small>из {{ formatAiCounter(aiLimits.fileUpload) }}</small>
 							</div>
 						</div>
 
@@ -291,25 +291,25 @@
 							<div class="stat-card">
 								<span class="stat-label">Лимиты</span>
 								<strong>
-									чат {{ formatAiCounter(aiAccess?.limits.chat) }} / voice {{ formatAiCounter(aiAccess?.limits.voice) }} /
-									files {{ formatAiCounter(aiAccess?.limits.fileUpload) }}
+									чат {{ formatAiCounter(aiLimits.chat) }} / voice {{ formatAiCounter(aiLimits.voice) }} /
+									files {{ formatAiCounter(aiLimits.fileUpload) }}
 								</strong>
 							</div>
 
 							<div class="stat-card">
 								<span class="stat-label">Использовано</span>
 								<strong>
-									чат {{ formatAiCounter(aiAccess?.usage.chat) }} / voice {{ formatAiCounter(aiAccess?.usage.voice) }} /
-									files {{ formatAiCounter(aiAccess?.usage.fileUpload) }}
+									чат {{ formatAiCounter(aiUsage.chat) }} / voice {{ formatAiCounter(aiUsage.voice) }} /
+									files {{ formatAiCounter(aiUsage.fileUpload) }}
 								</strong>
 							</div>
 
 							<div class="stat-card">
 								<span class="stat-label">Осталось</span>
 								<strong>
-									чат {{ formatAiCounter(aiAccess?.remaining.chat) }} / voice
-									{{ formatAiCounter(aiAccess?.remaining.voice) }} / files
-									{{ formatAiCounter(aiAccess?.remaining.fileUpload) }}
+									чат {{ formatAiCounter(aiRemaining.chat) }} / voice
+									{{ formatAiCounter(aiRemaining.voice) }} / files
+									{{ formatAiCounter(aiRemaining.fileUpload) }}
 								</strong>
 							</div>
 						</div>
@@ -318,11 +318,11 @@
 							<div
 								v-for="plan in aiPlans"
 								:key="plan.id"
-								:class="['plan-item', 'cheap-plan', { active: aiAccess?.hasAccess && aiAccess?.plan?.code === plan.code }]"
+								:class="['plan-item', 'cheap-plan', { active: isAiSubscriptionActive && aiAccess?.plan?.code === plan.code }]"
 							>
 								<div class="plan-head">
 									<div class="plan-badge">AI</div>
-									<span v-if="aiAccess?.hasAccess && aiAccess?.plan?.code === plan.code" class="plan-active-label">
+									<span v-if="isAiSubscriptionActive && aiAccess?.plan?.code === plan.code" class="plan-active-label">
 										Активен
 									</span>
 								</div>
@@ -450,6 +450,7 @@ import type {
 	SubscriptionPurchasePreview,
 } from '../../types'
 import { canBuyPlanFromWallet } from '../../domain/billingRules'
+import { emptyAiCounters, normalizeAiCounters } from '../../domain/aiSubscription'
 import { useUserStore } from '../../stores/user'
 import RechargeModal from './RechargeModal.vue'
 
@@ -473,6 +474,16 @@ const avatarUrl = computed(() => userStore.user?.photo_200 || fallbackAvatar)
 const activeSubscription = computed(() => userStore.activeSubscription)
 const plans = computed(() => userStore.billing?.plans || [])
 const aiAccess = computed(() => userStore.aiAccess)
+const isAiSubscriptionActive = computed(() => userStore.isAiSubscriptionActive)
+const aiLimits = computed(() =>
+	isAiSubscriptionActive.value ? normalizeAiCounters(aiAccess.value?.limits) : emptyAiCounters(),
+)
+const aiUsage = computed(() =>
+	isAiSubscriptionActive.value ? normalizeAiCounters(aiAccess.value?.usage) : emptyAiCounters(),
+)
+const aiRemaining = computed(() =>
+	isAiSubscriptionActive.value ? normalizeAiCounters(aiAccess.value?.remaining) : emptyAiCounters(),
+)
 const aiPlans = computed(() => userStore.aiPlans || [])
 const availableBalanceMinor = computed(() => Number(userStore.billing?.wallet.balanceMinor || 0))
 const recentLedger = computed(() => (userStore.billing?.recentLedger || []).slice(0, 6))
@@ -485,7 +496,7 @@ const activeModeLabel = computed(() => {
 })
 
 const aiStatusLabel = computed(() => {
-	if (aiAccess.value?.hasAccess && aiAccess.value.plan && aiAccess.value.subscription) {
+	if (isAiSubscriptionActive.value && aiAccess.value?.plan && aiAccess.value.subscription) {
 		return `${aiAccess.value.plan.name} до ${formatDate(aiAccess.value.subscription.expiresAt)}`
 	}
 
@@ -581,7 +592,7 @@ const canBuyPlan = (plan: BillingPlan) =>
 	})
 
 const canBuyAiPlan = (plan: AiAccessPlan) => {
-	if (aiAccess.value?.hasAccess && aiAccess.value.plan?.code === plan.code) return false
+	if (isAiSubscriptionActive.value && aiAccess.value?.plan?.code === plan.code) return false
 	if (!plan.isActive) return false
 
 	return canBuyPlanFromWallet({
@@ -596,7 +607,7 @@ const planButtonLabel = (plan: BillingPlan) => {
 }
 
 const aiPlanButtonLabel = (plan: AiAccessPlan) => {
-	if (aiAccess.value?.hasAccess && aiAccess.value.plan?.code === plan.code) return 'Уже активна'
+	if (isAiSubscriptionActive.value && aiAccess.value?.plan?.code === plan.code) return 'Уже активна'
 	if (!plan.isActive) return 'Скоро'
 	return canBuyAiPlan(plan) ? 'Купить AI-подписку' : 'Недостаточно средств'
 }
@@ -641,7 +652,7 @@ const reloadBilling = async () => {
 
 	try {
 		isBusy.value = true
-		await userStore.syncProfileFromServer()
+		await Promise.all([userStore.syncProfileFromServer(), userStore.loadAiAccess()])
 		setSuccess('Данные по биллингу обновлены.')
 	} catch (error) {
 		setError((error as Error).message || 'Не удалось обновить биллинг.')

@@ -54,6 +54,8 @@ const USAGE_MODELS = {
 	fileUpload: 'file_upload',
 }
 
+const ACTIVE_AI_SUBSCRIPTION_STATUSES = new Set(['active', 'trialing', 'past_due'])
+
 const emptyCounters = () => ({
 	chat: 0,
 	voice: 0,
@@ -94,6 +96,14 @@ const buildLimits = plan => ({
 	voice: Number(plan?.aiVoiceLimit || 0),
 	fileUpload: Number(plan?.aiFileUploadLimit || 0),
 })
+
+export const isAiSubscriptionActive = subscription => {
+	if (!subscription || !ACTIVE_AI_SUBSCRIPTION_STATUSES.has(subscription.status)) return false
+
+	const periodEnd = subscription.periodEnd || subscription.expiresAt
+	const periodEndMs = periodEnd ? new Date(periodEnd).getTime() : 0
+	return Number.isFinite(periodEndMs) && periodEndMs > Date.now()
+}
 
 const buildCapabilities = limits => ({
 	chat: limits.chat > 0,
@@ -153,18 +163,19 @@ const resolveAccessState = async userId => {
 		getLatestAiSubscription(userId),
 	])
 
-	const referencePlan = activeSubscription?.plan || latestSubscription?.plan || null
-	const limits = buildLimits(referencePlan)
-	const usage = await getUsageSnapshot(activeSubscription)
+	const hasActiveSubscription = isAiSubscriptionActive(activeSubscription)
+	const activePlan = hasActiveSubscription ? activeSubscription.plan : null
+	const limits = hasActiveSubscription ? buildLimits(activePlan) : emptyCounters()
+	const usage = hasActiveSubscription ? await getUsageSnapshot(activeSubscription) : emptyCounters()
 	const remaining = buildRemaining(limits, usage)
 	const capabilities = buildCapabilities(limits)
 
 	return {
-		hasAccess: Boolean(activeSubscription),
-		activeSubscription,
+		hasAccess: hasActiveSubscription,
+		activeSubscription: hasActiveSubscription ? activeSubscription : null,
 		latestSubscription,
-		subscription: serializeSubscription(activeSubscription || latestSubscription),
-		plan: serializePlan(referencePlan),
+		subscription: serializeSubscription(hasActiveSubscription ? activeSubscription : latestSubscription),
+		plan: serializePlan(activePlan),
 		limits,
 		usage,
 		remaining,
