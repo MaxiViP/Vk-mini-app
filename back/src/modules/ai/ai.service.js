@@ -1132,9 +1132,7 @@ export const aiService = {
 				selected_context_files: normalizedSelectedFiles,
 				has_selected_file_filter: hasSelectedFileFilter,
 				promptMode:
-					normalizedSessionContext || hasSelectedFileFilter
-						? 'message-with-local-instructions'
-						: 'plain-user-message',
+					normalizedSessionContext || hasSelectedFileFilter ? 'message-with-local-instructions' : 'plain-user-message',
 			},
 		})
 
@@ -1398,7 +1396,9 @@ export const aiService = {
 			localOnly: true,
 			localResetSkipped: true,
 		}
-			async removeContextFile({ userId, conversationId, fileName }) {
+	},
+
+	async removeContextFile({ userId, conversationId, fileName }) {
 		await assertSubscriptionActive(userId)
 
 		const resolvedConversationId = resolveConversationKey({
@@ -1412,6 +1412,5 @@ export const aiService = {
 			conversationId: resolvedConversationId,
 			fileName,
 		})
-	},
 	},
 }
