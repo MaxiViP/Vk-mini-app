@@ -7,6 +7,16 @@
 
 			<div class="top-bar-actions">
 				<button v-if="userStore.user?.isAdmin" class="pill-btn" @click="showAdmin = true">Админка</button>
+				<button
+					type="button"
+					class="pill-btn theme-toggle"
+					:aria-label="themeToggleAriaLabel"
+					:aria-pressed="isLightTheme"
+					@click="toggleUiTheme"
+				>
+					<span class="theme-toggle__icon" aria-hidden="true">{{ uiThemeIcon }}</span>
+					<span class="theme-toggle__text">{{ uiThemeLabel }}</span>
+				</button>
 				<ProfileTrigger @click="showProfile = true" />
 			</div>
 
@@ -67,6 +77,7 @@ import { initVK } from './vk/bridge'
 import { useChatStore } from './stores/chat'
 import { useModelsStore } from './stores/models'
 import { isDevSessionRefreshToken, useUserStore } from './stores/user'
+import { applyUiTheme, persistUiTheme, readStoredUiTheme, type UiTheme } from './theme'
 import ProfileTrigger from './components/profile/ProfileTrigger.vue'
 import Chat from './components/chat/Chat.vue'
 import AILogo from './components/common/AILogo.vue'
@@ -93,6 +104,15 @@ const isChatContextOpen = ref(false)
 const isModelSelectorOpen = ref(false)
 const notesPanelRef = ref<NotesPanelExposed | null>(null)
 const chatModeClass = computed(() => (chatStore.chatMode === 'ai' ? 'theme-ai' : 'theme-core'))
+const uiTheme = ref<UiTheme>(readStoredUiTheme())
+const isLightTheme = computed(() => uiTheme.value === 'light')
+const uiThemeLabel = computed(() => (isLightTheme.value ? 'Светлая' : 'Темная'))
+const uiThemeIcon = computed(() => (isLightTheme.value ? '☀' : '☾'))
+const themeToggleAriaLabel = computed(() =>
+	isLightTheme.value ? 'Переключить на темную тему' : 'Переключить на светлую тему',
+)
+
+applyUiTheme(uiTheme.value)
 
 const { handleOAuthCallback } = useOAuthCallback({
 	finalizeOAuthCallbackFromLocation: userStore.finalizeOAuthCallbackFromLocation,
@@ -119,6 +139,12 @@ const toggleChatContext = () => {
 
 const toggleModelSelector = () => {
 	isModelSelectorOpen.value = !isModelSelectorOpen.value
+}
+
+const toggleUiTheme = () => {
+	const nextTheme: UiTheme = isLightTheme.value ? 'dark' : 'light'
+	uiTheme.value = nextTheme
+	persistUiTheme(nextTheme)
 }
 
 const handleEscape = (e: KeyboardEvent) => {
@@ -215,6 +241,7 @@ onUnmounted(() => {
 	--mode-accent-glow: rgba(110, 169, 255, 0.24);
 	--mode-panel-bg: rgba(255, 255, 255, 0.04);
 	--mode-panel-bg-strong: rgba(255, 255, 255, 0.06);
+	color: var(--color-text);
 	transition:
 		background 240ms ease,
 		background-color 240ms ease,
@@ -253,6 +280,57 @@ onUnmounted(() => {
 	background-size: cover;
 }
 
+.theme-toggle {
+	min-height: 44px;
+	padding-inline: 11px;
+	border-color: var(--mode-accent-border);
+	background: var(--color-control-bg);
+	color: var(--color-text);
+}
+
+.theme-toggle:hover {
+	background: var(--color-control-bg-hover);
+}
+
+.theme-toggle__icon {
+	font-size: 15px;
+	line-height: 1;
+}
+
+.theme-toggle__text {
+	font-size: 13px;
+	font-weight: 700;
+}
+
+:global(:root[data-ui-theme='light'] .theme-core) {
+	--mode-accent: #2563eb;
+	--mode-accent-soft: rgba(37, 99, 235, 0.1);
+	--mode-accent-border: rgba(37, 99, 235, 0.24);
+	--mode-accent-strong: #1d4ed8;
+	--mode-accent-glow: rgba(37, 99, 235, 0.18);
+	--mode-panel-bg: rgba(255, 255, 255, 0.74);
+	--mode-panel-bg-strong: rgba(255, 255, 255, 0.92);
+	background-color: #f8fbff;
+	background:
+		radial-gradient(circle at top left, rgba(59, 130, 246, 0.16), transparent 32%),
+		linear-gradient(180deg, #ffffff 0%, #f8fbff 45%, #eef6ff 100%);
+}
+
+:global(:root[data-ui-theme='light'] .theme-ai) {
+	--mode-accent: #059669;
+	--mode-accent-soft: rgba(5, 150, 105, 0.1);
+	--mode-accent-border: rgba(5, 150, 105, 0.24);
+	--mode-accent-strong: #047857;
+	--mode-accent-glow: rgba(5, 150, 105, 0.18);
+	--mode-panel-bg: rgba(255, 255, 255, 0.74);
+	--mode-panel-bg-strong: rgba(255, 255, 255, 0.92);
+	background-color: #f7fffb;
+	background:
+		radial-gradient(circle at top right, rgba(16, 185, 129, 0.18), transparent 32%),
+		radial-gradient(circle at bottom left, rgba(37, 99, 235, 0.08), transparent 30%),
+		linear-gradient(180deg, #ffffff 0%, #f8fffc 45%, #ecfbf4 100%);
+}
+
 @media (max-width: 768px) {
 	.top-bar {
 		gap: 7px;
@@ -277,6 +355,18 @@ onUnmounted(() => {
 
 	.top-bar-nav {
 		gap: 6px;
+	}
+}
+
+@media (max-width: 640px) {
+	.theme-toggle {
+		width: 44px;
+		min-width: 44px;
+		padding-inline: 0;
+	}
+
+	.theme-toggle__text {
+		display: none;
 	}
 }
 </style>

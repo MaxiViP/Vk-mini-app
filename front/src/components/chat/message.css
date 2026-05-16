@@ -39,6 +39,40 @@
 	border-radius: 18px 18px 18px 4px;
 }
 
+:root[data-ui-theme='light'] .chat .bubble {
+	border: 1px solid var(--color-panel-border);
+	color: var(--color-text);
+	box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+
+:root[data-ui-theme='light'] .chat .message.user .bubble {
+	background:
+		linear-gradient(135deg, rgba(255, 255, 255, 0.96) 0%, var(--mode-accent-soft) 100%),
+		var(--color-surface);
+	border-color: var(--mode-accent-border);
+}
+
+:root[data-ui-theme='light'] .chat .message.assistant .bubble {
+	background:
+		linear-gradient(180deg, rgba(255, 255, 255, 0.98), var(--color-surface-2)),
+		var(--color-surface);
+	border-color: var(--color-panel-border-strong);
+}
+
+:root[data-ui-theme='light'] .theme-core .chat .message.assistant .bubble {
+	background:
+		linear-gradient(180deg, rgba(37, 99, 235, 0.07), rgba(255, 255, 255, 0.98) 42%),
+		var(--color-surface);
+	border-color: rgba(37, 99, 235, 0.18);
+}
+
+:root[data-ui-theme='light'] .theme-ai .chat .message.assistant .bubble {
+	background:
+		linear-gradient(180deg, rgba(5, 150, 105, 0.08), rgba(255, 255, 255, 0.98) 42%),
+		var(--color-surface);
+	border-color: var(--mode-accent-border);
+}
+
 /* ===== AVATAR ===== */
 .messages .assistant-avatar-stack {
 	position: relative;
@@ -61,7 +95,7 @@
 	justify-content: center;
 	border-radius: 20%;
 	color: var(--color-text);
-	border: 1px solid rgba(255, 255, 255, 0.12);
+	border: 1px solid var(--color-panel-border-strong);
 	box-shadow:
 		0 10px 24px rgba(0, 0, 0, 0.2),
 		inset 0 1px 0 rgba(255, 255, 255, 0.12);
@@ -168,7 +202,7 @@
 			var(--mode-panel-bg-strong, rgba(24, 27, 34, 0.96)),
 			var(--mode-panel-bg-strong, rgba(24, 27, 34, 0.96))
 		),
-		#181b22;
+		var(--color-popover-bg);
 	border: 1px solid var(--mode-accent-border);
 	box-shadow:
 		0 0 0 1px rgba(255, 255, 255, 0.03),
@@ -204,8 +238,8 @@
 	min-width: 0;
 	padding: 2px;
 	border-radius: 999px;
-	background: rgba(255, 255, 255, 0.06);
-	border: 1px solid rgba(255, 255, 255, 0.08);
+	background: var(--color-control-bg);
+	border: 1px solid var(--color-panel-border);
 }
 
 .messages .assistant-quick-context__switch-btn {
@@ -227,7 +261,7 @@
 
 .messages .assistant-quick-context__switch-btn.active {
 	background: var(--mode-accent);
-	color: #04261f;
+	color: var(--color-on-accent);
 	font-weight: 700;
 }
 
@@ -246,7 +280,7 @@
 }
 
 .messages .assistant-quick-context__switch-btn:hover:not(.active) {
-	background: rgba(255, 255, 255, 0.08);
+	background: var(--color-control-bg-hover);
 	color: var(--color-text);
 }
 
@@ -256,8 +290,8 @@
 	max-height: 124px;
 	padding: 9px 10px;
 	border-radius: 13px;
-	border: 1px solid rgba(255, 255, 255, 0.1);
-	background: rgba(255, 255, 255, 0.045);
+	border: 1px solid var(--color-panel-border);
+	background: var(--color-panel-bg);
 	color: var(--color-text);
 	font: inherit;
 	font-size: 13px;
@@ -291,8 +325,8 @@
 	width: 100%;
 	padding: 8px 8px 8px 10px;
 	border-radius: 13px;
-	background: rgba(255, 255, 255, 0.045);
-	border: 1px solid rgba(255, 255, 255, 0.1);
+	background: var(--color-panel-bg);
+	border: 1px solid var(--color-panel-border);
 	color: var(--color-text-soft);
 }
 
@@ -306,8 +340,8 @@
 	margin: 0;
 	padding: 10px;
 	border-radius: 13px;
-	background: rgba(255, 255, 255, 0.045);
-	border: 1px dashed rgba(255, 255, 255, 0.12);
+	background: var(--color-panel-bg);
+	border: 1px dashed var(--color-panel-border-strong);
 	color: var(--color-text-muted);
 	font-size: 13px;
 	line-height: 1.35;
@@ -323,8 +357,8 @@
 	min-height: 30px;
 	padding: 6px 10px;
 	border-radius: 999px;
-	border: 1px solid rgba(255, 255, 255, 0.12);
-	background: rgba(255, 255, 255, 0.06);
+	border: 1px solid var(--color-panel-border-strong);
+	background: var(--color-control-bg);
 	color: var(--color-text-soft);
 	font: inherit;
 	font-size: 12px;
@@ -338,18 +372,18 @@
 .messages .assistant-quick-context__btn--primary {
 	background: var(--mode-accent);
 	border-color: var(--mode-accent-border);
-	color: #04261f;
+	color: var(--color-on-accent);
 	font-weight: 700;
 }
 
 .messages .assistant-quick-context__btn:hover:not(:disabled) {
 	transform: translateY(-1px);
-	background: rgba(255, 255, 255, 0.12);
+	background: var(--color-control-bg-hover);
 	border-color: var(--mode-accent-border);
 }
 
 .messages .assistant-quick-context__btn--primary:hover:not(:disabled) {
-	background: #35dec1;
+	background: var(--mode-accent);
 }
 
 .messages .assistant-quick-context__btn:disabled {
@@ -457,7 +491,7 @@
 	padding: 12px;
 	border-radius: 18px 1px 18px 18px;
 
-	background: linear-gradient(135deg, rgba(255, 255, 255, 0.07), transparent 48%), #181b22;
+	background: linear-gradient(135deg, var(--color-panel-bg), transparent 48%), var(--color-popover-bg);
 	border: 1px solid var(--mode-accent-border);
 	box-shadow:
 		0 0 0 1px rgba(255, 255, 255, 0.03),
@@ -491,8 +525,8 @@
 	width: 26px;
 	height: 26px;
 	border-radius: 999px;
-	border: 1px solid rgba(255, 255, 255, 0.12);
-	background: rgba(255, 255, 255, 0.06);
+	border: 1px solid var(--color-panel-border-strong);
+	background: var(--color-control-bg);
 	color: var(--color-text-soft);
 	cursor: pointer;
 	transition:
@@ -502,7 +536,7 @@
 }
 
 .messages .user-quick-profile__close:hover {
-	background: rgba(255, 255, 255, 0.12);
+	background: var(--color-control-bg-hover);
 	border-color: var(--mode-accent-border);
 	color: var(--mode-accent-strong);
 }
@@ -518,7 +552,7 @@
 	gap: 12px;
 	padding: 7px 8px;
 	border-radius: 10px;
-	background: rgba(255, 255, 255, 0.045);
+	background: var(--color-panel-bg);
 	font-size: 12px;
 }
 
@@ -541,8 +575,8 @@
 .messages .user-quick-profile__chip {
 	padding: 5px 8px;
 	border-radius: 999px;
-	border: 1px solid rgba(255, 255, 255, 0.1);
-	background: rgba(255, 255, 255, 0.04);
+	border: 1px solid var(--color-panel-border);
+	background: var(--color-panel-bg);
 	color: var(--color-text-muted);
 	font-size: 11px;
 }
@@ -599,9 +633,9 @@
 	align-items: center;
 	justify-content: center;
 	padding: 5px 9px;
-	border: 1px solid rgba(255, 255, 255, 0.1);
+	border: 1px solid var(--color-panel-border);
 	border-radius: 999px;
-	background: rgba(255, 255, 255, 0.06);
+	background: var(--color-control-bg);
 	color: var(--color-text-soft);
 	font: inherit;
 	font-size: 12px;
@@ -634,7 +668,7 @@
 }
 
 .messages .message-action {
-	background: rgba(255, 255, 255, 0.07);
+	background: var(--color-control-bg);
 }
 
 .messages .message-actions__chevron,
@@ -669,7 +703,7 @@
 .messages .message-action:hover:not(:disabled),
 .messages .message-edit-btn:hover:not(:disabled) {
 	transform: translateY(-1px);
-	background: rgba(255, 255, 255, 0.13);
+	background: var(--color-control-bg-hover);
 	border-color: var(--mode-accent-border);
 	box-shadow:
 		0 0 0 1px var(--mode-accent-soft),
@@ -739,8 +773,8 @@
 	gap: 10px;
 	padding: 10px;
 	border-radius: var(--radius-lg);
-	background: rgba(255, 255, 255, 0.035);
-	border: 1px solid rgba(255, 255, 255, 0.08);
+	background: var(--color-panel-bg);
+	border: 1px solid var(--color-panel-border);
 	animation: messageEditIn 0.18s ease-out;
 }
 
@@ -749,8 +783,8 @@
 	min-height: 92px;
 	padding: 10px 12px;
 	border-radius: var(--radius-lg);
-	border: 1px solid rgba(255, 255, 255, 0.1);
-	background: rgba(255, 255, 255, 0.04);
+	border: 1px solid var(--color-panel-border);
+	background: var(--color-panel-bg);
 	color: var(--color-text);
 	font: inherit;
 	line-height: 1.45;
@@ -762,7 +796,7 @@
 .messages .message-edit-textarea:focus {
 	border-color: var(--mode-accent-border, rgba(16, 163, 127, 0.35));
 	box-shadow: 0 0 0 3px var(--mode-accent-soft, rgba(16, 163, 127, 0.12));
-	background: rgba(255, 255, 255, 0.055);
+	background: var(--color-panel-bg-strong);
 }
 
 .messages .message-edit-actions {
@@ -778,7 +812,7 @@
 .messages .message-edit-btn--primary {
 	background: var(--mode-accent, var(--color-primary));
 	border-color: var(--mode-accent-border, var(--color-primary));
-	color: #04261f;
+	color: var(--color-on-accent);
 }
 
 .messages .message-edit-btn--primary:not(:disabled) {
@@ -799,7 +833,7 @@
 }
 
 .messages .content pre {
-	background: var(--color-surface-3);
+	background: var(--color-code-block-bg);
 	padding: 12px;
 	border-radius: var(--radius-sm);
 	overflow-x: auto;
@@ -808,7 +842,7 @@
 
 .messages .content code {
 	font-family: var(--font-mono);
-	background: rgba(0, 0, 0, 0.4);
+	background: var(--color-code-inline-bg);
 	padding: 2px 5px;
 	border-radius: 5px;
 	font-size: 0.9em;

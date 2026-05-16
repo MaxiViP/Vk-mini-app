@@ -1,4 +1,6 @@
 :root {
+	color-scheme: dark;
+
 	--font-sans:
 		ui-sans-serif,
 		system-ui,
@@ -29,6 +31,25 @@
 	--color-warning: gold;
 	--color-warning-hover: #ffd84d;
 
+	--color-top-bar-bg: rgba(33, 33, 33, 0.72);
+	--color-top-bar-border: rgba(255, 255, 255, 0.06);
+	--color-panel-bg: rgba(255, 255, 255, 0.04);
+	--color-panel-bg-strong: rgba(255, 255, 255, 0.06);
+	--color-panel-border: rgba(255, 255, 255, 0.08);
+	--color-panel-border-strong: rgba(255, 255, 255, 0.12);
+	--color-control-bg: rgba(255, 255, 255, 0.06);
+	--color-control-bg-hover: rgba(255, 255, 255, 0.1);
+	--color-control-bg-active: rgba(16, 163, 127, 0.18);
+	--color-input-panel-bg: rgba(47, 47, 47, 0.94);
+	--color-preview-panel-bg: rgba(24, 27, 34, 0.96);
+	--color-popover-bg: #181b22;
+	--color-context-panel-bg: #161a22;
+	--color-code-inline-bg: rgba(0, 0, 0, 0.4);
+	--color-code-block-bg: var(--color-surface-3);
+	--color-link: #7bb7ff;
+	--color-primary-text: #b7ffed;
+	--color-on-accent: #04261f;
+
 	--color-user-avatar: #3a3a3a;
 	--color-assistant-avatar: #2a2a2a;
 
@@ -56,4 +77,52 @@
 
 	--transition-fast: 0.15s ease;
 	--transition-base: 0.2s ease;
+}
+
+:root[data-ui-theme='light'] {
+	color-scheme: light;
+
+	--color-bg: #f7f9fc;
+	--color-surface: #ffffff;
+	--color-surface-2: #f2f6fb;
+	--color-surface-3: #e9eef6;
+
+	--color-text: #172033;
+	--color-text-soft: #344256;
+	--color-text-muted: #667085;
+	--color-text-dim: #858b98;
+
+	--color-border: #cbd5e1;
+	--color-border-soft: #d9e1ec;
+
+	--color-primary: #0b8f6b;
+	--color-primary-hover: #08795b;
+	--color-accent: #2563eb;
+	--color-danger: #dc2626;
+	--color-warning: #facc15;
+	--color-warning-hover: #eab308;
+
+	--color-top-bar-bg: rgba(255, 255, 255, 0.82);
+	--color-top-bar-border: rgba(15, 23, 42, 0.1);
+	--color-panel-bg: rgba(255, 255, 255, 0.72);
+	--color-panel-bg-strong: rgba(255, 255, 255, 0.9);
+	--color-panel-border: rgba(15, 23, 42, 0.1);
+	--color-panel-border-strong: rgba(15, 23, 42, 0.16);
+	--color-control-bg: rgba(255, 255, 255, 0.78);
+	--color-control-bg-hover: rgba(226, 232, 240, 0.9);
+	--color-control-bg-active: rgba(11, 143, 107, 0.12);
+	--color-input-panel-bg: rgba(255, 255, 255, 0.94);
+	--color-preview-panel-bg: rgba(255, 255, 255, 0.96);
+	--color-popover-bg: #ffffff;
+	--color-context-panel-bg: #ffffff;
+	--color-code-inline-bg: rgba(15, 23, 42, 0.08);
+	--color-code-block-bg: #eef2f7;
+	--color-link: #2563eb;
+	--color-primary-text: #047857;
+	--color-on-accent: #ffffff;
+
+	--overlay-dark: rgba(15, 23, 42, 0.42);
+	--overlay-light: rgba(15, 23, 42, 0.06);
+	--overlay-light-2: rgba(15, 23, 42, 0.1);
+	--overlay-light-4: rgba(15, 23, 42, 0.18);
 }

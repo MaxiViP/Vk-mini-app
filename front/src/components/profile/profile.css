@@ -1,5 +1,5 @@
 .profile {
-	background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)), var(--color-surface);
+	background: linear-gradient(180deg, var(--color-panel-bg), transparent), var(--color-surface);
 	border: 1px solid var(--color-border-soft);
 	border-radius: var(--radius-2xl);
 	padding: 0;
@@ -37,7 +37,7 @@
 	margin: calc(clamp(14px, 2.2vw, 24px) * -1) calc(clamp(14px, 2.2vw, 24px) * -1) 0;
 	padding: clamp(14px, 2.2vw, 22px);
 
-	background: linear-gradient(180deg, rgba(47, 47, 47, 0.98), rgba(47, 47, 47, 0.88)), var(--color-surface);
+	background: linear-gradient(180deg, var(--color-panel-bg-strong), var(--color-panel-bg)), var(--color-surface);
 	border-bottom: 1px solid var(--color-border-soft);
 	-webkit-backdrop-filter: blur(16px);
 	backdrop-filter: blur(16px);
@@ -92,7 +92,7 @@
 	gap: 8px;
 	padding: 12px;
 	border-radius: var(--radius-lg);
-	background: rgba(255, 255, 255, 0.045);
+	background: var(--color-panel-bg);
 	border: 1px solid var(--color-border-soft);
 	min-width: 0;
 }
@@ -130,7 +130,7 @@
 	overflow-x: auto;
 	white-space: nowrap;
 
-	background: rgba(47, 47, 47, 0.88);
+	background: var(--color-top-bar-bg);
 	border-bottom: 1px solid var(--color-border-soft);
 	-webkit-backdrop-filter: blur(14px);
 	backdrop-filter: blur(14px);
@@ -170,7 +170,7 @@
 	padding: 9px 13px;
 	border: 1px solid var(--color-border-soft);
 	border-radius: var(--radius-round);
-	background: rgba(255, 255, 255, 0.045);
+	background: var(--color-panel-bg);
 	color: var(--color-text-soft);
 	font: inherit;
 	font-size: 14px;
@@ -186,15 +186,15 @@
 
 .profile-tab:hover {
 	transform: translateY(-1px);
-	background: rgba(255, 255, 255, 0.08);
+	background: var(--color-control-bg-hover);
 	color: var(--color-text);
 }
 
 .profile-tab.active {
-	background: rgba(16, 163, 127, 0.16);
-	border-color: rgba(16, 163, 127, 0.38);
-	color: #bff7e9;
-	box-shadow: 0 0 0 1px rgba(16, 163, 127, 0.14);
+	background: var(--color-control-bg-active);
+	border-color: var(--color-primary);
+	color: var(--color-primary-text);
+	box-shadow: 0 0 0 1px var(--color-control-bg-active);
 }
 
 .profile-tab-panel::-webkit-scrollbar {
@@ -237,13 +237,13 @@
 .profile-status.success {
 	background: rgba(142, 229, 155, 0.08);
 	border: 1px solid rgba(142, 229, 155, 0.18);
-	color: #8ee59b;
+	color: var(--color-primary-text);
 }
 
 .profile-status.error {
 	background: rgba(255, 178, 107, 0.08);
 	border: 1px solid rgba(255, 178, 107, 0.18);
-	color: #ffb26b;
+	color: var(--color-danger);
 }
 
 /* ===== STATS ===== */
@@ -263,7 +263,7 @@
 }
 
 .stat-card {
-	background: rgba(255, 255, 255, 0.035);
+	background: var(--color-panel-bg);
 	border: 1px solid var(--color-border-soft);
 	border-radius: var(--radius-lg);
 	padding: 16px;
@@ -297,7 +297,7 @@
 	padding: 18px;
 	border: 1px solid var(--color-border-soft);
 	border-radius: 18px;
-	background: rgba(255, 255, 255, 0.025);
+	background: var(--color-panel-bg);
 	text-align: left;
 }
 
@@ -330,7 +330,7 @@
 	border-radius: 14px;
 	padding: 14px;
 	margin-bottom: 16px;
-	background: rgba(0, 0, 0, 0.18);
+	background: var(--color-panel-bg);
 }
 
 .billing-summary p {
@@ -339,7 +339,7 @@
 
 .hint-text {
 	font-size: 13px;
-	color: #9db3ff;
+	color: var(--color-link);
 }
 
 /* ===== AI USAGE ===== */
@@ -381,7 +381,7 @@
 	border: 1px solid var(--color-border-soft);
 	border-radius: 18px;
 	padding: 16px;
-	background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.01));
+	background: linear-gradient(180deg, var(--color-panel-bg), transparent);
 	display: flex;
 	flex-direction: column;
 	gap: 10px;
@@ -423,14 +423,14 @@
 	border-radius: 999px;
 	font-size: 12px;
 	font-weight: 700;
-	background: rgba(255, 255, 255, 0.06);
+	background: var(--color-control-bg);
 	color: var(--color-text-soft);
 }
 
 .plan-active-label {
-	background: rgba(16, 163, 127, 0.16);
-	color: #bff7e9;
-	border: 1px solid rgba(16, 163, 127, 0.28);
+	background: var(--color-control-bg-active);
+	color: var(--color-primary-text);
+	border: 1px solid var(--color-primary);
 }
 
 .plan-item h4 {
@@ -465,7 +465,7 @@
 	padding: 9px 12px;
 	border: 1px solid var(--color-border-soft);
 	border-radius: var(--radius-md);
-	background: rgba(255, 255, 255, 0.04);
+	background: var(--color-panel-bg);
 	color: var(--color-text);
 	font: inherit;
 	box-sizing: border-box;
@@ -475,7 +475,7 @@
 	padding: 9px 12px;
 	border: 1px solid var(--color-border-soft);
 	border-radius: var(--radius-md);
-	background: rgba(255, 255, 255, 0.06);
+	background: var(--color-control-bg);
 	color: var(--color-text);
 	font-size: 13px;
 }
@@ -483,8 +483,8 @@
 .plan-preview {
 	padding: 10px 12px;
 	border-radius: var(--radius-md);
-	background: rgba(0, 0, 0, 0.18);
-	border: 1px solid rgba(255, 255, 255, 0.06);
+	background: var(--color-panel-bg);
+	border: 1px solid var(--color-panel-border);
 }
 
 .plan-preview p {
@@ -565,7 +565,7 @@
 	border: 1px solid var(--color-border-soft);
 	border-radius: 18px;
 	padding: 16px;
-	background: rgba(255, 255, 255, 0.025);
+	background: var(--color-panel-bg);
 }
 
 .models-column h4 {
@@ -589,8 +589,8 @@
 	gap: 4px;
 	padding: 10px 12px;
 	border-radius: var(--radius-md);
-	background: rgba(255, 255, 255, 0.04);
-	border: 1px solid rgba(255, 255, 255, 0.04);
+	background: var(--color-panel-bg);
+	border: 1px solid var(--color-panel-border);
 }
 
 .models-column li b {
@@ -656,13 +656,13 @@
 .logout-btn {
 	padding: 10px 16px;
 	border-radius: var(--radius-round);
-	background: rgba(255, 255, 255, 0.06);
+	background: var(--color-control-bg);
 	color: var(--color-text);
 	border: 1px solid var(--color-border-soft);
 }
 
 .logout-btn:hover:not(:disabled) {
-	background: rgba(255, 255, 255, 0.1);
+	background: var(--color-control-bg-hover);
 }
 
 .profile-header-logout {
@@ -682,7 +682,7 @@
 	padding: 12px 14px;
 	border-radius: var(--radius-md);
 	border: 1px solid var(--color-border-soft);
-	background: rgba(255, 255, 255, 0.03);
+	background: var(--color-panel-bg);
 	text-align: left;
 }
 
@@ -728,7 +728,7 @@
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	background: rgba(255, 255, 255, 0.14);
+	background: var(--color-control-bg-hover);
 	color: var(--color-text);
 	font-size: 12px;
 	font-weight: 700;

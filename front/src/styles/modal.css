@@ -37,7 +37,7 @@
 	border-radius: 50%;
 	font-size: 20px;
 	font-weight: bold;
-	color: white;
+	color: var(--color-text);
 	cursor: pointer;
 	z-index: 10;
 }
@@ -93,7 +93,7 @@
 	background: var(--color-surface-3);
 	border: 1px solid var(--color-border);
 	border-radius: var(--radius-md);
-	color: white;
+	color: var(--color-text);
 	font-size: 16px;
 	margin-bottom: 20px;
 	outline: none;
@@ -149,7 +149,7 @@
 }
 
 .cancel-btn:hover {
-	background: #555;
+	background: var(--color-border-soft);
 }
 
 .error-message {
@@ -183,7 +183,7 @@
 .payment-link {
 	display: inline-block;
 	margin-bottom: 16px;
-	color: #7bb7ff;
+	color: var(--color-link);
 	text-decoration: none;
 }
 

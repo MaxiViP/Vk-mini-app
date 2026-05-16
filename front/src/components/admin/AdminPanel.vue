@@ -274,13 +274,13 @@ onUnmounted(() => {
 	position: sticky;
 	top: 0;
 	z-index: 2;
-	background: #111827;
+	background: var(--color-panel-bg-strong);
 	padding: 8px;
 	border-radius: 10px;
 }
 
 .users-table-wrap {
-	background: #111827;
+	background: var(--color-panel-bg-strong);
 	padding: 10px;
 	border-radius: 10px;
 }
@@ -294,19 +294,19 @@ onUnmounted(() => {
 	width: 100%;
 	border-collapse: collapse;
 	font-size: 12px;
-	color: #e5e7eb;
+	color: var(--color-text);
 }
 
 .users-table th,
 .users-table td {
-	border-bottom: 1px solid #374151;
+	border-bottom: 1px solid var(--color-panel-border);
 	padding: 6px;
 	text-align: left;
 	white-space: nowrap;
 }
 
 .users-table tr:hover {
-	background: #1f2937;
+	background: var(--color-control-bg-hover);
 	cursor: pointer;
 }
 
@@ -315,7 +315,7 @@ onUnmounted(() => {
 }
 
 .error-text {
-	color: #fca5a5;
+	color: var(--color-danger);
 	margin: 4px 0 10px;
 	font-size: 13px;
 }
@@ -323,8 +323,10 @@ onUnmounted(() => {
 input,
 button {
 	padding: 8px;
-	border: 1px solid #cbd5e1;
+	border: 1px solid var(--color-border);
 	border-radius: 8px;
+	background: var(--color-surface);
+	color: var(--color-text);
 }
 
 .grid {
@@ -336,8 +338,8 @@ button {
 pre {
 	max-height: 260px;
 	overflow: auto;
-	background: #0f172a;
-	color: #e2e8f0;
+	background: var(--color-code-block-bg);
+	color: var(--color-text);
 	padding: 10px;
 	border-radius: 10px;
 	font-size: 12px;

@@ -8,6 +8,9 @@ body {
 	min-height: var(--viewport-height);
 
 	overscroll-behavior-y: none;
+	transition:
+		background var(--transition-base),
+		color var(--transition-base);
 }
 
 /* контейнер */
@@ -51,12 +54,12 @@ body {
 	inset-inline: calc(-1 * var(--app-gutter));
 	z-index: -1;
 
-	background: rgba(33, 33, 33, 0.72);
+	background: var(--color-top-bar-bg);
 
 	backdrop-filter: blur(14px);
 	-webkit-backdrop-filter: blur(14px);
 
-	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+	border-bottom: 1px solid var(--color-top-bar-border);
 }
 
 .top-bar > * {

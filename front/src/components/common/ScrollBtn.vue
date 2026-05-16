@@ -100,10 +100,10 @@ onUnmounted(() => {
 
 	width: 44px;
 	height: 44px;
-	border: 1px solid var(--mode-accent-border, rgba(255, 255, 255, 0.14));
+	border: 1px solid var(--mode-accent-border, var(--color-panel-border-strong));
 	border-radius: 15px;
-	background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 52%), rgba(21, 24, 31, 0.96);
-	color: var(--mode-accent-strong, #fff);
+	background: linear-gradient(135deg, var(--color-panel-bg), transparent 52%), var(--color-preview-panel-bg);
+	color: var(--mode-accent-strong, var(--color-text));
 
 	cursor: pointer;
 	display: inline-grid;
@@ -150,13 +150,13 @@ onUnmounted(() => {
 	inset: 1px;
 	z-index: -1;
 	border-radius: inherit;
-	background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 52%), rgba(21, 24, 31, 0.96);
+	background: linear-gradient(135deg, var(--color-panel-bg), transparent 52%), var(--color-preview-panel-bg);
 }
 
 .scroll-btn:hover {
 	transform: translate(-50%, -50%) translateY(-2px);
 	border-color: var(--mode-accent-border, var(--color-primary));
-	color: var(--mode-accent-strong, #fff);
+	color: var(--mode-accent-strong, var(--color-text));
 	box-shadow:
 		0 0 0 1px var(--mode-accent-soft, rgba(36, 209, 180, 0.14)),
 		0 14px 34px rgba(0, 0, 0, 0.26),
