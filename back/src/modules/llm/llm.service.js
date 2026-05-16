@@ -5,6 +5,10 @@ import { resolveModelTier } from '../billing/billing.catalog.js'
 import { githubModelsClient } from './githubModels.client.js'
 
 const sanitizeEnv = value => (typeof value === 'string' ? value.trim().replace(/^['"]|['"]$/g, '') : '')
+const toPositiveInt = (value, fallback) => {
+	const parsed = Number(value)
+	return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback
+}
 
 const createOpenAICompatibleClient = ({ apiKey, baseURL, defaultHeaders } = {}) => {
 	if (!sanitizeEnv(apiKey) || !sanitizeEnv(baseURL)) return null
@@ -71,6 +75,10 @@ const REQUESTS_PER_ROTATION = 3
 const CACHE_TTL_MS = 5 * 60 * 1000
 const MODEL_DISCOVERY_TIMEOUT_MS = 4000
 const LLM_DYNAMIC_MODEL_DISCOVERY = sanitizeEnv(process.env.LLM_DYNAMIC_MODEL_DISCOVERY).toLowerCase() === 'true'
+const LLM_STARTUP_MODEL_CHECK = sanitizeEnv(process.env.LLM_STARTUP_MODEL_CHECK).toLowerCase() !== 'false'
+const LLM_MODEL_HEALTHCHECK_TIMEOUT_MS = toPositiveInt(process.env.LLM_MODEL_HEALTHCHECK_TIMEOUT_MS, 8000)
+const LLM_MODEL_HEALTHCHECK_CONCURRENCY = toPositiveInt(process.env.LLM_MODEL_HEALTHCHECK_CONCURRENCY, 3)
+const LLM_MODEL_HEALTHCHECK_PROMPT = sanitizeEnv(process.env.LLM_MODEL_HEALTHCHECK_PROMPT) || 'ping'
 
 const userRequestCounters = new Map()
 
@@ -203,6 +211,9 @@ const LOCAL_MODELS = [
 
 let modelsCache = null
 let cacheTimestamp = 0
+let modelCandidatesCache = null
+let modelCandidatesCacheTimestamp = 0
+let modelHealthcheckPromise = null
 
 const dedupeModels = models => {
 	const seen = new Set()
@@ -338,6 +349,202 @@ const safeListModels = async (client, provider, fallbackModels = []) => {
 	}
 }
 
+const getDynamicModelProviders = () => [
+	{ client: openaiClient, name: 'openai', fallbackModels: OPENAI_FALLBACK_MODELS },
+	{ client: groqClient, name: 'groq', fallbackModels: GROQ_FALLBACK_MODELS },
+	{ client: openrouterClient, name: 'openrouter', fallbackModels: OPENROUTER_FALLBACK_MODELS },
+	{ client: cerebrasClient, name: 'cerebras', fallbackModels: CEREBRAS_FALLBACK_MODELS },
+	{ client: vercelClient, name: 'vercel', fallbackModels: VERCEL_FALLBACK_MODELS },
+	{ client: mistralClient, name: 'mistral', fallbackModels: MISTRAL_FALLBACK_MODELS },
+]
+
+const loadModelCandidates = async () => {
+	const now = Date.now()
+	if (modelCandidatesCache && now - modelCandidatesCacheTimestamp < CACHE_TTL_MS) return modelCandidatesCache
+
+	if (!LLM_DYNAMIC_MODEL_DISCOVERY) {
+		modelCandidatesCache = getStaticModelFallbacks()
+		modelCandidatesCacheTimestamp = now
+		return modelCandidatesCache
+	}
+
+	const providers = getDynamicModelProviders()
+	const settledResults = await Promise.allSettled(
+		providers.map(provider => safeListModels(provider.client, provider.name, provider.fallbackModels)),
+	)
+
+	const discoveredModels = settledResults.flatMap((result, index) => {
+		if (result.status === 'fulfilled') return result.value
+
+		const provider = providers[index]
+		logger.warn(`Failed to load models from ${provider.name}`, {
+			message: result.reason?.message || 'Unknown model discovery error',
+			status: result.reason?.status || null,
+		})
+		return provider.fallbackModels
+	})
+
+	modelCandidatesCache = dedupeModels([
+		...discoveredModels,
+		...(cloudflareClient ? CLOUDFLARE_MODELS : []),
+		...GITHUB_MODELS,
+		...LOCAL_MODELS,
+	])
+	modelCandidatesCacheTimestamp = now
+	return modelCandidatesCache
+}
+
+const mapWithConcurrency = async (items, concurrency, mapper) => {
+	const results = new Array(items.length)
+	let nextIndex = 0
+
+	const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+		while (nextIndex < items.length) {
+			const index = nextIndex
+			nextIndex += 1
+			results[index] = await mapper(items[index], index)
+		}
+	})
+
+	await Promise.all(workers)
+	return results
+}
+
+const normalizeHealthcheckError = error => ({
+	message: error?.message || 'Unknown model healthcheck error',
+	status: error?.status || error?.statusCode || error?.response?.status || null,
+	code: error?.code || error?.type || null,
+})
+
+const checkModelAvailability = async model => {
+	const startedAt = Date.now()
+
+	try {
+		const client = getClientForModel(model)
+		if (!client?.chat?.completions?.create) throw new Error('Client does not support chat completions')
+
+		await withTimeout(
+			client.chat.completions.create({
+				model: model.model,
+				messages: [{ role: 'user', content: LLM_MODEL_HEALTHCHECK_PROMPT }],
+				temperature: 0,
+				max_tokens: 1,
+			}),
+			LLM_MODEL_HEALTHCHECK_TIMEOUT_MS,
+			`Model healthcheck timeout after ${LLM_MODEL_HEALTHCHECK_TIMEOUT_MS}ms`,
+		)
+
+		const latencyMs = Date.now() - startedAt
+		logger.info('LLM model healthcheck available', {
+			modelId: model.id,
+			modelName: model.model,
+			provider: model.provider,
+			billingTier: model.billingTier,
+			latencyMs,
+		})
+
+		return { ok: true, model, latencyMs }
+	} catch (error) {
+		const latencyMs = Date.now() - startedAt
+		const normalizedError = normalizeHealthcheckError(error)
+		logger.warn('LLM model healthcheck unavailable', {
+			modelId: model.id,
+			modelName: model.model,
+			provider: model.provider,
+			billingTier: model.billingTier,
+			latencyMs,
+			...normalizedError,
+		})
+
+		return { ok: false, model, latencyMs, error: normalizedError }
+	}
+}
+
+const healthcheckModels = async candidateModels => {
+	const models = dedupeModels(candidateModels)
+	logger.info('LLM model healthcheck started', {
+		modelCount: models.length,
+		timeoutMs: LLM_MODEL_HEALTHCHECK_TIMEOUT_MS,
+		concurrency: LLM_MODEL_HEALTHCHECK_CONCURRENCY,
+	})
+
+	if (!models.length) {
+		logger.warn('LLM model healthcheck skipped: no candidate models')
+		return getStaticModelFallbacks()
+	}
+
+	const results = await mapWithConcurrency(models, LLM_MODEL_HEALTHCHECK_CONCURRENCY, checkModelAvailability)
+	const availableResults = results.filter(result => result.ok)
+	const unavailableResults = results.filter(result => !result.ok)
+	const availableModels = availableResults.map(result => result.model)
+
+	logger.info('LLM model healthcheck completed', {
+		availableCount: availableResults.length,
+		unavailableCount: unavailableResults.length,
+		availableModels: availableResults.map(result => ({
+			id: result.model.id,
+			provider: result.model.provider,
+			latencyMs: result.latencyMs,
+		})),
+		unavailableModels: unavailableResults.map(result => ({
+			id: result.model.id,
+			provider: result.model.provider,
+			latencyMs: result.latencyMs,
+			status: result.error?.status || null,
+			code: result.error?.code || null,
+			message: result.error?.message || null,
+		})),
+	})
+
+	if (!availableModels.length) {
+		logger.warn('LLM model healthcheck found no available models; using static fallback model list')
+		return getStaticModelFallbacks()
+	}
+
+	return dedupeModels(availableModels)
+}
+
+const getHealthcheckedModels = async () => {
+	if (modelHealthcheckPromise) return modelHealthcheckPromise
+
+	modelHealthcheckPromise = (async () => {
+		try {
+			const candidateModels = await loadModelCandidates()
+			const healthyModels = await healthcheckModels(candidateModels)
+			modelsCache = healthyModels
+			cacheTimestamp = Date.now()
+			return modelsCache
+		} catch (error) {
+			logger.warn('LLM model healthcheck failed; using static fallback model list', {
+				message: error?.message || 'Unknown model healthcheck failure',
+				status: error?.status || null,
+			})
+			modelsCache = getStaticModelFallbacks()
+			cacheTimestamp = Date.now()
+			return modelsCache
+		} finally {
+			modelHealthcheckPromise = null
+		}
+	})()
+
+	return modelHealthcheckPromise
+}
+
+const selectClosestAvailableModel = (availableModels, requestedModel) => {
+	const sameProviderAndTier = availableModels.find(
+		model => model.provider === requestedModel.provider && model.billingTier === requestedModel.billingTier,
+	)
+	if (sameProviderAndTier) return sameProviderAndTier
+
+	const sameProvider = availableModels.find(model => model.provider === requestedModel.provider)
+	if (sameProvider) return sameProvider
+
+	const sameTier = availableModels.find(model => model.billingTier === requestedModel.billingTier)
+	if (sameTier) return sameTier
+
+	return availableModels[0] || null
+}
+
 const withRetry = async (fn, maxRetries = 3, delayMs = 1000) => {
 	for (let index = 0; index < maxRetries; index += 1) {
 		try {
@@ -351,50 +558,21 @@ const withRetry = async (fn, maxRetries = 3, delayMs = 1000) => {
 }
 
 export const llmService = {
+	async initializeModelHealthcheck() {
+		if (!LLM_STARTUP_MODEL_CHECK) {
+			logger.info('LLM startup model healthcheck disabled')
+			return null
+		}
+
+		return this.listModels()
+	},
+
 	async listModels() {
 		const now = Date.now()
 		if (modelsCache && now - cacheTimestamp < CACHE_TTL_MS) return modelsCache
 
 		try {
-			if (!LLM_DYNAMIC_MODEL_DISCOVERY) {
-				modelsCache = getStaticModelFallbacks()
-				cacheTimestamp = now
-				return modelsCache
-			}
-
-			const providers = [
-				{ client: openaiClient, name: 'openai', fallbackModels: OPENAI_FALLBACK_MODELS },
-				{ client: groqClient, name: 'groq', fallbackModels: GROQ_FALLBACK_MODELS },
-				{ client: openrouterClient, name: 'openrouter', fallbackModels: OPENROUTER_FALLBACK_MODELS },
-				{ client: cerebrasClient, name: 'cerebras', fallbackModels: CEREBRAS_FALLBACK_MODELS },
-				{ client: vercelClient, name: 'vercel', fallbackModels: VERCEL_FALLBACK_MODELS },
-				{ client: mistralClient, name: 'mistral', fallbackModels: MISTRAL_FALLBACK_MODELS },
-			]
-
-			const settledResults = await Promise.allSettled(
-				providers.map(provider =>
-					safeListModels(provider.client, provider.name, provider.fallbackModels),
-				),
-			)
-
-			const discoveredModels = settledResults.flatMap((result, index) => {
-				if (result.status === 'fulfilled') return result.value
-
-				const provider = providers[index]
-				logger.warn(`Failed to load models from ${provider.name}`, {
-					message: result.reason?.message || 'Unknown model discovery error',
-					status: result.reason?.status || null,
-				})
-				return provider.fallbackModels
-			})
-
-			modelsCache = dedupeModels([
-				...discoveredModels,
-				...(cloudflareClient ? CLOUDFLARE_MODELS : []),
-				...GITHUB_MODELS,
-				...LOCAL_MODELS,
-			])
-
+			modelsCache = LLM_STARTUP_MODEL_CHECK ? await getHealthcheckedModels() : await loadModelCandidates()
 			cacheTimestamp = now
 			return modelsCache
 		} catch (error) {
@@ -409,9 +587,26 @@ export const llmService = {
 
 	async resolveModel({ modelId, userId }) {
 		const allModels = await this.listModels()
-		const selectedModel = allModels.find(model => model.id === modelId)
+		let selectedModel = allModels.find(model => model.id === modelId)
 
 		if (!selectedModel) {
+			const requestedModel = (await loadModelCandidates()).find(model => model.id === modelId)
+			const fallbackModel = requestedModel ? selectClosestAvailableModel(allModels, requestedModel) : null
+
+			if (fallbackModel) {
+				logger.warn('Requested LLM model unavailable; fallback model selected', {
+					userId: userId || 'guest',
+					requestedModelId: requestedModel.id,
+					requestedProvider: requestedModel.provider,
+					requestedBillingTier: requestedModel.billingTier,
+					fallbackModelId: fallbackModel.id,
+					fallbackProvider: fallbackModel.provider,
+					fallbackBillingTier: fallbackModel.billingTier,
+				})
+				selectedModel = fallbackModel
+				return selectedModel
+			}
+
 			const error = new Error('Model not found')
 			error.statusCode = 400
 			throw error
