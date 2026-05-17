@@ -7,6 +7,27 @@ export default ({ mode }: { mode: string }) => {
 
 	return defineConfig({
 		plugins: [vue()],
+		build: {
+			target: ['es2020', 'chrome87', 'safari14'],
+			sourcemap: false,
+			cssCodeSplit: true,
+			modulePreload: {
+				polyfill: true,
+			},
+			rollupOptions: {
+				output: {
+					manualChunks(id) {
+						if (!id.includes('node_modules')) return
+						if (id.includes('node_modules/vue') || id.includes('node_modules/@vue')) return 'vue'
+						if (id.includes('node_modules/pinia')) return 'pinia'
+						if (id.includes('node_modules/@vkontakte')) return 'vk'
+						if (id.includes('node_modules/axios')) return 'axios'
+						if (id.includes('node_modules/marked')) return 'markdown'
+						if (id.includes('node_modules/highlight.js')) return 'markdown'
+					},
+				},
+			},
+		},
 		server: {
 			host: '0.0.0.0',
 			port: 5173,

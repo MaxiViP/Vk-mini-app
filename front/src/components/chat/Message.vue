@@ -449,6 +449,21 @@ type UserQuickProfile = {
 
 let markdownRendererPromise: Promise<MarkdownRenderer> | null = null
 
+const CODE_LANGUAGE_ALIASES: Record<string, string> = {
+	html: 'xml',
+	vue: 'xml',
+	shell: 'bash',
+	sh: 'bash',
+	zsh: 'bash',
+	yml: 'yaml',
+}
+
+const normalizeCodeLanguage = (language?: string) => {
+	const normalized = language?.trim().toLowerCase()
+	if (!normalized) return 'plaintext'
+	return CODE_LANGUAGE_ALIASES[normalized] || normalized
+}
+
 const MARKDOWN_PATTERN =
 	/```|`[^`\n]+`|^\s{0,3}#{1,6}\s|^\s*[-*+]\s|^\s*\d+\.\s|^\s*>\s|\[[^\]]+\]\([^)]+\)|(\*\*|__)[^\n]+(\*\*|__)|^\|.+\|/m
 
@@ -456,28 +471,69 @@ const loadMarkdownRenderer = () => {
 	if (!markdownRendererPromise) {
 		markdownRendererPromise = Promise.all([
 			import('marked'),
-			import('highlight.js'),
+			import('highlight.js/lib/core'),
+			import('highlight.js/lib/languages/javascript'),
+			import('highlight.js/lib/languages/typescript'),
+			import('highlight.js/lib/languages/json'),
+			import('highlight.js/lib/languages/bash'),
+			import('highlight.js/lib/languages/css'),
+			import('highlight.js/lib/languages/xml'),
+			import('highlight.js/lib/languages/markdown'),
+			import('highlight.js/lib/languages/python'),
+			import('highlight.js/lib/languages/sql'),
+			import('highlight.js/lib/languages/yaml'),
 			import('highlight.js/styles/github-dark.css'),
-		]).then(([markedModule, hljsModule]) => {
-			const { marked } = markedModule
-			const hljs = hljsModule.default
+		]).then(
+			([
+				markedModule,
+				hljsModule,
+				javascriptModule,
+				typescriptModule,
+				jsonModule,
+				bashModule,
+				cssModule,
+				xmlModule,
+				markdownModule,
+				pythonModule,
+				sqlModule,
+				yamlModule,
+			]) => {
+				const { marked } = markedModule
+				const hljs = hljsModule.default
 
-			marked.use({
-				gfm: true,
-				breaks: true,
-				renderer: {
-					code({ text, lang }) {
-						const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
-						const highlighted = hljs.highlight(text, { language }).value
-						return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`
+				hljs.registerLanguage('javascript', javascriptModule.default)
+				hljs.registerLanguage('typescript', typescriptModule.default)
+				hljs.registerLanguage('json', jsonModule.default)
+				hljs.registerLanguage('bash', bashModule.default)
+				hljs.registerLanguage('css', cssModule.default)
+				hljs.registerLanguage('xml', xmlModule.default)
+				hljs.registerLanguage('markdown', markdownModule.default)
+				hljs.registerLanguage('python', pythonModule.default)
+				hljs.registerLanguage('sql', sqlModule.default)
+				hljs.registerLanguage('yaml', yamlModule.default)
+
+				marked.use({
+					gfm: true,
+					breaks: true,
+					renderer: {
+						code({ text, lang }) {
+							const normalizedLanguage = normalizeCodeLanguage(lang)
+							if (!hljs.getLanguage(normalizedLanguage)) {
+								return `<pre><code class="hljs language-plaintext">${escapeHtml(text)}</code></pre>`
+							}
+
+							const language = normalizedLanguage
+							const highlighted = hljs.highlight(text, { language }).value
+							return `<pre><code class="hljs language-${language}">${highlighted}</code></pre>`
+						},
 					},
-				},
-			})
+				})
 
-			return {
-				parse: value => marked.parse(value, { async: false }) as string,
-			}
-		})
+				return {
+					parse: value => marked.parse(value, { async: false }) as string,
+				}
+			},
+		)
 	}
 
 	return markdownRendererPromise
