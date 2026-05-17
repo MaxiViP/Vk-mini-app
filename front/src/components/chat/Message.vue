@@ -312,6 +312,41 @@
 				:src="resolvedAudioReplyUrl"
 			></audio>
 
+			<div v-if="isAssistantMessage && !isEditing" class="assistant-response-actions">
+				<div class="assistant-response-actions__buttons">
+					<button type="button" class="assistant-response-action" @click="copyAssistantResponse">
+						Скопировать
+					</button>
+					<button type="button" class="assistant-response-action" @click="saveToNotes">
+						Сохранить
+					</button>
+					<button
+						v-if="FEATURES.sharing"
+						type="button"
+						class="assistant-response-action"
+						@click="shareAssistantResponse"
+					>
+						Поделиться
+					</button>
+					<button type="button" class="assistant-response-action" @click="openPromptAction('shorten')">
+						Сделать короче
+					</button>
+					<button type="button" class="assistant-response-action" @click="openPromptAction('improve')">
+						Улучшить
+					</button>
+					<button type="button" class="assistant-response-action" @click="openPromptAction('continue')">
+						Продолжить
+					</button>
+					<button type="button" class="assistant-response-action" @click="openPromptAction('vk-post')">
+						Использовать как пост VK
+					</button>
+				</div>
+
+				<span v-if="assistantActionStatus" class="assistant-response-actions__status">
+					{{ assistantActionStatus }}
+				</span>
+			</div>
+
 			<div v-if="!isEditing" :class="['message-actions', { 'message-actions--open': areActionsOpen }]">
 				<button
 					class="message-actions__toggle"
@@ -425,6 +460,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
 import type { Message } from '../../types'
+import { FEATURES } from '../../config/features'
+import { HOME_PROMPT_EVENT, HOME_PROMPT_STORAGE_KEY } from '../../data/homeCards'
 import {
 	buildAiCapabilities,
 	emptyAiCapabilities,
@@ -612,10 +649,12 @@ const editText = ref(props.message.content)
 const quickContextDraft = ref(props.quickContextValue)
 const copyStatus = ref<'idle' | 'copied'>('idle')
 const resendStatus = ref<'idle' | 'sent'>('idle')
+const assistantActionStatus = ref('')
 
 let renderToken = 0
 let copyStatusTimer: number | null = null
 let resendStatusTimer: number | null = null
+let assistantActionStatusTimer: number | null = null
 
 const voiceRecords = computed<string[]>(() => (Array.isArray(chat.voiceRecords) ? chat.voiceRecords : []))
 
@@ -745,6 +784,7 @@ const resolvedAudioReplyUrl = computed(() => props.message.meta?.audioReplyUrl |
 
 const isQuickContextAvailable = computed(() => props.message.role === 'assistant' && props.quickContextEnabled)
 const isQuickContextVisible = computed(() => isQuickContextAvailable.value && props.quickContextOpen)
+const isAssistantMessage = computed(() => props.message.role === 'assistant')
 
 const isUserProfileAvailable = computed(() => props.message.role === 'user' && props.userProfileEnabled)
 const isUserProfileVisible = computed(() => isUserProfileAvailable.value && props.userProfileOpen)
@@ -976,6 +1016,26 @@ const saveToNotes = () => {
 	})
 
 	window.dispatchEvent(notesEvent)
+	setAssistantActionStatus('Сохранено в заметки')
+}
+
+type AssistantPromptAction = 'shorten' | 'improve' | 'continue' | 'vk-post'
+
+const ASSISTANT_PROMPT_PREFIXES: Record<AssistantPromptAction, string> = {
+	shorten: 'Сократи этот текст без потери смысла:',
+	improve: 'Улучши этот текст, сделай его понятнее и грамотнее:',
+	continue: 'Продолжи мысль и дополни ответ:',
+	'vk-post': 'Преврати этот текст в готовый пост для VK с заголовком, абзацами и призывом к действию:',
+}
+
+const setAssistantActionStatus = (message: string) => {
+	if (assistantActionStatusTimer) window.clearTimeout(assistantActionStatusTimer)
+
+	assistantActionStatus.value = message
+	assistantActionStatusTimer = window.setTimeout(() => {
+		assistantActionStatus.value = ''
+		assistantActionStatusTimer = null
+	}, 1800)
 }
 
 const writeTextFallback = (text: string) => {
@@ -1036,6 +1096,24 @@ const copyMessage = async () => {
 	}
 }
 
+const copyAssistantResponse = async () => {
+	await copyMessage()
+	setAssistantActionStatus('Скопировано')
+}
+
+const shareAssistantResponse = async () => {
+	await copyMessage()
+	setAssistantActionStatus('Текст скопирован для отправки')
+}
+
+const openPromptAction = (action: AssistantPromptAction) => {
+	const prompt = `${ASSISTANT_PROMPT_PREFIXES[action]}\n${props.message.content}`
+
+	localStorage.setItem(HOME_PROMPT_STORAGE_KEY, prompt)
+	window.dispatchEvent(new CustomEvent(HOME_PROMPT_EVENT))
+	setAssistantActionStatus('Prompt открыт в чате')
+}
+
 const startEdit = async () => {
 	if (props.actionsDisabled) return
 
@@ -1078,5 +1156,6 @@ onBeforeUnmount(() => {
 
 	if (copyStatusTimer) window.clearTimeout(copyStatusTimer)
 	if (resendStatusTimer) window.clearTimeout(resendStatusTimer)
+	if (assistantActionStatusTimer) window.clearTimeout(assistantActionStatusTimer)
 })
 </script>

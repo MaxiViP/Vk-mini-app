@@ -109,6 +109,45 @@
 		<div ref="messagesContainerRef" class="messages" @scroll="handleMessagesScroll">
 			<div v-if="topSpacerHeight > 0" aria-hidden="true" :style="{ height: `${topSpacerHeight}px` }"></div>
 
+			<section v-if="isChatEmpty" class="chat-empty-state" aria-label="Пустой чат">
+				<div class="chat-empty-state__head">
+					<span class="chat-empty-state__eyebrow">AI-чат</span>
+					<h1>С чего начнём?</h1>
+					<p>Выберите пример запроса или напишите свой вопрос.</p>
+				</div>
+
+				<div class="chat-empty-state__examples" aria-label="Примеры запросов">
+					<button
+						v-for="example in CHAT_EXAMPLES"
+						:key="example.id"
+						type="button"
+						class="chat-empty-state__example"
+						@click="prefillPrompt(example.prompt)"
+					>
+						{{ example.title }}
+					</button>
+				</div>
+
+				<div v-if="FEATURES.promptCatalog || FEATURES.homePage" class="chat-empty-state__actions">
+					<button
+						v-if="FEATURES.promptCatalog"
+						type="button"
+						class="chat-empty-state__action chat-empty-state__action--primary"
+						@click="openPanel(DEFAULT_VIEW_PANELS.PROMPTS)"
+					>
+						Открыть шаблоны
+					</button>
+					<button
+						v-if="FEATURES.homePage"
+						type="button"
+						class="chat-empty-state__action"
+						@click="openPanel(DEFAULT_VIEW_PANELS.HOME)"
+					>
+						Посмотреть возможности
+					</button>
+				</div>
+			</section>
+
 			<div v-for="item in visibleMessages" :key="item.key" :ref="setMessageRowRef(item.index)">
 				<Message
 					:message="item.message"
@@ -188,6 +227,9 @@ import type { ComponentPublicInstance } from 'vue'
 
 import type { ChatHistoryItem, Message as ChatMessage, Model } from '../../types'
 import { fetchAiMemory, saveAiMemory } from '../../api/workspace'
+import { FEATURES } from '../../config/features'
+import { DEFAULT_VIEW_PANELS, type PanelId } from '../../config/panels'
+import { CHAT_EXAMPLES } from '../../data/chatExamples'
 import { HOME_PROMPT_EVENT, HOME_PROMPT_STORAGE_KEY } from '../../data/homeCards'
 import { useChatStore } from '../../stores/chat'
 import { useModelsStore } from '../../stores/models'
@@ -210,6 +252,10 @@ type QuickContextMode = 'session' | 'memory' | 'files' | 'audio'
 type ChatInputExposed = {
 	setText: (value: string) => void
 }
+
+const emit = defineEmits<{
+	(e: 'navigate', panel: PanelId): void
+}>()
 
 const chat = useChatStore()
 const chatApi = chat as any
@@ -494,6 +540,7 @@ const visibleMessages = computed(() => visibleWindow.value.items)
 const topSpacerHeight = computed(() => visibleWindow.value.top)
 const bottomSpacerHeight = computed(() => visibleWindow.value.bottom)
 const visibleRangeSignature = computed(() => visibleMessages.value.map(item => item.index).join(':'))
+const isChatEmpty = computed(() => chat.messages.length === 0 && !chat.isLoading)
 
 const lastMessageSignature = computed(() => {
 	const lastMessage = chat.messages[chat.messages.length - 1]
@@ -608,6 +655,15 @@ const consumePendingHomePrompt = async () => {
 	localStorage.removeItem(HOME_PROMPT_STORAGE_KEY)
 	await nextTick()
 	chatInputRef.value?.setText(prompt)
+}
+
+const prefillPrompt = (prompt: string) => {
+	localStorage.setItem(HOME_PROMPT_STORAGE_KEY, prompt)
+	window.dispatchEvent(new Event(HOME_PROMPT_EVENT))
+}
+
+const openPanel = (panel: PanelId) => {
+	emit('navigate', panel)
 }
 
 const normalizeQuickSessionContext = (value: string) => String(value || '').slice(0, SESSION_CONTEXT_MAX_LENGTH).trim()
