@@ -166,6 +166,7 @@
 		</div>
 
 		<ChatInput
+			ref="chatInputRef"
 			@send="sendWithFallback"
 			@stop="stopGeneration"
 			@upload-file="uploadFile"
@@ -187,6 +188,7 @@ import type { ComponentPublicInstance } from 'vue'
 
 import type { ChatHistoryItem, Message as ChatMessage, Model } from '../../types'
 import { fetchAiMemory, saveAiMemory } from '../../api/workspace'
+import { HOME_PROMPT_EVENT, HOME_PROMPT_STORAGE_KEY } from '../../data/homeCards'
 import { useChatStore } from '../../stores/chat'
 import { useModelsStore } from '../../stores/models'
 import { useUserStore } from '../../stores/user'
@@ -205,6 +207,10 @@ const USER_MEMORY_MAX_LENGTH = 1200
 
 type QuickContextMode = 'session' | 'memory' | 'files' | 'audio'
 
+type ChatInputExposed = {
+	setText: (value: string) => void
+}
+
 const chat = useChatStore()
 const chatApi = chat as any
 const modelsStore = useModelsStore()
@@ -221,6 +227,7 @@ const quickMemoryLoading = ref(false)
 const quickMemoryValue = ref('')
 const quickMemoryLoadedToken = ref('')
 const messagesContainerRef = ref<HTMLElement | null>(null)
+const chatInputRef = ref<ChatInputExposed | null>(null)
 const scrollTop = ref(0)
 const viewportHeight = ref(0)
 const isNearBottom = ref(false)
@@ -594,6 +601,15 @@ const handleToggleChatContext = (event: Event) => {
 	showContextPanel.value = !showContextPanel.value
 }
 
+const consumePendingHomePrompt = async () => {
+	const prompt = localStorage.getItem(HOME_PROMPT_STORAGE_KEY)
+	if (!prompt) return
+
+	localStorage.removeItem(HOME_PROMPT_STORAGE_KEY)
+	await nextTick()
+	chatInputRef.value?.setText(prompt)
+}
+
 const normalizeQuickSessionContext = (value: string) => String(value || '').slice(0, SESSION_CONTEXT_MAX_LENGTH).trim()
 const normalizeQuickUserMemory = (value: string) => String(value || '').slice(0, USER_MEMORY_MAX_LENGTH).trim()
 
@@ -935,6 +951,8 @@ watch(
 
 onMounted(() => {
 	window.addEventListener('toggle-chat-context', handleToggleChatContext as EventListener)
+	window.addEventListener(HOME_PROMPT_EVENT, consumePendingHomePrompt)
+	void consumePendingHomePrompt()
 	void nextTick().then(() => {
 		measureVisibleRows()
 	})
@@ -942,6 +960,7 @@ onMounted(() => {
 
 onUnmounted(() => {
 	window.removeEventListener('toggle-chat-context', handleToggleChatContext as EventListener)
+	window.removeEventListener(HOME_PROMPT_EVENT, consumePendingHomePrompt)
 	messageRowRefs.clear()
 })
 </script>

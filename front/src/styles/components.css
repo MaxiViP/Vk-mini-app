@@ -27,6 +27,384 @@
 	box-shadow: 0 0 0 1px var(--mode-accent-soft, var(--color-control-bg-active));
 }
 
+.placeholder-panel {
+	width: min(100%, var(--content-width));
+	align-self: center;
+	padding: 24px;
+	border: 1px solid var(--color-panel-border);
+	border-radius: var(--radius-lg);
+	background: var(--mode-panel-bg, var(--color-panel-bg));
+	box-sizing: border-box;
+}
+
+.placeholder-panel__header {
+	display: grid;
+	gap: 10px;
+}
+
+.placeholder-panel__eyebrow {
+	width: fit-content;
+	padding: 5px 9px;
+	border: 1px solid var(--mode-accent-border, var(--color-border-soft));
+	border-radius: var(--radius-xl);
+	color: var(--mode-accent-strong, var(--color-text));
+	background: var(--mode-accent-soft, var(--color-control-bg));
+	font-size: 12px;
+	font-weight: 700;
+}
+
+.placeholder-panel h1 {
+	margin: 0;
+	font-size: 24px;
+	line-height: 1.18;
+}
+
+.placeholder-panel p {
+	margin: 0;
+	max-width: 680px;
+	color: var(--color-text-muted);
+	line-height: 1.55;
+}
+
+.placeholder-panel__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: 20px;
+}
+
+.home-panel {
+	width: min(100%, var(--content-width));
+	align-self: center;
+	display: grid;
+	gap: 18px;
+}
+
+.home-panel__hero,
+.home-panel__section {
+	border: 1px solid var(--color-panel-border);
+	border-radius: var(--radius-lg);
+	background: var(--mode-panel-bg, var(--color-panel-bg));
+	box-sizing: border-box;
+}
+
+.home-panel__hero {
+	display: grid;
+	gap: 14px;
+	padding: 26px;
+}
+
+.home-panel__eyebrow,
+.home-card__badge {
+	width: fit-content;
+	padding: 5px 9px;
+	border: 1px solid var(--mode-accent-border, var(--color-border-soft));
+	border-radius: var(--radius-xl);
+	color: var(--mode-accent-strong, var(--color-text));
+	background: var(--mode-accent-soft, var(--color-control-bg));
+	font-size: 12px;
+	font-weight: 700;
+}
+
+.home-panel__hero h1,
+.home-panel__section h2 {
+	margin: 0;
+	line-height: 1.18;
+}
+
+.home-panel__hero h1 {
+	font-size: 28px;
+}
+
+.home-panel__hero p {
+	margin: 0;
+	max-width: 760px;
+	color: var(--color-text-muted);
+	line-height: 1.55;
+}
+
+.home-panel__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.home-panel__section {
+	padding: 18px;
+}
+
+.home-panel__section--compact {
+	min-width: 0;
+}
+
+.home-panel__section-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 14px;
+}
+
+.home-panel__section-head h2 {
+	font-size: 18px;
+}
+
+.home-panel__section-head span {
+	color: var(--color-text-muted);
+	font-size: 13px;
+}
+
+.home-card-grid {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: 10px;
+}
+
+.home-card,
+.home-list__item {
+	border: 1px solid var(--color-panel-border);
+	background: var(--color-control-bg);
+	color: var(--color-text);
+	cursor: pointer;
+	text-align: left;
+	transition:
+		background var(--transition-base),
+		border-color var(--transition-base),
+		transform var(--transition-base);
+}
+
+.home-card {
+	display: grid;
+	align-content: start;
+	gap: 10px;
+	min-height: 150px;
+	padding: 14px;
+	border-radius: var(--radius-md);
+}
+
+.home-card:hover,
+.home-list__item:hover {
+	border-color: var(--mode-accent-border, var(--color-primary));
+	background: var(--color-control-bg-hover);
+	transform: translateY(-1px);
+}
+
+.home-card strong {
+	font-size: 15px;
+	line-height: 1.25;
+}
+
+.home-card small,
+.home-list__item small {
+	color: var(--color-text-muted);
+	line-height: 1.4;
+}
+
+.home-panel__split {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	gap: 18px;
+}
+
+.home-list,
+.home-feature-list {
+	display: grid;
+	gap: 8px;
+}
+
+.home-list__item {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 11px 12px;
+	border-radius: var(--radius-sm);
+}
+
+.home-feature-list {
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.home-feature-list span {
+	padding: 10px 12px;
+	border: 1px solid var(--color-panel-border);
+	border-radius: var(--radius-sm);
+	background: var(--color-control-bg);
+	color: var(--color-text);
+	font-size: 14px;
+}
+
+.prompts-panel {
+	width: min(100%, var(--content-width));
+	align-self: center;
+	display: grid;
+	gap: 16px;
+}
+
+.prompts-panel__hero,
+.prompts-toolbar,
+.prompts-empty {
+	border: 1px solid var(--color-panel-border);
+	border-radius: var(--radius-lg);
+	background: var(--mode-panel-bg, var(--color-panel-bg));
+	box-sizing: border-box;
+}
+
+.prompts-panel__hero {
+	display: grid;
+	gap: 10px;
+	padding: 24px;
+}
+
+.prompts-panel__eyebrow,
+.prompt-card__badge {
+	width: fit-content;
+	padding: 5px 9px;
+	border: 1px solid var(--mode-accent-border, var(--color-border-soft));
+	border-radius: var(--radius-xl);
+	color: var(--mode-accent-strong, var(--color-text));
+	background: var(--mode-accent-soft, var(--color-control-bg));
+	font-size: 12px;
+	font-weight: 700;
+}
+
+.prompts-panel__hero h1,
+.prompt-card h2,
+.prompts-empty h2 {
+	margin: 0;
+	line-height: 1.2;
+}
+
+.prompts-panel__hero h1 {
+	font-size: 26px;
+}
+
+.prompts-panel__hero p,
+.prompt-card p,
+.prompts-empty p {
+	margin: 0;
+	color: var(--color-text-muted);
+	line-height: 1.5;
+}
+
+.prompts-toolbar {
+	display: grid;
+	gap: 14px;
+	padding: 16px;
+}
+
+.prompts-search {
+	display: grid;
+	gap: 7px;
+	color: var(--color-text-muted);
+	font-size: 13px;
+	font-weight: 700;
+}
+
+.prompts-search input {
+	width: 100%;
+	min-height: 44px;
+	padding: 10px 12px;
+	border: 1px solid var(--color-border-soft);
+	border-radius: var(--radius-sm);
+	background: var(--color-surface);
+	color: var(--color-text);
+	box-sizing: border-box;
+	outline: none;
+}
+
+.prompts-search input:focus {
+	border-color: var(--mode-accent-border, var(--color-primary));
+}
+
+.prompts-categories {
+	display: flex;
+	gap: 8px;
+	overflow-x: auto;
+	padding-bottom: 2px;
+	scrollbar-width: none;
+}
+
+.prompts-categories::-webkit-scrollbar {
+	display: none;
+}
+
+.prompts-category {
+	flex: 0 0 auto;
+	padding: 8px 12px;
+	border: 1px solid var(--color-panel-border);
+	border-radius: var(--radius-xl);
+	background: transparent;
+	color: var(--color-text);
+	cursor: pointer;
+	font-size: 13px;
+	font-weight: 700;
+}
+
+.prompts-category--active {
+	border-color: var(--mode-accent-border, var(--color-primary));
+	background: var(--mode-accent-soft, var(--color-control-bg-active));
+	color: var(--mode-accent-strong, var(--color-text));
+}
+
+.prompts-panel__summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	color: var(--color-text-muted);
+	font-size: 13px;
+	font-weight: 700;
+}
+
+.prompt-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 12px;
+}
+
+.prompt-card {
+	display: grid;
+	align-content: start;
+	gap: 12px;
+	min-height: 220px;
+	padding: 16px;
+	border: 1px solid var(--color-panel-border);
+	border-radius: var(--radius-md);
+	background: var(--mode-panel-bg, var(--color-panel-bg));
+	box-sizing: border-box;
+}
+
+.prompt-card__badges {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.prompt-card__badge--premium {
+	border-color: rgba(245, 190, 80, 0.4);
+	background: rgba(245, 190, 80, 0.14);
+	color: #ffd98a;
+}
+
+.prompt-card h2 {
+	font-size: 17px;
+}
+
+.prompt-card__actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-top: auto;
+}
+
+.prompts-empty {
+	display: grid;
+	gap: 8px;
+	padding: 24px;
+	text-align: center;
+}
+
 select {
 	margin: 12px auto 0;
 	background: var(--color-surface);
@@ -171,6 +549,18 @@ select {
 }
 
 @media (max-width: 768px) {
+	.home-card-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.home-panel__split {
+		grid-template-columns: 1fr;
+	}
+
+	.prompt-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
 	.model-selector {
 		padding: 10px 12px;
 		gap: 12px;
@@ -182,6 +572,28 @@ select {
 }
 
 @media (max-width: 560px) {
+	.home-panel__hero,
+	.home-panel__section {
+		padding: 16px;
+	}
+
+	.home-panel__hero h1 {
+		font-size: 24px;
+	}
+
+	.home-card-grid,
+	.home-feature-list,
+	.prompt-grid {
+		grid-template-columns: 1fr;
+	}
+
+	.prompts-panel__hero,
+	.prompts-toolbar,
+	.prompts-empty,
+	.prompt-card {
+		padding: 16px;
+	}
+
 	.model-selector {
 		flex-direction: column;
 		align-items: stretch;

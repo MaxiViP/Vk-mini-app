@@ -87,6 +87,7 @@
 				/>
 
 				<input
+					ref="textInputRef"
 					:class="['text-input', { 'text-input--ai': chat.isAiMode }]"
 					v-model="text"
 					@keydown.enter.prevent="handleEnter"
@@ -164,7 +165,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useChatStore } from '../../stores/chat'
 import ScrollBtn from '../common/ScrollBtn.vue'
 
@@ -191,6 +192,7 @@ const chat = useChatStore()
 
 const text = ref('')
 const fileInputRef = ref<HTMLInputElement | null>(null)
+const textInputRef = ref<HTMLInputElement | null>(null)
 const deleteZoneRef = ref<HTMLDivElement | null>(null)
 const voiceButtonRef = ref<HTMLButtonElement | null>(null)
 
@@ -386,6 +388,12 @@ const handleSendPressEnd = () => {
 	}, 0)
 }
 
+const setText = async (value: string) => {
+	text.value = value
+	await nextTick()
+	textInputRef.value?.focus()
+}
+
 const openFilePicker = () => {
 	if (attachButtonDisabled.value) return
 
@@ -533,5 +541,9 @@ onBeforeUnmount(() => {
 
 	clearPendingVoice()
 	stopRecordingTracks()
+})
+
+defineExpose({
+	setText,
 })
 </script>

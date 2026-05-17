@@ -20,7 +20,16 @@
 				<ProfileTrigger @click="showProfile = true" />
 			</div>
 
-			<nav class="top-bar-nav" aria-label="Действия чата">
+			<nav class="top-bar-nav" aria-label="Навигация">
+				<button
+					v-for="item in enabledNavigationItems"
+					:key="item.panel"
+					type="button"
+					:class="['pill-btn', { 'pill-btn--active': activePanel === item.panel }]"
+					@click="setActivePanel(item.panel)"
+				>
+					{{ item.label }}
+				</button>
 				<button
 					v-if="!isVkAiBackend"
 					:class="['pill-btn', { 'pill-btn--active': isModelSelectorOpen }]"
@@ -36,7 +45,7 @@
 		</header>
 
 		<ModelSelector v-if="!isVkAiBackend && isModelSelectorOpen" />
-		<Chat />
+		<component :is="currentPanelComponent" @navigate="setActivePanel" />
 	</div>
 
 	<Teleport to="body">
@@ -67,12 +76,15 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
+import type { Component } from 'vue'
 
 import { isVkAiBackend } from './config/chatBackend'
+import { FEATURES, type FeatureName } from './config/features'
 import { useActivityHeartbeat } from './composables/useActivityHeartbeat'
 import { useAppWindowEvents } from './composables/useAppWindowEvents'
 import { useOAuthCallback } from './composables/useOAuthCallback'
 import { useViewportHeight } from './composables/useViewportHeight'
+import { DEFAULT_VIEW_PANELS, type PanelId } from './config/panels'
 import { initVK } from './vk/bridge'
 import { useChatStore } from './stores/chat'
 import { useModelsStore } from './stores/models'
@@ -87,10 +99,54 @@ const Profile = defineAsyncComponent(() => import('./components/profile/Profile.
 const NotesPanel = defineAsyncComponent(() => import('./components/chat/NotesPanel.vue'))
 const AuthModal = defineAsyncComponent(() => import('./components/auth/AuthModal.vue'))
 const AdminPanel = defineAsyncComponent(() => import('./components/admin/AdminPanel.vue'))
+const HomePanel = defineAsyncComponent(() => import('./panels/HomePanel.vue'))
+const PromptsPanel = defineAsyncComponent(() => import('./panels/PromptsPanel.vue'))
+const ToolsPanel = defineAsyncComponent(() => import('./panels/ToolsPanel.vue'))
+const AssistantsPanel = defineAsyncComponent(() => import('./panels/AssistantsPanel.vue'))
+const TariffsPanel = defineAsyncComponent(() => import('./panels/TariffsPanel.vue'))
+const BonusesPanel = defineAsyncComponent(() => import('./panels/BonusesPanel.vue'))
+const HelpPanel = defineAsyncComponent(() => import('./panels/HelpPanel.vue'))
+const SafetyPanel = defineAsyncComponent(() => import('./panels/SafetyPanel.vue'))
+const ChangelogPanel = defineAsyncComponent(() => import('./panels/ChangelogPanel.vue'))
+const FeedbackPanel = defineAsyncComponent(() => import('./panels/FeedbackPanel.vue'))
 
 const modelsStore = useModelsStore()
 const chatStore = useChatStore()
 const userStore = useUserStore()
+
+type NavigationItem = {
+	panel: PanelId
+	label: string
+	component: Component
+	feature?: FeatureName
+}
+
+const defaultPanel = FEATURES.homePage ? DEFAULT_VIEW_PANELS.HOME : DEFAULT_VIEW_PANELS.CHAT
+
+const navigationItems: NavigationItem[] = [
+	{ panel: DEFAULT_VIEW_PANELS.HOME, label: 'Главная', component: HomePanel, feature: 'homePage' },
+	{ panel: DEFAULT_VIEW_PANELS.CHAT, label: 'Чат', component: Chat },
+	{ panel: DEFAULT_VIEW_PANELS.PROMPTS, label: 'Шаблоны', component: PromptsPanel, feature: 'promptCatalog' },
+	{ panel: DEFAULT_VIEW_PANELS.TOOLS, label: 'Инструменты', component: ToolsPanel, feature: 'aiTools' },
+	{ panel: DEFAULT_VIEW_PANELS.ASSISTANTS, label: 'Ассистенты', component: AssistantsPanel, feature: 'assistants' },
+	{ panel: DEFAULT_VIEW_PANELS.TARIFFS, label: 'Тарифы', component: TariffsPanel, feature: 'tariffsPage' },
+	{ panel: DEFAULT_VIEW_PANELS.BONUSES, label: 'Бонусы', component: BonusesPanel, feature: 'bonuses' },
+	{ panel: DEFAULT_VIEW_PANELS.HELP, label: 'Помощь', component: HelpPanel, feature: 'helpPage' },
+	{ panel: DEFAULT_VIEW_PANELS.SAFETY, label: 'Безопасность', component: SafetyPanel, feature: 'safetyPage' },
+	{ panel: DEFAULT_VIEW_PANELS.CHANGELOG, label: 'Обновления', component: ChangelogPanel, feature: 'changelog' },
+	{ panel: DEFAULT_VIEW_PANELS.FEEDBACK, label: 'Feedback', component: FeedbackPanel, feature: 'feedbackPage' },
+]
+
+const isNavigationItemEnabled = (item: NavigationItem) => !item.feature || FEATURES[item.feature]
+const enabledNavigationItems = computed(() => navigationItems.filter(isNavigationItemEnabled))
+const getPanelFromHash = () => window.location.hash.replace(/^#\/?/, '').split('?')[0] || defaultPanel
+const resolvePanel = (panel: string): PanelId =>
+	enabledNavigationItems.value.some(item => item.panel === panel) ? (panel as PanelId) : defaultPanel
+const activePanel = ref<PanelId>(resolvePanel(getPanelFromHash()))
+const currentNavigationItem = computed(
+	() => enabledNavigationItems.value.find(item => item.panel === activePanel.value) || enabledNavigationItems.value[0],
+)
+const currentPanelComponent = computed(() => currentNavigationItem.value?.component || Chat)
 
 type NotesPanelExposed = {
 	setNewNoteText: (text: string) => void
@@ -139,6 +195,25 @@ const toggleChatContext = () => {
 
 const toggleModelSelector = () => {
 	isModelSelectorOpen.value = !isModelSelectorOpen.value
+}
+
+const setActivePanel = (panel: string) => {
+	const nextPanel = resolvePanel(panel)
+	activePanel.value = nextPanel
+	const nextHash = `#/${nextPanel}`
+	if (window.location.hash !== nextHash) {
+		window.location.hash = nextHash
+	}
+}
+
+const handleHashChange = () => {
+	const requestedPanel = getPanelFromHash()
+	const nextPanel = resolvePanel(requestedPanel)
+	activePanel.value = nextPanel
+
+	if (requestedPanel !== nextPanel) {
+		window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/${nextPanel}`)
+	}
 }
 
 const toggleUiTheme = () => {
@@ -219,12 +294,15 @@ watch(
 onMounted(async () => {
 	startViewportSync()
 	document.addEventListener('keydown', handleEscape)
+	window.addEventListener('hashchange', handleHashChange)
+	handleHashChange()
 	startAppWindowEvents()
 	await bootstrapApp()
 })
 
 onUnmounted(() => {
 	document.removeEventListener('keydown', handleEscape)
+	window.removeEventListener('hashchange', handleHashChange)
 	stopAppWindowEvents()
 	stopViewportSync()
 	stopActivityTracking()
