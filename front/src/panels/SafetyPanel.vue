@@ -19,7 +19,10 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
+
 import { FEATURES } from '../config/features'
+import { trackEvent } from '../utils/analytics'
 
 const safetyItems = [
 	{
@@ -51,4 +54,8 @@ const safetyItems = [
 		text: 'Формулируйте задачи без лишних персональных данных, прикрепляйте только нужные файлы, проверяйте результат перед публикацией и не передавайте AI доступы к аккаунтам.',
 	},
 ]
+
+onMounted(() => {
+	trackEvent('safety_opened')
+})
 </script>

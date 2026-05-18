@@ -85,6 +85,7 @@ import { computed, onBeforeUnmount, ref } from 'vue'
 import { FEATURES } from '../config/features'
 import { AI_TOOL_CATEGORIES, AI_TOOLS, type AiTool } from '../data/aiTools'
 import { HOME_PROMPT_EVENT, HOME_PROMPT_STORAGE_KEY } from '../data/homeCards'
+import { trackEvent } from '../utils/analytics'
 
 const emit = defineEmits<{
 	(e: 'navigate', panel: string): void
@@ -183,6 +184,7 @@ const openInChat = (tool: AiTool) => {
 		return
 	}
 
+	trackEvent('tool_used', { toolId: tool.id, category: tool.category })
 	localStorage.setItem(HOME_PROMPT_STORAGE_KEY, buildPrompt(tool))
 	emit('navigate', 'chat')
 	window.dispatchEvent(new CustomEvent(HOME_PROMPT_EVENT))

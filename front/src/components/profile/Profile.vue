@@ -442,27 +442,57 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 
-import type {
-	AiAccessPlan,
-	BillingLedgerEntry,
-	BillingPayment,
-	BillingPlan,
-	SubscriptionPurchasePreview,
-} from '../../types'
-import { canBuyPlanFromWallet } from '../../domain/billingRules'
-import { emptyAiCounters, normalizeAiCounters } from '../../domain/aiSubscription'
 import { useUserStore } from '../../stores/user'
+import {
+	formatAiCounter,
+	formatDate,
+	formatMoney,
+	formatMoneyMinor,
+	useBilling,
+} from '../../composables/useBilling'
 import RechargeModal from './RechargeModal.vue'
 
 const userStore = useUserStore()
 const showRechargeModal = ref(false)
-const statusMessage = ref('')
-const statusKind = ref<'success' | 'error'>('success')
-const isBusy = ref(false)
 const activeTab = ref<'overview' | 'plans' | 'ai' | 'history'>('overview')
-const planPromoCodes = ref<Record<string, string>>({})
-const planPreviews = ref<Record<string, SubscriptionPurchasePreview | null>>({})
-const planPreviewLoading = ref<Record<string, boolean>>({})
+const {
+	statusMessage,
+	statusKind,
+	isBusy,
+	activeSubscription,
+	plans,
+	aiAccess,
+	isAiSubscriptionActive,
+	aiLimits,
+	aiUsage,
+	aiRemaining,
+	aiPlans,
+	recentLedger,
+	recentPayments,
+	automaticDiscounts,
+	activeModeLabel,
+	aiStatusLabel,
+	getPlanPromoCode,
+	getPlanPreview,
+	isPlanPreviewPending,
+	updatePlanPromoCode,
+	applyPlanPreview,
+	canBuyPlan,
+	canBuyAiPlan,
+	planButtonLabel,
+	aiPlanButtonLabel,
+	planDescription,
+	ledgerTitle,
+	ledgerAmount,
+	paymentTitle,
+	paymentAmountLabel,
+	reloadBilling,
+	buyPlan,
+	buyAiPlan,
+	handleRecharge,
+	loadBilling,
+	setError,
+} = useBilling()
 
 const fallbackAvatar =
 	'data:image/svg+xml;charset=UTF-8,' +
@@ -471,259 +501,10 @@ const fallbackAvatar =
 	)
 
 const avatarUrl = computed(() => userStore.user?.photo_200 || fallbackAvatar)
-const activeSubscription = computed(() => userStore.activeSubscription)
-const plans = computed(() => userStore.billing?.plans || [])
-const aiAccess = computed(() => userStore.aiAccess)
-const isAiSubscriptionActive = computed(() => userStore.isAiSubscriptionActive)
-const aiLimits = computed(() =>
-	isAiSubscriptionActive.value ? normalizeAiCounters(aiAccess.value?.limits) : emptyAiCounters(),
-)
-const aiUsage = computed(() =>
-	isAiSubscriptionActive.value ? normalizeAiCounters(aiAccess.value?.usage) : emptyAiCounters(),
-)
-const aiRemaining = computed(() =>
-	isAiSubscriptionActive.value ? normalizeAiCounters(aiAccess.value?.remaining) : emptyAiCounters(),
-)
-const aiPlans = computed(() => userStore.aiPlans || [])
-const availableBalanceMinor = computed(() => Number(userStore.billing?.wallet.balanceMinor || 0))
-const recentLedger = computed(() => (userStore.billing?.recentLedger || []).slice(0, 6))
-const recentPayments = computed(() => (userStore.billing?.recentPayments || []).slice(0, 6))
-const automaticDiscounts = computed(() => userStore.billing?.automaticDiscounts || [])
-
-const activeModeLabel = computed(() => {
-	if (!activeSubscription.value?.plan) return 'Pay-per-request'
-	return `${activeSubscription.value.plan.name} до ${formatDate(activeSubscription.value.expiresAt)}`
-})
-
-const aiStatusLabel = computed(() => {
-	if (isAiSubscriptionActive.value && aiAccess.value?.plan && aiAccess.value.subscription) {
-		return `${aiAccess.value.plan.name} до ${formatDate(aiAccess.value.subscription.expiresAt)}`
-	}
-
-	if (aiAccess.value?.subscription?.status === 'expired') {
-		return 'AI-подписка истекла'
-	}
-
-	return 'AI-подписка не активна'
-})
-
-const clearStatusLater = () => {
-	window.setTimeout(() => {
-		statusMessage.value = ''
-	}, 5000)
-}
-
-const setSuccess = (message: string) => {
-	statusKind.value = 'success'
-	statusMessage.value = message
-	clearStatusLater()
-}
-
-const setError = (message: string) => {
-	statusKind.value = 'error'
-	statusMessage.value = message
-	clearStatusLater()
-}
-
-const formatMoney = (value: number) => Number(value || 0).toFixed(0)
-const formatMoneyMinor = (value?: number | null) => formatMoney(Number(value || 0) / 100)
-const formatDate = (value: string) => new Date(value).toLocaleString()
-
-const normalizePromoCode = (value?: string) => {
-	const normalized = String(value || '').trim()
-	return normalized || undefined
-}
-
-const formatAiCounter = (value?: number | null) => Number(value ?? 0)
-
-const planDescription = (planCode: string) => {
-	if (planCode === 'monthly-premium') return 'Подходит для тяжёлых и специализированных сценариев'
-	return 'Подходит для массовых базовых сценариев'
-}
-
-const getPlanPromoCode = (planCode: string) => planPromoCodes.value[planCode] || ''
-const getPlanPreview = (planCode: string) => planPreviews.value[planCode] || null
-const isPlanPreviewPending = (planCode: string) => Boolean(planPreviewLoading.value[planCode])
-
-const updatePlanPromoCode = (planCode: string, event: Event) => {
-	const value = (event.target as HTMLInputElement | null)?.value || ''
-
-	planPromoCodes.value = {
-		...planPromoCodes.value,
-		[planCode]: value,
-	}
-
-	planPreviews.value = {
-		...planPreviews.value,
-		[planCode]: null,
-	}
-}
-
-const applyPlanPreview = async (planCode: string) => {
-	try {
-		planPreviewLoading.value = {
-			...planPreviewLoading.value,
-			[planCode]: true,
-		}
-
-		const preview = await userStore.previewSubscriptionPurchase(planCode, normalizePromoCode(getPlanPromoCode(planCode)))
-
-		planPreviews.value = {
-			...planPreviews.value,
-			[planCode]: preview,
-		}
-	} catch (error) {
-		setError((error as Error).message || 'Не удалось получить preview тарифа.')
-	} finally {
-		planPreviewLoading.value = {
-			...planPreviewLoading.value,
-			[planCode]: false,
-		}
-	}
-}
-
-const getEffectivePlanPriceMinor = (plan: BillingPlan | AiAccessPlan) =>
-	getPlanPreview(plan.code)?.finalPriceMinor ?? Number(plan.priceMinor || 0)
-
-const canBuyPlan = (plan: BillingPlan) =>
-	canBuyPlanFromWallet({
-		walletBalanceMinor: availableBalanceMinor.value,
-		planPriceMinor: getEffectivePlanPriceMinor(plan),
-	})
-
-const canBuyAiPlan = (plan: AiAccessPlan) => {
-	if (isAiSubscriptionActive.value && aiAccess.value?.plan?.code === plan.code) return false
-	if (!plan.isActive) return false
-
-	return canBuyPlanFromWallet({
-		walletBalanceMinor: availableBalanceMinor.value,
-		planPriceMinor: getEffectivePlanPriceMinor(plan),
-	})
-}
-
-const planButtonLabel = (plan: BillingPlan) => {
-	if (activeSubscription.value?.plan?.code === plan.code) return 'Уже активна'
-	return canBuyPlan(plan) ? 'Купить подписку' : 'Недостаточно средств'
-}
-
-const aiPlanButtonLabel = (plan: AiAccessPlan) => {
-	if (isAiSubscriptionActive.value && aiAccess.value?.plan?.code === plan.code) return 'Уже активна'
-	if (!plan.isActive) return 'Скоро'
-	return canBuyAiPlan(plan) ? 'Купить AI-подписку' : 'Недостаточно средств'
-}
-
-const ledgerTitle = (reason: BillingLedgerEntry['reason']) => {
-	switch (reason) {
-		case 'payment_topup':
-			return 'Пополнение баланса'
-		case 'subscription_purchase':
-			return 'Покупка подписки'
-		case 'usage_charge':
-			return 'Списание за запрос'
-		default:
-			return 'Операция'
-	}
-}
-
-const ledgerAmount = (entry: BillingLedgerEntry) =>
-	`${entry.type === 'debit' ? '-' : '+'}${formatMoney(entry.amount)} ₽`
-
-const paymentTitle = (payment: BillingPayment) => {
-	if (payment.appliedDiscount?.type?.startsWith('topup_bonus')) {
-		return 'Пополнение с бонусом'
-	}
-
-	return payment.status === 'succeeded' ? 'Пополнение подтверждено' : 'Платёж создан'
-}
-
-const paymentAmountLabel = (payment: BillingPayment) => {
-	const creditedAmount = payment.creditedAmount ?? payment.amount
-	const bonusAmount = payment.bonusAmount ?? 0
-
-	if (bonusAmount > 0) {
-		return `${formatMoney(creditedAmount)} ₽ (включая бонус ${formatMoney(bonusAmount)} ₽)`
-	}
-
-	return `${formatMoney(creditedAmount)} ₽`
-}
-
-const reloadBilling = async () => {
-	if (isBusy.value) return
-
-	try {
-		isBusy.value = true
-		await Promise.all([userStore.syncProfileFromServer(), userStore.loadAiAccess()])
-		setSuccess('Данные по биллингу обновлены.')
-	} catch (error) {
-		setError((error as Error).message || 'Не удалось обновить биллинг.')
-	} finally {
-		isBusy.value = false
-	}
-}
-
-const buyPlan = async (planCode: string) => {
-	if (isBusy.value) return
-
-	try {
-		isBusy.value = true
-		const result = await userStore.purchasePlan(planCode, normalizePromoCode(getPlanPromoCode(planCode)))
-
-		setSuccess(
-			result.appliedDiscount
-				? `Подписка активирована. Применена скидка: ${result.appliedDiscount.name}.`
-				: 'Подписка активирована и сохранена в базе.',
-		)
-	} catch (error) {
-		setError((error as Error).message || 'Не удалось купить подписку.')
-	} finally {
-		isBusy.value = false
-	}
-}
-
-const buyAiPlan = async (planCode: string) => {
-	if (isBusy.value) return
-
-	try {
-		isBusy.value = true
-		const result = await userStore.purchasePlan(planCode, normalizePromoCode(getPlanPromoCode(planCode)))
-
-		await userStore.loadAiAccess()
-		await userStore.loadAiPlans()
-
-		setSuccess(
-			result.appliedDiscount
-				? `AI-подписка активирована. Применена скидка: ${result.appliedDiscount.name}.`
-				: 'AI-подписка активирована.',
-		)
-	} catch (error) {
-		setError((error as Error).message || 'Не удалось купить AI-подписку.')
-	} finally {
-		isBusy.value = false
-	}
-}
-
-const handleRecharge = (payload: { creditedAmount: number; bonusMinor: number; discountName?: string | null }) => {
-	const bonusAmount = Number(payload.bonusMinor || 0) / 100
-
-	if (bonusAmount > 0) {
-		setSuccess(
-			`Платёж подтверждён. На баланс зачислено ${formatMoney(payload.creditedAmount)} ₽, включая бонус ${formatMoney(bonusAmount)} ₽${
-				payload.discountName ? ` по акции ${payload.discountName}` : ''
-			}.`,
-		)
-		return
-	}
-
-	setSuccess(`Платёж подтверждён. Баланс пополнен на ${formatMoney(payload.creditedAmount)} ₽.`)
-}
 
 onMounted(() => {
-	void userStore.syncProfileFromServer().catch(error => {
+	void loadBilling().catch(error => {
 		setError((error as Error).message || 'Не удалось загрузить биллинг.')
 	})
-})
-
-onMounted(() => {
-	void Promise.allSettled([userStore.loadAiAccess(), userStore.loadAiPlans()])
 })
 </script>

@@ -699,7 +699,8 @@
 .profile-trigger {
 	display: inline-flex;
 	align-items: center;
-	justify-content: flex-start;
+	justify-content: space-between;
+	gap: 8px;
 	margin-left: auto;
 	width: 148px;
 	min-width: 148px;
@@ -716,6 +717,27 @@
 	text-align: left;
 }
 
+.profile-trigger__admin {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: 1px solid var(--mode-accent-border, var(--color-border-soft));
+	border-radius: 999px;
+	background: var(--mode-accent-soft, var(--color-control-bg-active));
+	color: var(--mode-accent-strong, var(--color-text));
+	font-size: 11px;
+	font-weight: 800;
+	line-height: 1;
+}
+
+.profile-trigger__admin:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 2px;
+}
+
 .profile-trigger__avatar {
 	width: 28px;
 	height: 28px;
@@ -730,6 +752,7 @@
 	justify-content: center;
 	background: var(--color-control-bg-hover);
 	color: var(--color-text);
+
 	font-size: 12px;
 	font-weight: 700;
 }
@@ -835,9 +858,10 @@
 
 @media (max-width: 640px) {
 	.profile-trigger {
-		width: 44px;
-		min-width: 44px;
+		width: auto;
+		min-width: 100px;
 		justify-content: center;
+		padding-inline: 8px;
 	}
 
 	.ai-usage-grid {

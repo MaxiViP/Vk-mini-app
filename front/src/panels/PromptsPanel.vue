@@ -57,11 +57,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { FEATURES } from '../config/features'
 import { HOME_PROMPT_EVENT, HOME_PROMPT_STORAGE_KEY } from '../data/homeCards'
 import { PROMPT_CATEGORIES, PROMPT_TEMPLATES } from '../data/promptTemplates'
+import { trackEvent } from '../utils/analytics'
 
 const emit = defineEmits<{
 	(e: 'navigate', panel: string): void
@@ -133,10 +134,15 @@ const copyPrompt = async (prompt: string) => {
 }
 
 const openInChat = (prompt: string) => {
+	trackEvent('prompt_used', { length: prompt.length })
 	localStorage.setItem(HOME_PROMPT_STORAGE_KEY, prompt)
 	emit('navigate', 'chat')
 	window.dispatchEvent(new CustomEvent(HOME_PROMPT_EVENT))
 }
+
+onMounted(() => {
+	trackEvent('prompt_catalog_opened')
+})
 
 onBeforeUnmount(() => {
 	if (copyStatusTimer) window.clearTimeout(copyStatusTimer)

@@ -32,7 +32,10 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from 'vue'
+
 import { FEATURES } from '../config/features'
+import { trackEvent } from '../utils/analytics'
 
 const emit = defineEmits<{
 	(e: 'navigate', panel: string): void
@@ -80,4 +83,8 @@ const helpItems = [
 		text: 'Откройте обратную связь, если она доступна в меню, и напишите, что произошло: что вы делали, какой текст ошибки увидели и когда это случилось.',
 	},
 ]
+
+onMounted(() => {
+	trackEvent('help_opened')
+})
 </script>

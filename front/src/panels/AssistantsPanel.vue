@@ -80,6 +80,7 @@ import { FEATURES } from '../config/features'
 import { ASSISTANT_CATEGORIES, ASSISTANT_PRESETS, type AssistantPreset } from '../data/assistantPresets'
 import { HOME_PROMPT_EVENT, HOME_PROMPT_STORAGE_KEY } from '../data/homeCards'
 import { useAssistantsStore } from '../stores/assistants'
+import { trackEvent } from '../utils/analytics'
 
 const emit = defineEmits<{
 	(e: 'navigate', panel: string): void
@@ -112,6 +113,11 @@ const buildIntroPrompt = (assistant: AssistantPreset) =>
 
 const selectAssistant = (assistant: AssistantPreset) => {
 	assistantsStore.selectAssistant(assistant.id)
+	trackEvent('assistant_selected', {
+		assistantId: assistant.id,
+		category: assistant.category,
+		isPremium: Boolean(assistant.isPremium),
+	})
 }
 
 const startChat = (assistant: AssistantPreset) => {

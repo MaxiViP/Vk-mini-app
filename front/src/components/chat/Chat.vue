@@ -216,13 +216,11 @@
 			:is-generating="chat.isLoading"
 			:show-file-action="chat.isAiMode"
 		/>
-
-		<ChatContextPanel v-model:visible="showContextPanel" />
 	</div>
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { ComponentPublicInstance } from 'vue'
 
 import type { ChatHistoryItem, Message as ChatMessage, Model } from '../../types'
@@ -234,11 +232,10 @@ import { HOME_PROMPT_EVENT, HOME_PROMPT_STORAGE_KEY } from '../../data/homeCards
 import { useChatStore } from '../../stores/chat'
 import { useModelsStore } from '../../stores/models'
 import { useUserStore } from '../../stores/user'
+import { trackEvent } from '../../utils/analytics'
 import Message from './Message.vue'
-import ChatInput from './ChatInput.vue'
 import ConfirmDeleteChip from './ConfirmDeleteChip.vue'
-
-const ChatContextPanel = defineAsyncComponent(() => import('./ChatContextPanel.vue'))
+import ChatInput from './ChatInput.vue'
 
 const VIRTUALIZATION_MIN_ITEMS = 40
 const DEFAULT_MESSAGE_HEIGHT = 112
@@ -262,7 +259,6 @@ const chatApi = chat as any
 const modelsStore = useModelsStore()
 const userStore = useUserStore()
 
-const showContextPanel = ref(false)
 const isContextPrimaryOpen = ref(false)
 const userProfileOpenIndex = ref<number | null>(null)
 const quickContextOpenIndex = ref<number | null>(null)
@@ -622,30 +618,12 @@ const ensureAiAccessLoaded = async () => {
 	}
 }
 
-const emitChatContextState = () => {
-	window.dispatchEvent(
-		new CustomEvent('chat-context-state', {
-			detail: { open: showContextPanel.value },
-		}),
-	)
-}
-
 const toggleContextPanel = () => {
-	showContextPanel.value = !showContextPanel.value
+	window.dispatchEvent(new CustomEvent('toggle-chat-context'))
 }
 
 const toggleContextPrimary = () => {
 	isContextPrimaryOpen.value = !isContextPrimaryOpen.value
-}
-
-const handleToggleChatContext = (event: Event) => {
-	const customEvent = event as CustomEvent<{ open?: boolean }>
-	if (typeof customEvent.detail?.open === 'boolean') {
-		showContextPanel.value = customEvent.detail.open
-		return
-	}
-
-	showContextPanel.value = !showContextPanel.value
 }
 
 const consumePendingHomePrompt = async () => {
@@ -945,8 +923,6 @@ function handleVoiceError(message: string) {
 	chat.addSystemMessage(`Голосовой ввод недоступен: ${message}`)
 }
 
-watch(showContextPanel, emitChatContextState, { immediate: true })
-
 watch(
 	() => chat.isAiMode,
 	isAiMode => {
@@ -1006,7 +982,7 @@ watch(
 )
 
 onMounted(() => {
-	window.addEventListener('toggle-chat-context', handleToggleChatContext as EventListener)
+	trackEvent('chat_opened', { mode: chat.chatMode })
 	window.addEventListener(HOME_PROMPT_EVENT, consumePendingHomePrompt)
 	void consumePendingHomePrompt()
 	void nextTick().then(() => {
@@ -1015,7 +991,6 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-	window.removeEventListener('toggle-chat-context', handleToggleChatContext as EventListener)
 	window.removeEventListener(HOME_PROMPT_EVENT, consumePendingHomePrompt)
 	messageRowRefs.clear()
 })

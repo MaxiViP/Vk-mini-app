@@ -68,10 +68,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 
 import { FEATURES } from '../config/features'
 import { HOME_CARDS, HOME_PROMPT_EVENT, HOME_PROMPT_STORAGE_KEY, type HomeCard } from '../data/homeCards'
+import { trackEvent } from '../utils/analytics'
 
 const emit = defineEmits<{
 	(e: 'navigate', panel: string): void
@@ -102,4 +103,8 @@ const handleCardClick = (card: HomeCard) => {
 		emit('navigate', card.targetPanel)
 	}
 }
+
+onMounted(() => {
+	trackEvent('home_opened')
+})
 </script>

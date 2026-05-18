@@ -3,207 +3,319 @@
 		<div class="tariffs-panel__hero">
 			<span class="tariffs-panel__eyebrow">Тарифы</span>
 			<h1>Тарифы</h1>
-			<p>Выберите подходящий формат работы с AI-чатом. Покупка и применение промокодов остаются в существующем профиле, чтобы не менять текущую бизнес-логику оплат.</p>
+			<p>Управляйте подписками, AI-лимитами, промокодами и историей оплат через ту же backend-логику, что используется в личном кабинете.</p>
 		</div>
 
-		<div class="tariffs-current">
-			<div>
-				<span class="tariffs-current__label">Текущий тариф</span>
-				<strong>{{ currentPlanTitle }}</strong>
-				<p>{{ currentPlanDescription }}</p>
-			</div>
+		<p v-if="statusMessage" :class="['tariffs-status', statusKind]">
+			{{ statusMessage }}
+		</p>
 
-			<div class="tariffs-current__stats">
-				<span>Chat requests: {{ currentLimits.chat }}</span>
-				<span>Voice requests: {{ currentLimits.voice }}</span>
-				<span>File uploads: {{ currentLimits.files }}</span>
-			</div>
+		<div v-if="isLoading" class="tariffs-section tariffs-state">
+			<h2>Загружаем тарифы...</h2>
+			<p>Получаем баланс, подписки, лимиты и историю оплат из backend.</p>
 		</div>
 
-		<div class="tariff-grid">
-			<article
-				v-for="plan in visibleTariffs"
-				:key="plan.id"
-				:class="['tariff-card', { 'tariff-card--popular': plan.isPopular, 'tariff-card--current': plan.isCurrent }]"
-			>
-				<div class="tariff-card__head">
-					<span v-if="plan.badge" class="tariff-card__badge">{{ plan.badge }}</span>
-					<span v-if="plan.isCurrent" class="tariff-card__status">Активен</span>
-				</div>
-
-				<h2>{{ plan.title }}</h2>
-				<p>{{ plan.description }}</p>
-				<strong class="tariff-card__price">{{ plan.price }}</strong>
-
-				<div class="tariff-limits" aria-label="Лимиты тарифа">
-					<span>Chat: {{ plan.limits.chat }}</span>
-					<span>Voice: {{ plan.limits.voice }}</span>
-					<span>Files: {{ plan.limits.files }}</span>
-				</div>
-
-				<ul>
-					<li v-for="feature in plan.features" :key="feature">{{ feature }}</li>
-				</ul>
-
-				<button type="button" class="tariff-card__button" disabled>
-					{{ plan.isCurrent ? 'Текущий тариф' : 'Скоро' }}
-				</button>
-			</article>
+		<div v-else-if="loadError && !userStore.billing" class="tariffs-section tariffs-state tariffs-state--error">
+			<h2>Не удалось загрузить тарифы</h2>
+			<p>{{ loadError }}</p>
+			<button type="button" class="pill-btn pill-btn--active" :disabled="isBusy" @click="retryLoad">
+				Повторить
+			</button>
 		</div>
 
-		<div class="tariffs-section">
-			<div class="tariffs-section__head">
-				<h2>Сравнение возможностей</h2>
-				<span>Лимиты указаны как ориентир для интерфейса</span>
-			</div>
-
-			<div class="tariff-compare">
-				<div class="tariff-compare__row tariff-compare__row--head">
-					<span>Возможность</span>
-					<span v-for="plan in visibleTariffs" :key="plan.id">{{ plan.title }}</span>
-				</div>
-				<div v-for="row in comparisonRows" :key="row.label" class="tariff-compare__row">
-					<span>{{ row.label }}</span>
-					<span v-for="value in row.values" :key="value">{{ value }}</span>
-				</div>
-			</div>
-		</div>
-
-		<div class="tariffs-split">
-			<div class="tariffs-section">
-				<div class="tariffs-section__head">
-					<h2>Промокод</h2>
-					<span v-if="hasPromoLogic">Логика уже есть в профиле</span>
+		<template v-else>
+			<div class="tariffs-current">
+				<div>
+					<span class="tariffs-current__label">Текущий режим</span>
+					<strong>{{ activeModeLabel }}</strong>
+					<p v-if="activeSubscription">Подписка действует до {{ formatDate(activeSubscription.expiresAt) }}.</p>
+					<p v-else>Pay-per-request активен автоматически, когда нет действующей подписки.</p>
 				</div>
 
-				<div class="tariffs-promo">
-					<input type="text" placeholder="Промокод" disabled />
-					<button type="button" disabled>Применить в профиле</button>
-					<p>Проверка промокода и покупка тарифа не запускаются с этой страницы, чтобы не менять существующий payment flow.</p>
+				<div class="tariffs-current__stats">
+					<span>Баланс: {{ formatMoney(walletBalance) }} ₽</span>
+					<span>Запросы по подписке: {{ userStore.billing?.usageSnapshot.remainingIncludedRequests || 0 }}</span>
+					<span>AI статус: {{ aiStatusLabel }}</span>
 				</div>
 			</div>
 
 			<div class="tariffs-section">
 				<div class="tariffs-section__head">
-					<h2>История оплат</h2>
-					<span>{{ recentPayments.length ? 'Последние платежи' : 'Нет данных' }}</span>
+					<div>
+						<h2>Подписки</h2>
+						<span>Тарифы загружаются из `/api/billing/summary`</span>
+					</div>
+					<button type="button" class="pill-btn" :disabled="isBusy" @click="showRechargeModal = true">
+						Пополнить баланс
+					</button>
 				</div>
 
-				<ul v-if="recentPayments.length" class="tariffs-history">
-					<li v-for="payment in recentPayments" :key="payment.id">
-						<strong>{{ paymentTitle(payment) }}</strong>
-						<span>{{ paymentAmountLabel(payment) }} · {{ formatDate(payment.createdAt) }}</span>
-					</li>
-				</ul>
-				<p v-else class="tariffs-empty-text">История появится здесь, когда она будет доступна в профиле.</p>
+				<div v-if="plans.length" class="tariff-grid">
+					<article
+						v-for="plan in plans"
+						:key="plan.id"
+						:class="['tariff-card', { 'tariff-card--popular': plan.accessTier === 'premium', 'tariff-card--current': activeSubscription?.plan?.code === plan.code }]"
+					>
+						<div class="tariff-card__head">
+							<span class="tariff-card__badge">{{ plan.accessTier === 'premium' ? 'Премиум' : 'База' }}</span>
+							<span v-if="activeSubscription?.plan?.code === plan.code" class="tariff-card__status">Активен</span>
+						</div>
+
+						<h2>{{ plan.name }}</h2>
+						<p>{{ planDescription(plan.code) }}</p>
+						<strong class="tariff-card__price">{{ formatMoneyMinor(getEffectivePlanPriceMinor(plan)) }} ₽</strong>
+
+						<div class="tariff-limits" aria-label="Лимиты тарифа">
+							<span>{{ plan.intervalDays }} дней</span>
+							<span>{{ plan.includedRequests }} запросов</span>
+							<span>{{ plan.accessTier === 'premium' ? 'Premium модели' : 'Базовые модели' }}</span>
+						</div>
+
+						<div class="tariffs-promo tariffs-promo--card">
+							<input
+								:value="getPlanPromoCode(plan.code)"
+								type="text"
+								placeholder="Промокод"
+								@input="updatePlanPromoCode(plan.code, $event)"
+							/>
+							<button type="button" :disabled="isBusy || isPlanPreviewPending(plan.code)" @click="previewPlan(plan.code)">
+								{{ isPlanPreviewPending(plan.code) ? 'Проверяем...' : 'Применить' }}
+							</button>
+						</div>
+
+						<div v-if="getPlanPreview(plan.code)" class="tariff-preview">
+							<span>Скидка: {{ formatMoneyMinor(getPlanPreview(plan.code)?.discountMinor) }} ₽</span>
+							<strong>Итог: {{ formatMoneyMinor(getPlanPreview(plan.code)?.finalPriceMinor) }} ₽</strong>
+							<span v-if="getPlanPreview(plan.code)?.appliedDiscount">
+								{{ getPlanPreview(plan.code)?.appliedDiscount?.name }}
+							</span>
+						</div>
+
+						<button
+							type="button"
+							class="tariff-card__button"
+							:disabled="isBusy || !canBuyPlan(plan) || activeSubscription?.plan?.code === plan.code"
+							@click="purchaseCorePlan(plan.code)"
+						>
+							{{ isBusy ? 'Подождите...' : planButtonLabel(plan) }}
+						</button>
+					</article>
+
+					<article :class="['tariff-card', 'tariff-card--payg', { 'tariff-card--current': !activeSubscription }]">
+						<div class="tariff-card__head">
+							<span class="tariff-card__badge">Гибко</span>
+							<span v-if="!activeSubscription" class="tariff-card__status">Активен</span>
+						</div>
+						<h2>Pay-per-request</h2>
+						<p>Оплата по факту использования из кошелька.</p>
+						<strong class="tariff-card__price">{{ userStore.billing?.paygPricing.basic || 5 }} ₽ / запрос</strong>
+						<div class="tariff-limits">
+							<span>Без абонплаты</span>
+							<span>Автоматически без подписки</span>
+							<span>Баланс: {{ formatMoney(walletBalance) }} ₽</span>
+						</div>
+						<button type="button" class="tariff-card__button" disabled>
+							{{ activeSubscription ? 'Включится после подписки' : 'Сейчас активен' }}
+						</button>
+					</article>
+				</div>
+
+				<p v-else class="tariffs-empty-text">Тарифы пока не пришли с backend.</p>
 			</div>
-		</div>
+
+			<div class="tariffs-section">
+				<div class="tariffs-section__head">
+					<div>
+						<h2>AI-тарифы</h2>
+						<span>Данные берутся из `/api/ai/plans` и `/api/ai/access`</span>
+					</div>
+				</div>
+
+				<div class="ai-usage-grid tariffs-ai-usage">
+					<div class="ai-usage-card">
+						<span class="stat-label">Чат</span>
+						<strong>{{ formatAiCounter(aiRemaining.chat) }}</strong>
+						<small>из {{ formatAiCounter(aiLimits.chat) }}</small>
+					</div>
+					<div class="ai-usage-card">
+						<span class="stat-label">Voice</span>
+						<strong>{{ formatAiCounter(aiRemaining.voice) }}</strong>
+						<small>из {{ formatAiCounter(aiLimits.voice) }}</small>
+					</div>
+					<div class="ai-usage-card">
+						<span class="stat-label">Файлы</span>
+						<strong>{{ formatAiCounter(aiRemaining.fileUpload) }}</strong>
+						<small>из {{ formatAiCounter(aiLimits.fileUpload) }}</small>
+					</div>
+				</div>
+
+				<div v-if="aiPlans.length" class="tariff-grid">
+					<article
+						v-for="plan in aiPlans"
+						:key="plan.id"
+						:class="['tariff-card', { 'tariff-card--popular': plan.accessTier === 'premium', 'tariff-card--current': isAiSubscriptionActive && aiAccess?.plan?.code === plan.code }]"
+					>
+						<div class="tariff-card__head">
+							<span class="tariff-card__badge">AI</span>
+							<span v-if="isAiSubscriptionActive && aiAccess?.plan?.code === plan.code" class="tariff-card__status">
+								Активен
+							</span>
+						</div>
+
+						<h2>{{ plan.name }}</h2>
+						<p>{{ plan.intervalDays }} дней AI-доступа.</p>
+						<strong class="tariff-card__price">{{ formatMoneyMinor(getEffectivePlanPriceMinor(plan)) }} ₽</strong>
+
+						<div class="tariff-limits" aria-label="AI лимиты тарифа">
+							<span>Chat: {{ formatAiCounter(plan.aiChatLimit) }}</span>
+							<span>Voice: {{ formatAiCounter(plan.aiVoiceLimit) }}</span>
+							<span>Files: {{ formatAiCounter(plan.aiFileUploadLimit) }}</span>
+						</div>
+
+						<div class="tariffs-promo tariffs-promo--card">
+							<input
+								:value="getPlanPromoCode(plan.code)"
+								type="text"
+								placeholder="Промокод"
+								@input="updatePlanPromoCode(plan.code, $event)"
+							/>
+							<button type="button" :disabled="isBusy || isPlanPreviewPending(plan.code)" @click="previewPlan(plan.code)">
+								{{ isPlanPreviewPending(plan.code) ? 'Проверяем...' : 'Применить' }}
+							</button>
+						</div>
+
+						<div v-if="getPlanPreview(plan.code)" class="tariff-preview">
+							<span>Скидка: {{ formatMoneyMinor(getPlanPreview(plan.code)?.discountMinor) }} ₽</span>
+							<strong>Итог: {{ formatMoneyMinor(getPlanPreview(plan.code)?.finalPriceMinor) }} ₽</strong>
+							<span v-if="getPlanPreview(plan.code)?.appliedDiscount">
+								{{ getPlanPreview(plan.code)?.appliedDiscount?.name }}
+							</span>
+						</div>
+
+						<button
+							type="button"
+							class="tariff-card__button"
+							:disabled="isBusy || !canBuyAiPlan(plan)"
+							@click="purchaseAiPlan(plan.code)"
+						>
+							{{ isBusy ? 'Подождите...' : aiPlanButtonLabel(plan) }}
+						</button>
+					</article>
+				</div>
+
+				<p v-else class="tariffs-empty-text">AI-тарифы пока не пришли с backend.</p>
+			</div>
+
+			<div class="tariffs-split">
+				<div class="tariffs-section">
+					<div class="tariffs-section__head">
+						<h2>Последние операции</h2>
+						<span>{{ recentLedger.length ? 'Кошелёк и подписки' : 'Нет данных' }}</span>
+					</div>
+
+					<ul v-if="recentLedger.length" class="tariffs-history">
+						<li v-for="entry in recentLedger" :key="entry.id">
+							<strong>{{ ledgerTitle(entry.reason) }}</strong>
+							<span>{{ ledgerAmount(entry) }} · {{ formatDate(entry.createdAt) }}</span>
+						</li>
+					</ul>
+					<p v-else class="tariffs-empty-text">Операции появятся после пополнения, покупки тарифа или списания.</p>
+				</div>
+
+				<div class="tariffs-section">
+					<div class="tariffs-section__head">
+						<h2>История оплат</h2>
+						<span>{{ recentPayments.length ? 'Последние платежи' : 'Нет данных' }}</span>
+					</div>
+
+					<ul v-if="recentPayments.length" class="tariffs-history">
+						<li v-for="payment in recentPayments" :key="payment.id">
+							<strong>{{ paymentTitle(payment) }}</strong>
+							<span>{{ paymentAmountLabel(payment) }} · {{ formatDate(payment.createdAt) }}</span>
+						</li>
+					</ul>
+					<p v-else class="tariffs-empty-text">История появится здесь после первого платежа.</p>
+				</div>
+			</div>
+		</template>
+
+		<RechargeModal v-model:visible="showRechargeModal" @success="handleRecharge" />
 	</section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { onMounted, ref } from 'vue'
 
 import { FEATURES } from '../config/features'
-import { TARIFF_PLANS } from '../data/tariffs'
-import { useUserStore } from '../stores/user'
-import type { BillingPayment } from '../types'
+import {
+	formatAiCounter,
+	formatDate,
+	formatMoney,
+	formatMoneyMinor,
+	useBilling,
+} from '../composables/useBilling'
+import { trackEvent } from '../utils/analytics'
+import RechargeModal from '../components/profile/RechargeModal.vue'
 
-const userStore = useUserStore()
+const showRechargeModal = ref(false)
+const {
+	userStore,
+	statusMessage,
+	statusKind,
+	isBusy,
+	isLoading,
+	loadError,
+	activeSubscription,
+	plans,
+	aiAccess,
+	isAiSubscriptionActive,
+	aiLimits,
+	aiRemaining,
+	aiPlans,
+	walletBalance,
+	recentLedger,
+	recentPayments,
+	activeModeLabel,
+	aiStatusLabel,
+	getPlanPromoCode,
+	getPlanPreview,
+	isPlanPreviewPending,
+	updatePlanPromoCode,
+	applyPlanPreview,
+	getEffectivePlanPriceMinor,
+	canBuyPlan,
+	canBuyAiPlan,
+	planButtonLabel,
+	aiPlanButtonLabel,
+	planDescription,
+	ledgerTitle,
+	ledgerAmount,
+	paymentTitle,
+	paymentAmountLabel,
+	loadBilling,
+	buyPlan,
+	buyAiPlan,
+	handleRecharge,
+} = useBilling()
 
-const activeSubscription = computed(() => userStore.activeSubscription)
-const aiAccess = computed(() => userStore.aiAccess)
-const isAiSubscriptionActive = computed(() => userStore.isAiSubscriptionActive)
-const recentPayments = computed(() => (userStore.billing?.recentPayments || []).slice(0, 5))
-const hasPromoLogic = computed(() => Boolean(userStore.previewSubscriptionPurchase))
-
-const currentPlanTitle = computed(() => {
-	if (isAiSubscriptionActive.value && aiAccess.value?.plan) return aiAccess.value.plan.name
-	if (activeSubscription.value?.plan) return activeSubscription.value.plan.name
-	return 'Бесплатный'
-})
-
-const currentPlanDescription = computed(() => {
-	if (isAiSubscriptionActive.value && aiAccess.value?.subscription?.expiresAt) {
-		return `AI-подписка действует до ${formatDate(aiAccess.value.subscription.expiresAt)}.`
-	}
-
-	if (activeSubscription.value?.expiresAt) {
-		return `Подписка действует до ${formatDate(activeSubscription.value.expiresAt)}.`
-	}
-
-	return 'Активной подписки нет. Доступны базовые возможности и оплата по факту, если она включена в профиле.'
-})
-
-const formatCounter = (value?: number | null) => {
-	if (value === null || value === undefined) return '0'
-	return String(value)
+const retryLoad = () => {
+	void loadBilling()
 }
 
-const currentLimits = computed(() => {
-	if (isAiSubscriptionActive.value && aiAccess.value) {
-		return {
-			chat: formatCounter(aiAccess.value.remaining.chat),
-			voice: formatCounter(aiAccess.value.remaining.voice),
-			files: formatCounter(aiAccess.value.remaining.fileUpload),
-		}
-	}
+const previewPlan = (planCode: string) => {
+	void applyPlanPreview(planCode).catch(() => undefined)
+}
 
-	if (activeSubscription.value) {
-		return {
-			chat: formatCounter(activeSubscription.value.remainingRequests),
-			voice: 'не задано',
-			files: 'не задано',
-		}
-	}
+const purchaseCorePlan = (planCode: string) => {
+	void buyPlan(planCode).catch(() => undefined)
+}
 
-	return {
-		chat: formatCounter(userStore.billing?.usageSnapshot.remainingIncludedRequests),
-		voice: 'нет',
-		files: 'нет',
-	}
+const purchaseAiPlan = (planCode: string) => {
+	void buyAiPlan(planCode).catch(() => undefined)
+}
+
+onMounted(() => {
+	trackEvent('tariffs_opened')
+	void loadBilling().catch(() => undefined)
 })
-
-const visibleTariffs = computed(() =>
-	TARIFF_PLANS.filter(plan => !plan.isHidden).map(plan => ({
-		...plan,
-		isCurrent: plan.id === 'free' && !activeSubscription.value && !isAiSubscriptionActive.value,
-	})),
-)
-
-const comparisonRows = computed(() => [
-	{
-		label: 'Chat requests',
-		values: visibleTariffs.value.map(plan => plan.limits.chat),
-	},
-	{
-		label: 'Voice requests',
-		values: visibleTariffs.value.map(plan => plan.limits.voice),
-	},
-	{
-		label: 'File uploads',
-		values: visibleTariffs.value.map(plan => plan.limits.files),
-	},
-	{
-		label: 'Покупка',
-		values: visibleTariffs.value.map(plan => (plan.id === 'free' ? 'Не нужна' : 'Через профиль')),
-	},
-])
-
-const formatDate = (value: string) => new Date(value).toLocaleDateString()
-const formatMoney = (value: number) => `${value.toLocaleString('ru-RU')} ₽`
-
-const paymentTitle = (payment: BillingPayment) => {
-	if (payment.status === 'succeeded') return 'Платёж подтверждён'
-	if (payment.status === 'pending') return 'Платёж создан'
-	if (payment.status === 'failed') return 'Платёж не прошёл'
-	return 'Платёж отменён'
-}
-
-const paymentAmountLabel = (payment: BillingPayment) => {
-	const creditedAmount = payment.creditedAmount ?? payment.amount
-	const bonusAmount = payment.bonusAmount ?? 0
-	if (bonusAmount > 0) return `${formatMoney(creditedAmount)} с бонусом ${formatMoney(bonusAmount)}`
-	return formatMoney(creditedAmount)
-}
 </script>

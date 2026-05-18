@@ -470,6 +470,7 @@ import {
 	normalizeAiCounters,
 } from '../../domain/aiSubscription'
 import { useChatStore } from '../../stores/chat'
+import { trackEvent } from '../../utils/analytics'
 import ConfirmDeleteChip from './ConfirmDeleteChip.vue'
 
 type MarkdownRenderer = {
@@ -1010,6 +1011,7 @@ watch(
 
 const saveToNotes = () => {
 	closeActionsMenu()
+	trackEvent('answer_saved', { length: props.message.content.length })
 
 	const notesEvent = new CustomEvent('save-to-notes', {
 		detail: { text: props.message.content },
@@ -1098,11 +1100,13 @@ const copyMessage = async () => {
 
 const copyAssistantResponse = async () => {
 	await copyMessage()
+	trackEvent('answer_copied', { length: props.message.content.length })
 	setAssistantActionStatus('Скопировано')
 }
 
 const shareAssistantResponse = async () => {
 	await copyMessage()
+	trackEvent('answer_shared', { length: props.message.content.length })
 	setAssistantActionStatus('Текст скопирован для отправки')
 }
 

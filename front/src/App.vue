@@ -6,7 +6,10 @@
 			<div class="top-bar-spacer" aria-hidden="true"></div>
 
 			<div class="top-bar-actions">
-				<button v-if="userStore.user?.isAdmin" class="pill-btn" @click="showAdmin = true">Админка</button>
+				<button :class="['pill-btn', { 'pill-btn--active': isChatContextOpen }]" @click="toggleChatContext">
+					Контекст
+				</button>
+				<button class="pill-btn" @click="showNotes = true">Заметки</button>
 				<button
 					type="button"
 					class="pill-btn theme-toggle"
@@ -17,7 +20,7 @@
 					<span class="theme-toggle__icon" aria-hidden="true">{{ uiThemeIcon }}</span>
 					<span class="theme-toggle__text">{{ uiThemeLabel }}</span>
 				</button>
-				<ProfileTrigger @click="showProfile = true" />
+				<ProfileTrigger :is-admin="Boolean(userStore.user?.isAdmin)" @click="showProfile = true" @admin-click="showAdmin = true" />
 			</div>
 
 			<nav class="top-bar-nav" aria-label="Навигация">
@@ -37,10 +40,6 @@
 				>
 					Модели
 				</button>
-				<button :class="['pill-btn', { 'pill-btn--active': isChatContextOpen }]" @click="toggleChatContext">
-					Контекст
-				</button>
-				<button class="pill-btn" @click="showNotes = true">Заметки</button>
 			</nav>
 		</header>
 
@@ -72,6 +71,7 @@
 
 	<AuthModal :visible="showAuthModal" @authenticated="showAuthModal = false" />
 	<NotesPanel v-model:visible="showNotes" ref="notesPanelRef" />
+	<ChatContextPanel v-model:visible="isChatContextOpen" />
 </template>
 
 <script setup lang="ts">
@@ -97,6 +97,7 @@ import AILogo from './components/common/AILogo.vue'
 const ModelSelector = defineAsyncComponent(() => import('./components/chat/ModelSelector.vue'))
 const Profile = defineAsyncComponent(() => import('./components/profile/Profile.vue'))
 const NotesPanel = defineAsyncComponent(() => import('./components/chat/NotesPanel.vue'))
+const ChatContextPanel = defineAsyncComponent(() => import('./components/chat/ChatContextPanel.vue'))
 const AuthModal = defineAsyncComponent(() => import('./components/auth/AuthModal.vue'))
 const AdminPanel = defineAsyncComponent(() => import('./components/admin/AdminPanel.vue'))
 const HomePanel = defineAsyncComponent(() => import('./panels/HomePanel.vue'))
@@ -186,11 +187,17 @@ const { startAppWindowEvents, stopAppWindowEvents } = useAppWindowEvents({
 })
 
 const toggleChatContext = () => {
-	window.dispatchEvent(
-		new CustomEvent('toggle-chat-context', {
-			detail: { open: !isChatContextOpen.value },
-		}),
-	)
+	isChatContextOpen.value = !isChatContextOpen.value
+}
+
+const handleToggleChatContext = (event: Event) => {
+	const customEvent = event as CustomEvent<{ open?: boolean }>
+	if (typeof customEvent.detail?.open === 'boolean') {
+		isChatContextOpen.value = customEvent.detail.open
+		return
+	}
+
+	toggleChatContext()
 }
 
 const toggleModelSelector = () => {
@@ -238,6 +245,11 @@ const handleEscape = (e: KeyboardEvent) => {
 
 	if (showNotes.value) {
 		showNotes.value = false
+		return
+	}
+
+	if (isChatContextOpen.value) {
+		isChatContextOpen.value = false
 	}
 }
 
@@ -295,6 +307,7 @@ onMounted(async () => {
 	startViewportSync()
 	document.addEventListener('keydown', handleEscape)
 	window.addEventListener('hashchange', handleHashChange)
+	window.addEventListener('toggle-chat-context', handleToggleChatContext as EventListener)
 	handleHashChange()
 	startAppWindowEvents()
 	await bootstrapApp()
@@ -303,6 +316,7 @@ onMounted(async () => {
 onUnmounted(() => {
 	document.removeEventListener('keydown', handleEscape)
 	window.removeEventListener('hashchange', handleHashChange)
+	window.removeEventListener('toggle-chat-context', handleToggleChatContext as EventListener)
 	stopAppWindowEvents()
 	stopViewportSync()
 	stopActivityTracking()

@@ -10,6 +10,20 @@
 		<template v-else>
 			<span class="profile-trigger__text">{{ fullName }}</span>
 		</template>
+
+		<span
+			v-if="isAdmin"
+			class="profile-trigger__admin"
+			role="button"
+			tabindex="0"
+			title="Админка"
+			aria-label="Открыть админку"
+			@click.stop="$emit('admin-click')"
+			@keydown.enter.stop.prevent="$emit('admin-click')"
+			@keydown.space.stop.prevent="$emit('admin-click')"
+		>
+			A
+		</span>
 	</button>
 </template>
 
@@ -17,8 +31,13 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useUserStore } from '../../stores/user'
 
+defineProps<{
+	isAdmin?: boolean
+}>()
+
 defineEmits<{
 	(e: 'click'): void
+	(e: 'admin-click'): void
 }>()
 
 const userStore = useUserStore()

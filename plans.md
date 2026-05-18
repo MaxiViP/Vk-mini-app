@@ -2,21 +2,19 @@
 
 ## Текущий статус
 
-Дата: 2026-05-17
-Последняя выполненная задача: ЭТАП 28 — Девятая задача для Codex
+Дата: 2026-05-18
+Последняя выполненная задача: Интеграция TariffsPanel с backend-логикой тарифов
 Статус: выполнено
 Что сделано:
-- Создан `front/src/data/assistantPresets.ts` с типом `AssistantPreset` и 8 ассистентами.
-- Добавлен Pinia store `front/src/stores/assistants.ts` для frontend-сохранения выбранного ассистента в localStorage.
-- Реализован `AssistantsPanel.vue` с поиском, фильтром категорий, карточками, бейджами категории и Premium.
-- Кнопка “Выбрать” сохраняет ассистента во frontend-состоянии.
-- Кнопка “Начать чат” использует prompt-prefill из ЭТАПА 21 и подставляет intro-prompt в чат.
-- Добавлены стили страницы ассистентов в `components.css`.
-- AI backend не менялся, реальный system prompt backend не подключался.
+- Найдена существующая billing-логика в `useUserStore`, `billingApi`, `vkAiApi`, `paymentsApi`, `Profile.vue` и `RechargeModal.vue`.
+- Вынесена общая frontend-логика тарифов, промокодов, покупок, AI-лимитов, истории и статусов в `front/src/composables/useBilling.ts`.
+- `Profile.vue` переведён на общий `useBilling`, сохранив прежний UI личного кабинета и существующий purchase flow.
+- `TariffsPanel.vue` подключён к реальным backend-данным и действиям: баланс, подписки, AI-тарифы, промокоды, покупка, пополнение, история операций и платежей.
+- Feature flag `FEATURES.tariffsPage` сохранён, backend API и схема базы данных не менялись.
 Что осталось:
-- При необходимости подключить выбранного ассистента к backend system prompt отдельной задачей.
+- Провести ручную проверку покупки и промокодов на окружении с доступным backend/VK/YooKassa.
 Следующая задача:
-- ЭТАП 29 — Десятая задача для Codex
+- Ревизия MVP-флагов и подготовка публичной версии
 
 # План развития VK Mini App AI Assistant
 
@@ -1697,6 +1695,8 @@ front/src/data/assistantPresets.ts
 
 # ЭТАП 29. Десятая задача для Codex
 
+Статус: ✅ выполнено
+
 ## Название
 
 Добавить бонусы, задания и рефералы в UI.
@@ -1720,6 +1720,8 @@ front/src/data/assistantPresets.ts
 ---
 
 # ЭТАП 30. Одиннадцатая задача для Codex
+
+Статус: ✅ выполнено
 
 ## Название
 
@@ -1752,6 +1754,8 @@ front/src/data/changelog.ts
 ---
 
 # ЭТАП 31. Двенадцатая задача для Codex
+
+Статус: ✅ выполнено
 
 ## Название
 
@@ -1792,6 +1796,24 @@ export function trackEvent(name: string, params?: Record<string, unknown>) {
 - Есть единая точка для будущей аналитики.
 - Пока данные выводятся в console.
 - Потом можно заменить реализацию без переписывания компонентов.
+
+---
+
+## Дополнительная задача: интеграция страницы тарифов с backend
+
+Статус: ✅ выполнено
+
+Что сделано:
+- Найдена текущая реализация тарифов, покупок, промокодов, истории оплат и backend-взаимодействия в личном кабинете.
+- Создан общий composable `front/src/composables/useBilling.ts`.
+- `Profile.vue` и `TariffsPanel.vue` используют одну и ту же frontend business-логику поверх `useUserStore`.
+- `TariffsPanel.vue` показывает реальные данные из `billing`/`aiAccess`/`aiPlans`, loading/error/empty states, баланс, активные подписки, лимиты, промокоды, историю операций и платежей.
+- Кнопки покупки и проверки промокодов используют существующие методы `userStore.previewSubscriptionPurchase`, `userStore.purchasePlan`, `userStore.syncProfileFromServer`, `userStore.loadAiAccess`, `userStore.loadAiPlans`.
+- Пополнение баланса переиспользует существующий `RechargeModal.vue`.
+- Backend API, база данных и старый личный кабинет не удалялись и не заменялись.
+
+Что осталось:
+- Проверить реальные успешные и ошибочные сценарии покупки/пополнения на окружении с подключенным backend и платежным провайдером.
 
 ---
 
